@@ -38,6 +38,15 @@ function lintTemporal(rule: RuleVersion, errs: LintError[]): void {
         message: `date range inverted: ${t.startDateInclusive} > ${t.endDateInclusive}`,
       });
     }
+  } else if (t.kind === 'OBSERVED_ACTIVE_UNTIL') {
+    // observedActiveAt is provenance, not a start; it must still precede the published end.
+    if (t.observedActiveAt > t.endDateInclusive) {
+      errs.push({
+        code: 'MALFORMED_TEMPORAL_RANGE',
+        ruleId: rule.ruleId,
+        message: `observed active after published end: ${t.observedActiveAt} > ${t.endDateInclusive}`,
+      });
+    }
   } else if (t.startInclusive >= t.endExclusive) {
     errs.push({
       code: 'MALFORMED_TEMPORAL_RANGE',

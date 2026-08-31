@@ -160,15 +160,14 @@ child of the M0 baseline (M0 not squashed/amended). Not pushed.
 
 ## 19. Warnings / unresolved items
 
-- **Conservative start dates:** where a source states only an end date (several Sip / "to 30/09"
-  rows, IBK Popeyes/Embarcadero), the start is set to the freeze observation date `2026-08-30`
-  (a defensible lower bound — the campaign was observed active at freeze), never an invented
-  earlier date.
-- **Papa Johns cross-provider comparability (FIX-01b):** the frozen rows are **different pizza
-  SKUs** (BCP "Large Classic" 20.90 vs Plin "Large Americana/Pepperoni" 13.90). They are
-  encoded faithfully as **distinct EXACT_BUNDLE scopes**; forcing them into one scope would
-  violate RT-04 exact-bundle integrity. Whether FIX-01b treats them as one comparable "large
-  pizza" is an **M2/M3 fixture-modeling decision**, not an M1 data change.
+- **Unknown campaign start dates (corrected — see §21):** where a source states only an end
+  date, the rule is now encoded as `OBSERVED_ACTIVE_UNTIL {observedActiveAt, endDateInclusive}`,
+  where `observedActiveAt` is the freeze observation date `2026-08-30` as **provenance**, never a
+  provider-declared campaign start. No earlier start date is invented.
+- **Papa Johns cross-provider comparability (FIX-01b — resolved, see §21):** the frozen rows are
+  **different pizza SKUs** (BCP "Large Classic" 20.90 vs Plin "Large Americana/Pepperoni" 13.90),
+  encoded faithfully as **distinct EXACT_BUNDLE scopes**. Per RT-04 they are **non-comparable** as
+  the same purchase; the FIX-01b "Plin wins by S/7" expectation is superseded for the real corpus.
 - Constraint fidelity is at the level the frozen corpus provides; `holidayPolicy` is `UNKNOWN`
   wherever the source is silent (fail-safe, not invented).
 - The boundary self-test's programmatic ESLint run adds ~12s to `pnpm test` (first run); a
@@ -180,3 +179,80 @@ Submit this report to the **independent M1 gate** for review. **Do not begin M2.
 authorized, M2 = the pure deterministic evaluator (availability, integer settlement, Lima
 temporal semantics, multi-scope evaluation, exhaustive source-quality + basis-typed bounds,
 materiality × resolvability, decision-status ⟂ advisories) over this M1 corpus.
+
+---
+
+## 21. M1 Closure Patch (post-review corrections)
+
+Applied after the independent review flagged two narrow closure issues. **No active rule was
+added or removed; no factual corpus row changed.** Reconciliation is unchanged: merchants **14**,
+active rules **46**, providers **16 / 12 / 10 / 8**, provider-private **2**, overlap O2 8 · O3 2 ·
+O4-CONFIRMED 4, decision CORE 7 · ASSIST 3 · DIRECTORY 4, excluded (history) 1.
+
+### 21.1 Closure A — Papa Johns exact-SKU comparability (FIX-01b)
+
+- **Papa Johns clarification (frozen interpretation):** the BCP offer (Large Classic) and the
+  Plin offer (Large Americana) are **different exact product compositions**. They remain under
+  **separate `EXACT_BUNDLE` purchase signatures / scopes**. They MUST NOT be merged merely because
+  both are "large pizzas." This is required by the RT-04 invariant: *different exact
+  product/package compositions must not be directly ranked as the same purchase.*
+- **FIX-01b real-corpus expectation superseded:** any earlier fixture expectation of the form
+  "Plin S/13.90 vs BCP S/20.90 → Plin wins by S/7" is **superseded** for the real Corpus-v1 rows,
+  because the products are not structurally identical. The real-corpus contract is **different
+  exact purchase signatures ⇒ no direct comparison**. This becomes an **M2/M3 negative
+  comparability regression** (not implemented here).
+- **Economic property retained for M3 (synthetic, test-only):** the intended property — that
+  provider-specific advertised/list "regular" prices must **not** determine ranking, only the
+  permitted actual economic outcome does — is preserved as a **future synthetic M3 fixture** with
+  the *same* canonical purchase signature, two provider offers, deliberately different advertised
+  baselines, and ranking by the permitted economic basis only. It is **not** fabricated into the
+  active 46-rule corpus.
+
+### 21.2 Closure B — unknown campaign start must not be invented
+
+- **New temporal variant.** `TemporalRange` gains `OBSERVED_ACTIVE_UNTIL { observedActiveAt,
+  endDateInclusive }` alongside `LOCAL_DATE_RANGE` and `LOCAL_DATETIME_RANGE`
+  (`src/corpus/types.ts`). `observedActiveAt` is **evidence/provenance** (when the campaign was
+  observed live), **not** a provider-declared campaign start; the published `endDateInclusive`
+  remains authoritative. No earlier start date is invented.
+- **Corpus rows corrected.** The four end-date-only rows previously encoded with a synthetic
+  `startDateInclusive = 2026-08-30` — **PJ-SIP-01, CW-SIP-01, POP-IBK-01, EMB-IBK-01** — now use
+  `OBSERVED_ACTIVE_UNTIL` with `observedActiveAt = 2026-08-30` (the freeze observation date) and
+  their published ends (`2026-09-30` ×3, `2026-12-31`). Fully-published rows keep
+  `LOCAL_DATE_RANGE`. No other row changed.
+- **Validation.** The Zod schema (`src/corpus/schema.ts`) adds the strict variant and validates
+  both of its dates as **real America/Lima calendar dates** (`isValidLocalDate`). The blocking
+  linter (`src/corpus/lint.ts`) rejects **`observedActiveAt > endDateInclusive`** as
+  `MALFORMED_TEMPORAL_RANGE`. M1 does **not** implement final temporal economic evaluation; the
+  documented M2 contract is to admit the rule only within `[observedActiveAt, endDateInclusive]`
+  (Lima) unless stronger start evidence later exists.
+
+### 21.3 Tests added (temporal regression)
+
+- `corpus.test.ts` (+3): published full range stays `LOCAL_DATE_RANGE` with both dates preserved;
+  the four end-date-only frozen rows use `OBSERVED_ACTIVE_UNTIL` and **never serialize a
+  `startDateInclusive`** (no invented start); invalid chronology `observedActiveAt >
+  endDateInclusive` is rejected.
+- `schema.test.ts` (+2): `OBSERVED_ACTIVE_UNTIL` has **no start field** — adding
+  `startDateInclusive` is rejected by the strict schema (observation date and campaign start are
+  distinct concepts); an invalid Lima calendar date (`2026-02-30`) is rejected.
+- Suite total: **49 tests, 5 files, all passing** (was 44).
+
+### 21.4 Exact verification results (closure)
+
+| Command | Result |
+| --- | --- |
+| `pnpm lint` | OK (exit 0) |
+| `pnpm typecheck` | OK (exit 0) |
+| `pnpm test` | 49 passed / 5 files (exit 0) |
+| `pnpm corpus:validate` | **PASS** — schema OK · lint 0 errors · all frozen counts match |
+| `pnpm build` | OK (exit 0) |
+| `pnpm db:validate` | OK — schema valid |
+| `pnpm format:check` | OK — all files match Prettier |
+
+### 21.5 Files changed (closure)
+
+`src/corpus/types.ts` (new `OBSERVED_ACTIVE_UNTIL` variant), `src/corpus/schema.ts`
+(`isValidLocalDate` + `localDate` + temporal variant), `src/corpus/lint.ts` (chronology check),
+`src/corpus/data/rules.ts` (`oau()` helper + 4 rows converted + header note),
+`src/corpus/corpus.test.ts` (+3 tests), `src/corpus/schema.test.ts` (+2 tests), this report.

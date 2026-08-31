@@ -95,7 +95,19 @@ export interface LocalDateTimeRange {
   startInclusive: string; // ISO w/ zone
   endExclusive: string;
 }
-export type TemporalRange = LocalDateRange | LocalDateTimeRange;
+/**
+ * Start date UNKNOWN, but the campaign was observed active at a given Lima date. `observedActiveAt`
+ * is evidence/provenance (when we saw it live) — it is NOT a provider-declared campaign start and
+ * MUST NOT be treated as one. The provider-published `endDateInclusive` remains authoritative; no
+ * earlier start date is invented. M2 conservative temporal evaluation is permitted only within
+ * `[observedActiveAt, endDateInclusive]` (Lima) unless stronger start evidence later exists.
+ */
+export interface LocalObservedActiveUntil {
+  kind: 'OBSERVED_ACTIVE_UNTIL';
+  observedActiveAt: string; // YYYY-MM-DD, Lima calendar — provenance, NOT a claimed campaign start
+  endDateInclusive: string; // inclusive, provider-published authoritative end
+}
+export type TemporalRange = LocalDateRange | LocalDateTimeRange | LocalObservedActiveUntil;
 
 export interface Constraints {
   temporal: TemporalRange;

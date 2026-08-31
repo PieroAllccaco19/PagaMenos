@@ -559,3 +559,48 @@ describe('identity, provenance & reference integrity', () => {
     expect(codes(c)).toContain('PRIVATE_MISSING_KEY');
   });
 });
+
+// ---------- M1 closure: temporal representation (unknown start ≠ invented start) ----------
+describe('temporal representation (OBSERVED_ACTIVE_UNTIL vs LOCAL_DATE_RANGE)', () => {
+  it('a published full range stays LOCAL_DATE_RANGE with both dates preserved', () => {
+    const c = baseCorpus();
+    c.activeRules[0]!.constraints.temporal = {
+      kind: 'LOCAL_DATE_RANGE',
+      startDateInclusive: '2026-07-01',
+      endDateInclusive: '2026-09-30',
+    };
+    const t = c.activeRules[0]!.constraints.temporal;
+    expect(t.kind).toBe('LOCAL_DATE_RANGE');
+    expect(t).toMatchObject({ startDateInclusive: '2026-07-01', endDateInclusive: '2026-09-30' });
+    expect(codes(c)).not.toContain('MALFORMED_TEMPORAL_RANGE');
+  });
+
+  it('end-date-only frozen rows use OBSERVED_ACTIVE_UNTIL and never serialize an invented start', () => {
+    const corpus = loadCorpus();
+    const endOnly = ['PJ-SIP-01', 'CW-SIP-01', 'POP-IBK-01', 'EMB-IBK-01'];
+    for (const id of endOnly) {
+      const rule = corpus.activeRules.find((r) => r.ruleId === id);
+      expect(rule, `rule ${id} present`).toBeDefined();
+      const t = rule!.constraints.temporal;
+      expect(t.kind).toBe('OBSERVED_ACTIVE_UNTIL');
+      if (t.kind !== 'OBSERVED_ACTIVE_UNTIL') throw new Error('unreachable');
+      // observedActiveAt is provenance (the freeze observation date), NOT a claimed start.
+      expect(t.observedActiveAt).toBe('2026-08-30');
+      expect(t.endDateInclusive.length).toBe(10);
+      // MUST NOT store 2026-08-30 as a provider campaign start.
+      expect(Object.keys(t)).not.toContain('startDateInclusive');
+    }
+    // The real corpus with these variants still passes the blocking linter.
+    expect(codes(corpus)).not.toContain('MALFORMED_TEMPORAL_RANGE');
+  });
+
+  it('rejects invalid chronology: observedActiveAt after the published end', () => {
+    const c = baseCorpus();
+    c.activeRules[0]!.constraints.temporal = {
+      kind: 'OBSERVED_ACTIVE_UNTIL',
+      observedActiveAt: '2026-10-01',
+      endDateInclusive: '2026-09-30',
+    };
+    expect(codes(c)).toContain('MALFORMED_TEMPORAL_RANGE');
+  });
+});

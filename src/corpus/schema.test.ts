@@ -41,4 +41,29 @@ describe('corpus schema (strict)', () => {
     raw.somethingUnexpected = true;
     expect(() => parseCorpus(raw)).toThrow();
   });
+
+  // M1 closure: observation date and provider-declared start date are DISTINCT concepts.
+  it('OBSERVED_ACTIVE_UNTIL has no start field — adding startDateInclusive is rejected (strict)', () => {
+    const raw = deepClone();
+    raw.activeRules[0].constraints.temporal = {
+      kind: 'OBSERVED_ACTIVE_UNTIL',
+      observedActiveAt: '2026-08-30',
+      endDateInclusive: '2026-09-30',
+    };
+    // The observed-active variant accepts observation + published end...
+    expect(() => parseCorpus(raw)).not.toThrow();
+    // ...but conflating the observation date with a campaign start is a strict-schema violation.
+    raw.activeRules[0].constraints.temporal.startDateInclusive = '2026-08-30';
+    expect(() => parseCorpus(raw)).toThrow();
+  });
+
+  it('rejects an OBSERVED_ACTIVE_UNTIL with an invalid Lima calendar date', () => {
+    const raw = deepClone();
+    raw.activeRules[0].constraints.temporal = {
+      kind: 'OBSERVED_ACTIVE_UNTIL',
+      observedActiveAt: '2026-02-30', // not a real date
+      endDateInclusive: '2026-09-30',
+    };
+    expect(() => parseCorpus(raw)).toThrow();
+  });
 });

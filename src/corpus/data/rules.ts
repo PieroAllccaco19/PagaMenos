@@ -1,7 +1,9 @@
 // PagaMenos · Corpus v1 — the 46 active rule instances + operational states + excluded history.
 // Faithful encoding of the hardened Phase 0A-1B rule tables. Where a source states only an end
-// date, the start is set conservatively to the freeze observation date (2026-08-30), never an
-// invented earlier date. Money = integer céntimos; nominal value = integer minor units.
+// date (start unknown), the rule is encoded as OBSERVED_ACTIVE_UNTIL: `observedActiveAt` is the
+// freeze observation date (2026-08-30) as PROVENANCE — it is NOT stored as a provider-declared
+// campaign start, and no earlier start date is invented. Money = integer céntimos; nominal
+// value = integer minor units.
 import { FREEZE_TIMESTAMP, OBSERVED_AT } from '../ids';
 import type {
   AvailabilityState,
@@ -31,6 +33,13 @@ const SOURCE_URL = new Map(SOURCES.map((s) => [s.sourceId, s.url]));
 const dr = (start: string, end: string): TemporalRange => ({
   kind: 'LOCAL_DATE_RANGE',
   startDateInclusive: start,
+  endDateInclusive: end,
+});
+// Source gives only an end date: observed active at `observedActiveAt` (provenance, NOT a
+// provider-declared start) through the published `end`. No earlier start is invented.
+const oau = (observedActiveAt: string, end: string): TemporalRange => ({
+  kind: 'OBSERVED_ACTIVE_UNTIL',
+  observedActiveAt,
   endDateInclusive: end,
 });
 const cap = (centimos: number): Cap => ({ kind: 'AMOUNT', centimos });
@@ -212,7 +221,7 @@ const BUILT: Built[] = [
     sig: 'EXACT_BUNDLE',
     items: [{ itemKey: 'pj_medium_sides_bundle', qty: 1 }],
     scopes: ['sc_pj_medium_bundle'],
-    temporal: dr(OBSERVED_AT, '2026-09-30'),
+    temporal: oau(OBSERVED_AT, '2026-09-30'),
     holiday: 'UNKNOWN',
     channels: ['SALON', 'TAKEAWAY'],
     stock: true,
@@ -329,7 +338,7 @@ const BUILT: Built[] = [
       { itemKey: 'cw_drink', qty: 1 },
     ],
     scopes: ['sc_cw_chijaukay_alopobre'],
-    temporal: dr(OBSERVED_AT, '2026-09-30'),
+    temporal: oau(OBSERVED_AT, '2026-09-30'),
     holiday: 'UNKNOWN',
     channels: ['SALON'],
     locations: { exclude: ['selected'] },
@@ -618,7 +627,7 @@ const BUILT: Built[] = [
       { itemKey: 'pop_family_potato', qty: 1 },
     ],
     scopes: ['sc_pop_5pcs_family_potato'],
-    temporal: dr(OBSERVED_AT, '2026-09-30'),
+    temporal: oau(OBSERVED_AT, '2026-09-30'),
     holiday: 'UNKNOWN',
     channels: ['SALON', 'TAKEAWAY'],
     locations: { exclude: ['selected'] },
@@ -760,7 +769,7 @@ const BUILT: Built[] = [
     selector: 'FOOD_ONLY',
     sig: 'ELIGIBLE_BILL',
     scopes: ['sc_embarcadero_food'],
-    temporal: dr(OBSERVED_AT, '2026-12-31'),
+    temporal: oau(OBSERVED_AT, '2026-12-31'),
     holiday: 'NONE',
     channels: ['SALON', 'PICKUP'],
     eligibility: 'DETERMINISTIC_PUBLIC',

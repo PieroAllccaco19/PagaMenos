@@ -31,6 +31,22 @@ const centimos = z.number().int().nonnegative();
 const merchantId = z.enum(MERCHANT_IDS);
 const selector = z.enum(ELIGIBLE_SPEND_SELECTORS);
 
+/** True iff `s` is a real YYYY-MM-DD calendar date (interpreted on the America/Lima calendar). */
+export function isValidLocalDate(s: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return false;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return false;
+  // Reconstruct via UTC (calendar-only; no zone math) and require the parts to round-trip,
+  // rejecting overflow dates like 2026-02-30 or 2026-13-01.
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
+}
+
+const localDate = z.string().refine(isValidLocalDate, {
+  message: 'invalid local (America/Lima) calendar date, expected YYYY-MM-DD',
+});
+
 const capSchema = z.union([
   z.strictObject({ kind: z.literal('AMOUNT'), centimos }),
   z.strictObject({ kind: z.literal('UNKNOWN_NOT_STATED') }),
@@ -87,6 +103,13 @@ const temporalSchema = z.discriminatedUnion('kind', [
     kind: z.literal('LOCAL_DATETIME_RANGE'),
     startInclusive: z.string(),
     endExclusive: z.string(),
+  }),
+  // Start unknown, but observed active until a published end. `observedActiveAt` is provenance,
+  // NOT a provider-declared campaign start; both dates must be valid Lima calendar dates.
+  z.strictObject({
+    kind: z.literal('OBSERVED_ACTIVE_UNTIL'),
+    observedActiveAt: localDate,
+    endDateInclusive: localDate,
   }),
 ]);
 
