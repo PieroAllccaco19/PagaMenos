@@ -1,0 +1,242 @@
+// PagaMenos · Zod schema for the serialized corpus (syntactic/shape validity).
+// Strict objects REJECT unknown keys — this is where superseded fields
+// (minSpendCentimos, Benefit.minimumSpendCentimos, minimumSpendBasis) are rejected.
+// Semantic validity (RT-04/RT-06 invariants) lives in lint.ts, not here.
+import { z } from 'zod';
+
+import {
+  AVAILABILITY_STATES,
+  CHANNELS,
+  COMPARISON_BASES,
+  CONFIDENCE_LEVELS,
+  CONTEXT_REQS,
+  DECISION_CLASSES,
+  ELIGIBILITY_CLASSES,
+  ELIGIBLE_SPEND_SELECTORS,
+  HOLIDAY_POLICIES,
+  MERCHANT_IDS,
+  NOMINAL_UNITS,
+  OVERLAP_CLASSES,
+  PROVIDER_FAMILIES,
+  PUBLICATION_STATES,
+  PURCHASE_DOMAINS,
+  PURCHASE_SIGNATURE_KINDS,
+  ROUNDING_RULES,
+  SOURCE_QUALITY_STATES,
+  WEEKDAYS,
+} from './ids';
+import type { Corpus } from './types';
+
+const centimos = z.number().int().nonnegative();
+const merchantId = z.enum(MERCHANT_IDS);
+const selector = z.enum(ELIGIBLE_SPEND_SELECTORS);
+
+const capSchema = z.union([
+  z.strictObject({ kind: z.literal('AMOUNT'), centimos }),
+  z.strictObject({ kind: z.literal('UNKNOWN_NOT_STATED') }),
+]);
+
+const benefitSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.literal('PERCENT'),
+    percentBps: z.number().int().positive(),
+    rounding: z.enum(ROUNDING_RULES),
+  }),
+  z.strictObject({
+    type: z.literal('FIXED_DISCOUNT'),
+    fixedDiscountCentimos: centimos,
+    amountDependent: z.boolean(),
+  }),
+  z.strictObject({
+    type: z.literal('FIXED_PRICE'),
+    fixedPriceCentimos: centimos,
+    regularReferenceCentimos: centimos.optional(),
+  }),
+  z.strictObject({
+    type: z.literal('TWO_FOR_ONE'),
+    pay: z.number().int().positive(),
+    of: z.number().int().positive(),
+  }),
+  z.strictObject({
+    type: z.literal('FIXED_BUNDLE'),
+    bundlePriceCentimos: centimos,
+    regularReferenceCentimos: centimos.optional(),
+  }),
+  z.strictObject({
+    type: z.literal('CASHBACK'),
+    valueCentimos: centimos,
+    settlementDelay: z.string().min(1),
+  }),
+  z.strictObject({
+    type: z.literal('NON_CASH_NOMINAL'),
+    nominalMinorUnits: z.number().int().positive(),
+    nominalUnit: z.enum(NOMINAL_UNITS),
+    cashAcquisitionCostCentimos: centimos,
+  }),
+]);
+
+const spendThresholdSchema = z.strictObject({ minimumSpendCentimos: centimos, basis: selector });
+
+const temporalSchema = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('LOCAL_DATE_RANGE'),
+    startDateInclusive: z.string(),
+    endDateInclusive: z.string(),
+  }),
+  z.strictObject({
+    kind: z.literal('LOCAL_DATETIME_RANGE'),
+    startInclusive: z.string(),
+    endExclusive: z.string(),
+  }),
+]);
+
+const constraintsSchema = z.strictObject({
+  temporal: temporalSchema,
+  weekdays: z.array(z.enum(WEEKDAYS)).optional(),
+  timeWindow: z.strictObject({ from: z.string(), to: z.string() }).optional(),
+  holidayPolicy: z.enum(HOLIDAY_POLICIES),
+  specificBlackoutDates: z.array(z.string()).optional(),
+  minimumSpend: spendThresholdSchema.optional(),
+  cap: capSchema.optional(),
+  channels: z.array(z.enum(CHANNELS)).optional(),
+  locations: z
+    .strictObject({
+      include: z.array(z.string()).optional(),
+      exclude: z.array(z.string()).optional(),
+    })
+    .optional(),
+  products: z
+    .strictObject({
+      includeSku: z.array(z.string()).optional(),
+      excludeSku: z.array(z.string()).optional(),
+    })
+    .optional(),
+  useLimit: z
+    .strictObject({
+      per: z.enum(['DAY', 'ORDER', 'MONTH', 'CAMPAIGN']),
+      count: z.number().int().positive(),
+    })
+    .optional(),
+  stock: z
+    .strictObject({ known: z.boolean(), remaining: z.number().int().nonnegative().optional() })
+    .optional(),
+  cardNetwork: z.enum(['AMEX', 'VISA', 'MC', 'ANY']).optional(),
+  cardTier: z.string().optional(),
+  membership: z.string().optional(),
+  providerPrivateKey: z.string().optional(),
+  combinability: z.enum(['NO', 'UNKNOWN', 'YES']),
+});
+
+const canonicalItemSchema = z.strictObject({ itemKey: z.string().min(1), qty: z.number().int() });
+
+const signatureSchema = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('EXACT_BUNDLE'),
+    merchantId,
+    canonicalItems: z.array(canonicalItemSchema).min(1),
+  }),
+  z.strictObject({
+    kind: z.literal('ELIGIBLE_BILL'),
+    merchantId,
+    purchaseDomain: z.enum(PURCHASE_DOMAINS),
+  }),
+  z.strictObject({
+    kind: z.literal('TICKETS'),
+    merchantId,
+    ticketCount: z.number().int().positive(),
+    ticketClass: z.string().min(1),
+  }),
+  z.strictObject({
+    kind: z.literal('NOMINAL_PACKAGE'),
+    merchantId,
+    cashAcquisitionCostCentimos: centimos,
+    nominalUnit: z.enum(NOMINAL_UNITS),
+  }),
+]);
+
+const scopeSchema = z.strictObject({
+  scopeId: z.string().min(1),
+  merchantId,
+  comparisonBasis: z.enum(COMPARISON_BASES),
+  equivalenceGroup: z.string().min(1),
+  purchaseKind: z.string().min(1),
+  requiredContext: z.array(z.enum(CONTEXT_REQS)),
+  allowedSelectors: z.array(selector).min(1),
+  signature: signatureSchema,
+});
+
+const provenanceSchema = z.strictObject({
+  sourceId: z.string().min(1),
+  url: z.string().min(1),
+  observedAt: z.string().min(1),
+});
+
+const ruleSchema = z.strictObject({
+  ruleId: z.string().min(1),
+  version: z.number().int().positive(),
+  campaignId: z.string().min(1),
+  merchantIds: z.array(merchantId).min(1),
+  providerFamily: z.enum(PROVIDER_FAMILIES),
+  benefit: benefitSchema,
+  eligibleSpendSelector: selector,
+  canonicalItems: z.array(canonicalItemSchema).min(1).optional(),
+  ticketContext: z
+    .strictObject({ ticketCount: z.number().int().positive(), ticketClass: z.string().min(1) })
+    .optional(),
+  constraints: constraintsSchema,
+  eligibilityClass: z.enum(ELIGIBILITY_CLASSES),
+  confidence: z.enum(CONFIDENCE_LEVELS),
+  comparisonScopeRefs: z.array(z.string().min(1)).min(1),
+  signatureKind: z.enum(PURCHASE_SIGNATURE_KINDS),
+  provenance: provenanceSchema,
+});
+
+const operationalSchema = z.strictObject({
+  ruleId: z.string().min(1),
+  version: z.number().int().positive(),
+  publicationState: z.enum(PUBLICATION_STATES),
+  sourceQualityState: z.enum(SOURCE_QUALITY_STATES),
+  availability: z.enum(AVAILABILITY_STATES),
+  asOf: z.string().min(1),
+  note: z.string().optional(),
+});
+
+const merchantSchema = z.strictObject({
+  merchantId,
+  displayName: z.string().min(1),
+  category: z.enum(['FOOD', 'ENTERTAINMENT']),
+  aliases: z.array(z.string()).optional(),
+});
+
+const sourceSchema = z.strictObject({
+  sourceId: z.string().min(1),
+  providerFamily: z.enum(PROVIDER_FAMILIES),
+  url: z.string().min(1),
+  label: z.string().min(1),
+});
+
+const researchMetaSchema = z.strictObject({
+  merchantId,
+  overlapClass: z.enum(OVERLAP_CLASSES),
+  decisionClass: z.enum(DECISION_CLASSES),
+  verifyFirstOverlay: z.boolean(),
+});
+
+export const corpusSchema = z.strictObject({
+  corpusId: z.string().min(1),
+  freezeTimestamp: z.string().min(1),
+  merchants: z.array(merchantSchema),
+  sources: z.array(sourceSchema),
+  scopes: z.array(scopeSchema),
+  activeRules: z.array(ruleSchema),
+  operationalStates: z.array(operationalSchema),
+  researchMeta: z.array(researchMetaSchema),
+  excludedRules: z.array(
+    z.strictObject({ rule: ruleSchema, operational: operationalSchema, reason: z.string().min(1) }),
+  ),
+});
+
+/** Validate the serialized corpus shape (throws ZodError on failure). */
+export function parseCorpus(raw: unknown): Corpus {
+  return corpusSchema.parse(raw) as Corpus;
+}

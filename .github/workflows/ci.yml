@@ -37,6 +37,10 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # Offline corpus gate: schema + semantic lint + frozen reconciliation. No DB/network.
+      - name: Corpus validate
+        run: pnpm corpus:validate
+
       - name: Build
         run: pnpm build
 
