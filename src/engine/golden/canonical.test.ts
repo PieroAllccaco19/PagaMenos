@@ -16,6 +16,7 @@ import {
   frozenExcluded,
   frozenRule,
   frozenScope,
+  nominalPackageOf,
   opState,
   runGolden,
   toInput,
@@ -110,6 +111,7 @@ describe('FIX03 — Baco S/150 @ 20%: three capped 20% offers tie; unknown-cap I
       channel: 'SALON',
       branch: 'listed', // BV-IBK-01 requires the 'listed' branch — it IS applicable here
       wholeBillCentimos: 15000,
+      purchaseDomain: 'RESTAURANT_BILL', // sc_baco_bill signature domain
     },
     intendedTransactionAt: TUE,
   });
@@ -122,6 +124,8 @@ describe('FIX03 — Baco S/150 @ 20%: three capped 20% offers tie; unknown-cap I
   });
   it('CONFIRMED_TIE among the confirmed candidates — no false BEST_CONFIRMED manufactured', () => {
     expect(final?.status).toBe('CONFIRMED_TIE');
+    // A tie has NO unique winner — winnerRef is omitted; truth is the confirmed top set (RTM3-03).
+    expect(final?.winnerRef).toBeUndefined();
     // The confirmed top set is the three capped candidates; the unknown-cap IBK could still join it,
     // so the top set is NOT complete (RTM3-03 §9).
     const topIds = final?.confirmedTopRuleRefs.map((r) => r.ruleId).sort();
@@ -152,6 +156,7 @@ describe('FIX04 — Baco S/1000 @ 20%: unknown-cap IBK becomes decision-material
       channel: 'SALON',
       branch: 'listed',
       wholeBillCentimos: 100000,
+      purchaseDomain: 'RESTAURANT_BILL',
     },
     intendedTransactionAt: TUE,
   });
@@ -238,6 +243,7 @@ describe('FIX06 — Embarcadero 41 bill S/150: day / channel switch flips applic
       ...base,
       context: {
         merchantId: 'm_embarcadero_41',
+        purchaseDomain: 'RESTAURANT_FOOD',
         channel: 'SALON',
         foodCentimos: 15000,
         wholeBillCentimos: 15000,
@@ -256,6 +262,7 @@ describe('FIX06 — Embarcadero 41 bill S/150: day / channel switch flips applic
       ...base,
       context: {
         merchantId: 'm_embarcadero_41',
+        purchaseDomain: 'RESTAURANT_FOOD',
         channel: 'SALON',
         foodCentimos: 15000,
         wholeBillCentimos: 15000,
@@ -273,6 +280,7 @@ describe('FIX06 — Embarcadero 41 bill S/150: day / channel switch flips applic
       ...base,
       context: {
         merchantId: 'm_embarcadero_41',
+        purchaseDomain: 'RESTAURANT_FOOD',
         channel: 'PICKUP',
         foodCentimos: 15000,
         wholeBillCentimos: 15000,
@@ -304,6 +312,7 @@ describe('FIX07 — Perroquet: per-rule EligibleSpendSelector drives the winner 
       ...base,
       context: {
         merchantId: 'm_perroquet',
+        purchaseDomain: 'SIT_DOWN_MEAL',
         channel: 'SALON',
         foodCentimos: 10000,
         nonAlcoholicBeverageCentimos: 2000,
@@ -323,6 +332,7 @@ describe('FIX07 — Perroquet: per-rule EligibleSpendSelector drives the winner 
       ...base,
       context: {
         merchantId: 'm_perroquet',
+        purchaseDomain: 'SIT_DOWN_MEAL',
         channel: 'SALON',
         foodCentimos: 10000,
         nonAlcoholicBeverageCentimos: 6000,
@@ -353,6 +363,7 @@ describe('FIX08 — TGI Fridays location/calendar switch (RTM3-02 corrected: IBK
     channel: 'SALON' as const,
     foodCentimos: 15000,
     wholeBillCentimos: 15000,
+    purchaseDomain: 'RESTAURANT_FOOD' as const, // sc_fridays_food signature domain
     ...over,
   });
 
@@ -376,6 +387,7 @@ describe('FIX08 — TGI Fridays location/calendar switch (RTM3-02 corrected: IBK
     expect(candidate(f, 'FR-IBK-01')?.effectiveCostCentimos).toBe(11250);
     expect(candidate(f, 'FR-SIP-01')?.effectiveCostCentimos).toBe(11250);
     expect(f?.status).toBe('CONFIRMED_TIE');
+    expect(f?.winnerRef).toBeUndefined(); // no unique winner for a tie (RTM3-03)
     expect(f?.confirmedTopRuleRefs.map((r) => r.ruleId).sort()).toEqual(['FR-IBK-01', 'FR-SIP-01']);
   });
 
@@ -437,6 +449,7 @@ describe('FIX09 — Fridays Qore: a provider-private overlay stays advisory, nev
         branch: 'miraflores',
         foodCentimos: 15000,
         wholeBillCentimos: 15000,
+        purchaseDomain: 'RESTAURANT_FOOD',
       },
       intendedTransactionAt: TUE,
     });
@@ -541,7 +554,11 @@ describe('FIX11 — Coney nominal packages: same-unit nominal ranking, never a f
       ],
       scopes: [frozenScope('sc_coney_park_play')],
       portfolio: { instruments: [{ family: 'SIP_OH' }, { family: 'DINERS' }] },
-      context: { merchantId: 'm_coney_park', channel: 'PICKUP' },
+      context: {
+        merchantId: 'm_coney_park',
+        channel: 'PICKUP',
+        nominalPackage: nominalPackageOf(frozenScope('sc_coney_park_play')),
+      },
       intendedTransactionAt: TUE,
     });
     expect(f?.comparisonBasis).toBe('NOMINAL_VALUE_SAME_UNIT');
@@ -550,6 +567,11 @@ describe('FIX11 — Coney nominal packages: same-unit nominal ranking, never a f
       unit: 'CONEY_PLAY_BALANCE',
     });
     expect(f?.status).toBe('CONFIRMED_TIE');
+    expect(f?.winnerRef).toBeUndefined(); // a tie has no unique winner (RTM3-03)
+    expect(f?.confirmedTopRuleRefs.map((r) => r.ruleId).sort()).toEqual([
+      'CON-DIN-P-01',
+      'CON-SIP-01',
+    ]);
     expect(f?.candidates.every((c) => c.penSavedCentimos === undefined)).toBe(true);
   });
 
@@ -564,11 +586,15 @@ describe('FIX11 — Coney nominal packages: same-unit nominal ranking, never a f
       ],
       scopes: [frozenScope('sc_coney_active_play')],
       portfolio: { instruments: [{ family: 'SIP_OH' }, { family: 'DINERS' }] },
-      context: { merchantId: 'm_coney_active', channel: 'PICKUP' },
+      context: {
+        merchantId: 'm_coney_active',
+        channel: 'PICKUP',
+        nominalPackage: nominalPackageOf(frozenScope('sc_coney_active_play')),
+      },
       intendedTransactionAt: TUE,
     });
     expect(f?.status).toBe('BEST_CONFIRMED');
-    expect(f?.winnerRef?.ruleId).toBe('CON-DIN-A-01');
+    expect(f?.winnerRef?.ruleId).toBe('CON-DIN-A-01'); // unique winner keeps winnerRef
     expect(f?.delta).toEqual({
       kind: 'NOMINAL_VALUE',
       amountMinorUnits: 100, // corpus minor units (S/86 − S/85 = S/1 = 100 balance units)

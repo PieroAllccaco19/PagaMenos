@@ -13,6 +13,7 @@ import { CORPUS_V1 } from '@/corpus';
 import type {
   CanonicalItemQty,
   ComparisonScope,
+  PurchaseDomain,
   RuleOperationalState,
   RuleVersion,
 } from '@/corpus';
@@ -24,6 +25,7 @@ import type {
   EligibilityPortfolio,
   EngineDecisionResult,
   PurchaseContext,
+  RuntimeNominalPackage,
 } from '../types';
 
 /** Fetch a frozen active rule by id (throws if absent — a fixture typo must fail loudly). */
@@ -53,6 +55,25 @@ export function exactItemsOf(scope: ComparisonScope): CanonicalItemQty[] {
     throw new Error(`golden harness: scope '${scope.scopeId}' is not an EXACT_BUNDLE`);
   }
   return scope.signature.canonicalItems;
+}
+
+/** The frozen purchaseDomain of an ELIGIBLE_BILL scope (RTM3-01) — the real runtime bill domain. */
+export function purchaseDomainOf(scope: ComparisonScope): PurchaseDomain {
+  if (scope.signature.kind !== 'ELIGIBLE_BILL') {
+    throw new Error(`golden harness: scope '${scope.scopeId}' is not an ELIGIBLE_BILL`);
+  }
+  return scope.signature.purchaseDomain;
+}
+
+/** The frozen nominal-package proof of a NOMINAL_PACKAGE scope (RTM3-01). */
+export function nominalPackageOf(scope: ComparisonScope): RuntimeNominalPackage {
+  if (scope.signature.kind !== 'NOMINAL_PACKAGE') {
+    throw new Error(`golden harness: scope '${scope.scopeId}' is not a NOMINAL_PACKAGE`);
+  }
+  return {
+    cashAcquisitionCostCentimos: scope.signature.cashAcquisitionCostCentimos,
+    nominalUnit: scope.signature.nominalUnit,
+  };
 }
 
 /**

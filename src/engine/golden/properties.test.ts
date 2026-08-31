@@ -4,10 +4,11 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import type { ProviderFamily, RuleOperationalState, RuleVersion } from '@/corpus';
+import type { NominalUnit, ProviderFamily, RuleOperationalState, RuleVersion } from '@/corpus';
 import { decide } from '../decide';
 import type { DecideInput, EligibilityPortfolio, PurchaseContext } from '../types';
 import {
+  billScope,
   cashbackRule,
   costScope,
   fixedRule,
@@ -383,7 +384,10 @@ describe('P14 — nominal ranking requires same unit + known + equal cost + same
       operationalStates: rules.map((r) => synOp(r.ruleId, { availability: 'NOT_APPLICABLE' })),
       scopes: [nominalScope()],
       portfolio: PORTFOLIO,
-      context: { merchantId: 'm_coney_park' },
+      context: {
+        merchantId: 'm_coney_park',
+        nominalPackage: { cashAcquisitionCostCentimos: 4500, nominalUnit: 'CONEY_PLAY_BALANCE' },
+      },
       evaluatedAt: AT,
       intendedTransactionAt: AT,
     }).final;
@@ -449,7 +453,13 @@ describe('P15 — a valid nominal comparison never emits a PEN rank delta', () =
             ],
             scopes: [nominalScope()],
             portfolio: PORTFOLIO,
-            context: { merchantId: 'm_coney_park' },
+            context: {
+              merchantId: 'm_coney_park',
+              nominalPackage: {
+                cashAcquisitionCostCentimos: 4500,
+                nominalUnit: 'CONEY_PLAY_BALANCE',
+              },
+            },
             evaluatedAt: AT,
             intendedTransactionAt: AT,
           }).final;
@@ -612,5 +622,75 @@ describe('P20 — céntimo settlement is EXACT against an independent BigInt ora
         },
       ),
     );
+  });
+});
+
+// ---------------------------------------- P21 ELIGIBLE_BILL structural signature proof (RTM3-01)
+describe('P21 — any purchaseDomain ≠ the scope signature makes the selected bill scope non-rankable', () => {
+  it('a mismatched purchaseDomain never confirms an ELIGIBLE_BILL winner (selectedScopeId cannot override)', () => {
+    // billScope() signature domain is RESTAURANT_BILL.
+    const wrong = ['RESTAURANT_FOOD', 'SIT_DOWN_MEAL', 'CINEMA_CANDYBAR', 'UVK_OPERA'] as const;
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...wrong),
+        fc.integer({ min: 100, max: 40000 }),
+        (domain, bill) => {
+          const f = decide({
+            rules: [percentRule('A', 'IBK_PLIN', 2000, { scopeRefs: ['syn_bill'] })],
+            operationalStates: [synOp('A')],
+            scopes: [billScope('syn_bill')],
+            portfolio: PORTFOLIO,
+            context: { merchantId: 'm_fridays', purchaseDomain: domain, wholeBillCentimos: bill },
+            evaluatedAt: AT,
+            intendedTransactionAt: AT,
+            selectedScopeId: 'syn_bill',
+          }).final;
+          return f?.status !== 'BEST_CONFIRMED' && f?.candidates.every((c) => !c.rankable) === true;
+        },
+      ),
+    );
+  });
+});
+
+// ---------------------------------------- P22 NOMINAL_PACKAGE structural signature proof (RTM3-01)
+describe('P22 — any nominal-package unit/cost ≠ the scope signature makes the scope non-rankable', () => {
+  const runNom = (nominalPackage: PurchaseContext['nominalPackage']) =>
+    decide({
+      rules: [
+        nominalRule('X', 'SIP_OH', 8500, 4500, { merchantIds: ['m_coney_park'] }),
+        nominalRule('Y', 'DINERS', 8600, 4500, { merchantIds: ['m_coney_park'] }),
+      ],
+      operationalStates: [
+        synOp('X', { availability: 'NOT_APPLICABLE' }),
+        synOp('Y', { availability: 'NOT_APPLICABLE' }),
+      ],
+      scopes: [nominalScope()],
+      portfolio: PORTFOLIO,
+      context: { merchantId: 'm_coney_park', ...(nominalPackage ? { nominalPackage } : {}) },
+      evaluatedAt: AT,
+      intendedTransactionAt: AT,
+    }).final;
+
+  it('a wrong acquisition cost (≠ 4500) never ranks', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 100000 }).filter((c) => c !== 4500),
+        (cost) => {
+          const f = runNom({
+            cashAcquisitionCostCentimos: cost,
+            nominalUnit: 'CONEY_PLAY_BALANCE',
+          });
+          return f?.winnerRef === undefined && f?.candidates.every((c2) => !c2.rankable) === true;
+        },
+      ),
+    );
+  });
+  it('a wrong nominal unit never ranks', () => {
+    const f = runNom({
+      cashAcquisitionCostCentimos: 4500,
+      nominalUnit: 'OTHER_UNIT' as NominalUnit,
+    });
+    expect(f?.winnerRef).toBeUndefined();
+    expect(f?.candidates.every((c) => !c.rankable)).toBe(true);
   });
 });

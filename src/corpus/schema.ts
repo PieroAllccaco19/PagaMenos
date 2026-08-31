@@ -28,7 +28,12 @@ import {
 import { isValidInstant } from './instant';
 import type { Corpus } from './types';
 
-const centimos = z.number().int().nonnegative();
+// RTM3-11: monetary/nominal integers must be SAFE integers — `z.number().int()` accepts values above
+// Number.MAX_SAFE_INTEGER (still "integers") where arithmetic silently loses precision.
+const safeInt = (schema: z.ZodNumber) =>
+  schema.refine(Number.isSafeInteger, { message: 'must be a safe integer (|value| ≤ 2^53−1)' });
+const centimos = safeInt(z.number().int().nonnegative());
+const nominalMinorUnits = safeInt(z.number().int().positive());
 const strictInstant = z.string().refine(isValidInstant, {
   message: 'invalid ISO-8601 instant; a zone-qualified date-time (Z or ±HH:MM) is required',
 });
@@ -89,7 +94,7 @@ const benefitSchema = z.discriminatedUnion('type', [
   }),
   z.strictObject({
     type: z.literal('NON_CASH_NOMINAL'),
-    nominalMinorUnits: z.number().int().positive(),
+    nominalMinorUnits,
     nominalUnit: z.enum(NOMINAL_UNITS),
     // Optional ⇒ absent models an explicit UNKNOWN cost; a present value must be a valid céntimo.
     cashAcquisitionCostCentimos: centimos.optional(),

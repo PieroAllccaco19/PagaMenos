@@ -196,7 +196,10 @@ describe('ADV — nominal: same unit + unequal cash cost cannot just maximize no
       ],
       scopes: [nominalScope()],
       portfolio: ALL,
-      context: { merchantId: 'm_coney_park' },
+      context: {
+        merchantId: 'm_coney_park',
+        nominalPackage: { cashAcquisitionCostCentimos: 4500, nominalUnit: 'CONEY_PLAY_BALANCE' },
+      },
       evaluatedAt: AT,
       intendedTransactionAt: AT,
     }).final;
@@ -217,7 +220,10 @@ describe('ADV — nominal: different units cannot be compared', () => {
       ],
       scopes: [nominalScope()],
       portfolio: ALL,
-      context: { merchantId: 'm_coney_park' },
+      context: {
+        merchantId: 'm_coney_park',
+        nominalPackage: { cashAcquisitionCostCentimos: 4500, nominalUnit: 'CONEY_PLAY_BALANCE' },
+      },
       evaluatedAt: AT,
       intendedTransactionAt: AT,
     }).final;
@@ -238,7 +244,10 @@ describe('ADV — non-finite / negative money fails closed', () => {
         ],
         scopes: [nominalScope()],
         portfolio: ALL,
-        context: { merchantId: 'm_coney_park' },
+        context: {
+          merchantId: 'm_coney_park',
+          nominalPackage: { cashAcquisitionCostCentimos: 4500, nominalUnit: 'CONEY_PLAY_BALANCE' },
+        },
         evaluatedAt: AT,
         intendedTransactionAt: AT,
       });

@@ -4,7 +4,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import type { RuleOperationalState, RuleVersion } from '@/corpus';
+import type { NominalUnit, RuleOperationalState, RuleVersion } from '@/corpus';
 import { decide } from '../decide';
 import { CanonicalInputError, SettlementInvariantError, TemporalInputError } from '../errors';
 import { percentDiscountCentimos } from '../money';
@@ -15,13 +15,24 @@ import {
   finalOf,
   frozenRule,
   frozenScope,
+  nominalPackageOf,
   opState,
   PORTFOLIO_ALL,
   runGolden,
 } from './harness';
-import { billScope, costScope, fixedRule, percentRule, synOp } from './synthetic';
+import {
+  billScope,
+  costScope,
+  fixedRule,
+  nominalRule,
+  nominalScope,
+  percentRule,
+  synOp,
+} from './synthetic';
 
 const AT = '2026-09-01T12:00:00-05:00';
+const WED = '2026-09-02T12:00:00-05:00';
+const UNSAFE = Number.MAX_SAFE_INTEGER + 1;
 
 // ============================================================ RTM3-01 signature enforcement
 describe('RTM3-01 — runtime PurchaseSignature enforcement (a boolean cannot prove the bundle)', () => {
@@ -157,7 +168,12 @@ describe('RTM3-04/11 — monetary input validation (fail closed, never a nonsens
       operationalStates: [synOp('A')],
       scopes: [billScope('syn_bill')],
       portfolio: PORTFOLIO_ALL,
-      context: { merchantId: 'm_fridays', wholeBillCentimos: 10000, ...ctx },
+      context: {
+        merchantId: 'm_fridays',
+        purchaseDomain: 'RESTAURANT_BILL',
+        wholeBillCentimos: 10000,
+        ...ctx,
+      },
       evaluatedAt: AT,
       intendedTransactionAt: AT,
     });
@@ -201,7 +217,11 @@ describe('RTM3-04/11 — monetary input validation (fail closed, never a nonsens
         operationalStates: [synOp('A')],
         scopes: [billScope('syn_bill')],
         portfolio: PORTFOLIO_ALL,
-        context: { merchantId: 'm_fridays', wholeBillCentimos: 10000 },
+        context: {
+          merchantId: 'm_fridays',
+          purchaseDomain: 'RESTAURANT_BILL',
+          wholeBillCentimos: 10000,
+        },
         evaluatedAt: AT,
         intendedTransactionAt: AT,
       }),
@@ -406,5 +426,192 @@ describe('RTM3-10 — combined uncertainty is safely resolvable only if EVERY ax
     expect(f?.status).toBe('BEST_CONFIRMED');
     expect(f?.winnerRef?.ruleId).toBe('A');
     expect(candidate(f, 'B')?.advisories).toContain('DYNAMIC_AVAILABILITY');
+  });
+});
+
+// ============================================================ RTM3-01 (2nd) ELIGIBLE_BILL domain
+describe('RTM3-01 (2nd closure) — ELIGIBLE_BILL runtime proof: purchaseDomain, not merchant', () => {
+  // Real Corpus-v1 UVK bill scopes: candy-bar (CINEMA_CANDYBAR) vs opera (UVK_OPERA).
+  const ibkCombo = frozenRule('UVK-IBK-02'); // sc_uvk_combos, CINEMA_CANDYBAR
+  const dinOpera = frozenRule('UVK-DIN-03'); // sc_uvk_opera, UVK_OPERA
+  const comboScope = frozenScope('sc_uvk_combos');
+  const operaScope = frozenScope('sc_uvk_opera');
+  const run = (
+    purchaseDomain: 'CINEMA_CANDYBAR' | 'UVK_OPERA' | undefined,
+    selectedScopeId: string,
+  ) =>
+    runGolden({
+      rules: [ibkCombo, dinOpera],
+      operationalStates: [
+        opState('UVK-IBK-02', { availability: 'NOT_APPLICABLE' }),
+        opState('UVK-DIN-03', { availability: 'NOT_APPLICABLE' }),
+      ],
+      scopes: [comboScope, operaScope],
+      context: {
+        merchantId: 'm_uvk',
+        channel: 'BOX_OFFICE',
+        branch: 'selected',
+        wholeBillCentimos: 5000,
+        ...(purchaseDomain ? { purchaseDomain } : {}),
+      },
+      selectedScopeId,
+      intendedTransactionAt: WED,
+    });
+
+  it('candy-bar domain + candy-bar scope ⇒ evaluates; + opera scope ⇒ NO opera winner', () => {
+    expect(run('CINEMA_CANDYBAR', 'sc_uvk_combos').final?.status).toBe('BEST_CONFIRMED');
+    const opera = run('CINEMA_CANDYBAR', 'sc_uvk_opera').final;
+    expect(opera?.status).not.toBe('BEST_CONFIRMED');
+    expect(candidate(opera, 'UVK-DIN-03')?.rankable).toBe(false);
+  });
+  it('opera domain + opera scope ⇒ evaluates; + candy-bar scope ⇒ NO candy-bar winner', () => {
+    expect(run('UVK_OPERA', 'sc_uvk_opera').final?.status).toBe('BEST_CONFIRMED');
+    const combo = run('UVK_OPERA', 'sc_uvk_combos').final;
+    expect(combo?.status).not.toBe('BEST_CONFIRMED');
+    expect(candidate(combo, 'UVK-IBK-02')?.rankable).toBe(false);
+  });
+  it('missing purchaseDomain ⇒ MISSING_CONTEXT for either selected bill scope (no confirmed winner)', () => {
+    for (const sc of ['sc_uvk_combos', 'sc_uvk_opera']) {
+      const f = run(undefined, sc).final;
+      expect(f?.status).not.toBe('BEST_CONFIRMED');
+      expect(f?.candidates.every((c) => !c.rankable)).toBe(true);
+    }
+  });
+});
+
+// ============================================================ RTM3-01 (2nd) NOMINAL_PACKAGE proof
+describe('RTM3-01 (2nd closure) — NOMINAL_PACKAGE runtime proof (Coney), not merchant-only', () => {
+  const nomPort: EligibilityPortfolio = {
+    instruments: [{ family: 'SIP_OH' }, { family: 'DINERS' }],
+  };
+  const activeScope = frozenScope('sc_coney_active_play');
+  const parkScope = frozenScope('sc_coney_park_play');
+  const runActive = (nominalPackage: PurchaseContext['nominalPackage']) =>
+    finalOf({
+      rules: [frozenRule('CON-SIP-01'), frozenRule('CON-DIN-A-01')],
+      operationalStates: [
+        opState('CON-SIP-01', { availability: 'NOT_APPLICABLE' }),
+        opState('CON-DIN-A-01', { availability: 'NOT_APPLICABLE' }),
+      ],
+      scopes: [activeScope],
+      portfolio: nomPort,
+      context: {
+        merchantId: 'm_coney_active',
+        channel: 'PICKUP',
+        ...(nominalPackage ? { nominalPackage } : {}),
+      },
+      intendedTransactionAt: AT,
+    });
+
+  it('Coney Active with NO package facts ⇒ MISSING_CONTEXT (was a false BEST_CONFIRMED)', () => {
+    const f = runActive(undefined);
+    expect(f?.status).not.toBe('BEST_CONFIRMED');
+    expect(candidate(f, 'CON-DIN-A-01')?.rankable).toBe(false);
+    expect(candidate(f, 'CON-DIN-A-01')?.advisories).toContain('MISSING_CONTEXT');
+  });
+  it('Coney Active with the correct package (S/45, balance) ⇒ BEST_CONFIRMED Diners', () => {
+    const f = runActive(nominalPackageOf(activeScope));
+    expect(f?.status).toBe('BEST_CONFIRMED');
+    expect(f?.winnerRef?.ruleId).toBe('CON-DIN-A-01');
+  });
+  it('wrong acquisition cost ⇒ NO_MATCH (no nominal candidate ranks)', () => {
+    const f = runActive({ cashAcquisitionCostCentimos: 5000, nominalUnit: 'CONEY_PLAY_BALANCE' });
+    expect(f?.winnerRef).toBeUndefined();
+    expect(f?.candidates.every((c) => !c.rankable)).toBe(true);
+  });
+  it('wrong nominal unit ⇒ NO_MATCH', () => {
+    const f = runActive({
+      cashAcquisitionCostCentimos: 4500,
+      nominalUnit: 'OTHER_UNIT' as NominalUnit,
+    });
+    expect(f?.winnerRef).toBeUndefined();
+    expect(f?.candidates.every((c) => !c.rankable)).toBe(true);
+  });
+
+  it('Coney Park missing package ⇒ not a tie; correct package ⇒ CONFIRMED_TIE (winnerRef undefined)', () => {
+    const runPark = (nominalPackage: PurchaseContext['nominalPackage']) =>
+      finalOf({
+        rules: [frozenRule('CON-SIP-01'), frozenRule('CON-DIN-P-01')],
+        operationalStates: [
+          opState('CON-SIP-01', { availability: 'NOT_APPLICABLE' }),
+          opState('CON-DIN-P-01', { availability: 'NOT_APPLICABLE' }),
+        ],
+        scopes: [parkScope],
+        portfolio: nomPort,
+        context: {
+          merchantId: 'm_coney_park',
+          channel: 'PICKUP',
+          ...(nominalPackage ? { nominalPackage } : {}),
+        },
+        intendedTransactionAt: AT,
+      });
+    expect(runPark(undefined)?.status).not.toBe('CONFIRMED_TIE');
+    const tie = runPark(nominalPackageOf(parkScope));
+    expect(tie?.status).toBe('CONFIRMED_TIE');
+    expect(tie?.winnerRef).toBeUndefined();
+  });
+});
+
+// ============================================================ RTM3-01 (2nd) selectedScopeId invariant
+describe('RTM3-01 (2nd closure) — selectedScopeId never overrides a signature mismatch', () => {
+  it('TICKETS: selecting the 2-ticket scope with ticketCount 1 still does not rank', () => {
+    const f = finalOf({
+      rules: [frozenRule('UVK-IBK-01'), frozenRule('UVK-DIN-01')],
+      operationalStates: [
+        opState('UVK-IBK-01', { availability: 'NOT_APPLICABLE' }),
+        opState('UVK-DIN-01', { availability: 'NOT_APPLICABLE' }),
+      ],
+      scopes: [frozenScope('sc_uvk_2tickets')],
+      context: {
+        merchantId: 'm_uvk',
+        channel: 'BOX_OFFICE',
+        branch: 'selected',
+        ticketUnitPriceCentimos: 1800,
+        ticketCount: 1, // ≠ signature 2
+        ticketClass: 'STANDARD',
+      },
+      selectedScopeId: 'sc_uvk_2tickets',
+      intendedTransactionAt: WED,
+    });
+    expect(f?.status).not.toBe('BEST_CONFIRMED');
+    expect(f?.winnerRef).toBeUndefined();
+  });
+});
+
+// ============================================================ RTM3-11 (2nd) nominal safe-integer
+describe('RTM3-11 (2nd closure) — nominal economics reject unsafe integers (fail closed)', () => {
+  const runNom = (rules: RuleVersion[], nominalPackage: PurchaseContext['nominalPackage']) =>
+    decide({
+      rules,
+      operationalStates: rules.map((r) => synOp(r.ruleId, { availability: 'NOT_APPLICABLE' })),
+      scopes: [nominalScope()],
+      portfolio: { instruments: [{ family: 'SIP_OH' }, { family: 'DINERS' }] },
+      context: {
+        merchantId: 'm_coney_park',
+        ...(nominalPackage ? { nominalPackage } : {}),
+      },
+      evaluatedAt: AT,
+      intendedTransactionAt: AT,
+    });
+  const pkg = {
+    cashAcquisitionCostCentimos: 4500,
+    nominalUnit: 'CONEY_PLAY_BALANCE' as NominalUnit,
+  };
+
+  it('nominalMinorUnits = MAX_SAFE_INTEGER + 1 ⇒ typed rejection (no confirmed nominal winner)', () => {
+    const bad = nominalRule('X', 'SIP_OH', UNSAFE, 4500, { merchantIds: ['m_coney_park'] });
+    const good = nominalRule('Y', 'DINERS', 8500, 4500, { merchantIds: ['m_coney_park'] });
+    expect(() => runNom([bad, good], pkg)).toThrow(SettlementInvariantError);
+  });
+  it('runtime nominal acquisition cost = MAX_SAFE_INTEGER + 1 ⇒ typed rejection', () => {
+    const x = nominalRule('X', 'SIP_OH', 8500, UNSAFE, { merchantIds: ['m_coney_park'] });
+    const y = nominalRule('Y', 'DINERS', 8500, UNSAFE, { merchantIds: ['m_coney_park'] });
+    expect(() => runNom([x, y], pkg)).toThrow(SettlementInvariantError);
+  });
+  it('the context nominalPackage acquisition cost must also be a safe integer', () => {
+    const x = nominalRule('X', 'SIP_OH', 8500, 4500, { merchantIds: ['m_coney_park'] });
+    expect(() =>
+      runNom([x], { cashAcquisitionCostCentimos: UNSAFE, nominalUnit: 'CONEY_PLAY_BALANCE' }),
+    ).toThrow(SettlementInvariantError);
   });
 });

@@ -23,6 +23,7 @@ export type {
   PortfolioInstrument,
   EligibilityPortfolio,
   PurchaseContext,
+  RuntimeNominalPackage,
   BoundProof,
   PlausibleBound,
   RankDelta,

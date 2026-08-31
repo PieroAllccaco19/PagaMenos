@@ -66,4 +66,33 @@ describe('corpus schema (strict)', () => {
     };
     expect(() => parseCorpus(raw)).toThrow();
   });
+
+  // RTM3-11 (2nd closure): nominal economic values must be SAFE integers in the corpus itself.
+  const nominalIndex = (raw: any): number =>
+    raw.activeRules.findIndex((r: any) => r.benefit.type === 'NON_CASH_NOMINAL');
+
+  it('accepts the frozen Coney nominal rows (safe-integer values)', () => {
+    const raw = deepClone();
+    expect(nominalIndex(raw)).toBeGreaterThanOrEqual(0);
+    expect(() => parseCorpus(raw)).not.toThrow();
+  });
+
+  for (const bad of [Number.MAX_SAFE_INTEGER + 1, -1, 1.5]) {
+    it(`rejects nominalMinorUnits = ${bad}`, () => {
+      const raw = deepClone();
+      raw.activeRules[nominalIndex(raw)].benefit.nominalMinorUnits = bad;
+      expect(() => parseCorpus(raw)).toThrow();
+    });
+    it(`rejects nominal cashAcquisitionCostCentimos = ${bad}`, () => {
+      const raw = deepClone();
+      raw.activeRules[nominalIndex(raw)].benefit.cashAcquisitionCostCentimos = bad;
+      expect(() => parseCorpus(raw)).toThrow();
+    });
+    it(`rejects a NOMINAL_PACKAGE signature acquisition cost = ${bad}`, () => {
+      const raw = deepClone();
+      const scopeIdx = raw.scopes.findIndex((s: any) => s.signature.kind === 'NOMINAL_PACKAGE');
+      raw.scopes[scopeIdx].signature.cashAcquisitionCostCentimos = bad;
+      expect(() => parseCorpus(raw)).toThrow();
+    });
+  }
 });

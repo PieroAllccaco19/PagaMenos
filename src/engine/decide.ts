@@ -94,13 +94,43 @@ function matchPurchaseSignature(
       }
       return { kind: 'MATCH' };
     }
-    case 'ELIGIBLE_BILL':
-    case 'NOMINAL_PACKAGE':
-      // Composition is not the promotion identity; the merchant is already guaranteed by the
-      // decide() merchant filter. Per-rule bill/basket/nominal context is validated downstream.
-      return signature.merchantId === ctx.merchantId
+    case 'ELIGIBLE_BILL': {
+      // RTM3-01 (2nd closure): merchant is NOT sufficient — the runtime purchaseDomain must equal the
+      // scope's frozen domain (e.g. UVK candy-bar vs UVK opera must not be interchangeable).
+      if (signature.merchantId !== ctx.merchantId) {
+        return { kind: 'NO_MATCH', reason: 'merchant mismatch' };
+      }
+      if (ctx.purchaseDomain === undefined) return { kind: 'MISSING', missing: ['AMOUNT'] };
+      return ctx.purchaseDomain === signature.purchaseDomain
         ? { kind: 'MATCH' }
-        : { kind: 'NO_MATCH', reason: 'merchant mismatch' };
+        : {
+            kind: 'NO_MATCH',
+            reason: `purchase domain ${ctx.purchaseDomain} ≠ signature ${signature.purchaseDomain}`,
+          };
+    }
+    case 'NOMINAL_PACKAGE': {
+      // RTM3-01 (2nd closure): structured nominal-package proof (cash acquisition cost + unit) must
+      // match the frozen signature — merchant alone cannot distinguish a nominal package.
+      if (signature.merchantId !== ctx.merchantId) {
+        return { kind: 'NO_MATCH', reason: 'merchant mismatch' };
+      }
+      if (ctx.nominalPackage === undefined) return { kind: 'MISSING', missing: ['BASKET'] };
+      if (
+        ctx.nominalPackage.cashAcquisitionCostCentimos !== signature.cashAcquisitionCostCentimos
+      ) {
+        return {
+          kind: 'NO_MATCH',
+          reason: `nominal acquisition cost ${ctx.nominalPackage.cashAcquisitionCostCentimos} ≠ signature ${signature.cashAcquisitionCostCentimos}`,
+        };
+      }
+      if (ctx.nominalPackage.nominalUnit !== signature.nominalUnit) {
+        return {
+          kind: 'NO_MATCH',
+          reason: `nominal unit ${ctx.nominalPackage.nominalUnit} ≠ signature ${signature.nominalUnit}`,
+        };
+      }
+      return { kind: 'MATCH' };
+    }
     default: {
       const _e: never = signature;
       throw new SettlementInvariantError(`unhandled PurchaseSignature: ${JSON.stringify(_e)}`);
@@ -124,6 +154,13 @@ function validateContextMoney(ctx: PurchaseContext): void {
   ) {
     throw new SettlementInvariantError(
       `ticketCount must be a positive safe integer: ${ctx.ticketCount}`,
+    );
+  }
+  // Runtime nominal-package proof: the acquisition cost must be a safe non-negative integer (RTM3-11).
+  if (ctx.nominalPackage !== undefined) {
+    assertSafeCentimos(
+      ctx.nominalPackage.cashAcquisitionCostCentimos,
+      'nominalPackage.cashAcquisitionCostCentimos',
     );
   }
   // Subtotal consistency (RTM3-11): food/beverage are disjoint subtotals of the same payable bill.
@@ -886,13 +923,19 @@ function resolveDecision(
   const nominalRefused: Working[] = [];
   if (basis === 'NOMINAL_VALUE_SAME_UNIT') {
     const noms = workings.filter((w) => w.bucket === 'RANKABLE_NOMINAL');
-    // A PRESENT cash acquisition cost must be a finite integer ≥ 0 — an invalid number is a domain
-    // error (fail-closed), NOT an "unknown" value. Absence (undefined) is the explicit unknown.
+    // RTM3-11: both nominal economic values must be SAFE integers (isSafeInteger, not isInteger) —
+    // an unsafe/NaN/negative/fractional value is a domain error (fail-closed), never a winner. A
+    // PRESENT cash acquisition cost must additionally be ≥ 0; absence is the explicit unknown.
     for (const w of noms) {
-      const cost = w.cashAcquisitionCostCentimos;
-      if (cost !== undefined && (!Number.isFinite(cost) || !Number.isInteger(cost) || cost < 0)) {
+      if (w.nominalMinorUnits !== undefined && !Number.isSafeInteger(w.nominalMinorUnits)) {
         throw new SettlementInvariantError(
-          `invalid cash acquisition cost for ${w.ref.ruleId}: ${cost} (must be a finite integer ≥ 0)`,
+          `invalid nominal minor units for ${w.ref.ruleId}: ${w.nominalMinorUnits} (must be a safe integer)`,
+        );
+      }
+      const cost = w.cashAcquisitionCostCentimos;
+      if (cost !== undefined && (!Number.isSafeInteger(cost) || cost < 0)) {
+        throw new SettlementInvariantError(
+          `invalid cash acquisition cost for ${w.ref.ruleId}: ${cost} (must be a safe integer ≥ 0)`,
         );
       }
     }
@@ -954,13 +997,16 @@ function resolveDecision(
       tie = top.length > 1;
       runnerUp = sortedR.find((w) => w.nominalMinorUnits !== winnerNominal);
       const unit = winner!.nominalUnit!;
-      if (!tie && runnerUp)
-        delta = {
-          kind: 'NOMINAL_VALUE',
-          amountMinorUnits: winnerNominal - runnerUp.nominalMinorUnits!,
-          unit,
-        };
-      else if (tie) delta = { kind: 'NOMINAL_VALUE', amountMinorUnits: 0, unit };
+      if (!tie && runnerUp) {
+        const amountMinorUnits = winnerNominal - runnerUp.nominalMinorUnits!;
+        // RTM3-11 §19: even two individually-safe values must yield a safe-integer difference.
+        if (!Number.isSafeInteger(amountMinorUnits)) {
+          throw new SettlementInvariantError(
+            `nominal rank delta not a safe integer: ${amountMinorUnits}`,
+          );
+        }
+        delta = { kind: 'NOMINAL_VALUE', amountMinorUnits, unit };
+      } else if (tie) delta = { kind: 'NOMINAL_VALUE', amountMinorUnits: 0, unit };
     }
   }
 
@@ -1031,9 +1077,13 @@ function resolveDecision(
     return anyApplicable ? 'NO_SAFE_WINNER' : 'NO_APPLICABLE_BENEFIT';
   })();
 
-  // A confirmed status must not carry a stale winner value; winner is only surfaced when it stands.
+  // A confirmed status must not carry a stale winner value; the confirmed top set is only surfaced
+  // when the best value stands (BEST_CONFIRMED / LIKELY / CONFIRMED_TIE).
   const winnerStands =
     status === 'BEST_CONFIRMED' || status === 'CONFIRMED_TIE' || status === 'LIKELY';
+  // RTM3-03 (2nd closure): `winnerRef` denotes a UNIQUE confirmed best. A CONFIRMED_TIE has no single
+  // winner — its truth is `confirmedTopRuleRefs` — so `winnerRef`/`runnerUpRef` are omitted for a tie.
+  const hasUniqueWinner = (status === 'BEST_CONFIRMED' || status === 'LIKELY') && !tie;
 
   // ---- Top set (RTM3-03 §9): the confirmed best members, plus any candidate that could still join.
   const atBest = (w: Working): boolean =>
@@ -1066,8 +1116,8 @@ function resolveDecision(
     merchantId: scope.merchantId,
     comparisonBasis: basis,
     status,
-    winnerRef: winnerStands ? winner?.ref : undefined,
-    runnerUpRef: winnerStands && !tie ? runnerUp?.ref : undefined,
+    winnerRef: hasUniqueWinner ? winner?.ref : undefined,
+    runnerUpRef: hasUniqueWinner ? runnerUp?.ref : undefined,
     delta: winnerStands ? delta : null,
     confirmedTopRuleRefs: confirmedTop.map((w) => w.ref),
     possibleAdditionalTopRuleRefs: possibleAdditional.map((w) => w.ref),

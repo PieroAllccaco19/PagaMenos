@@ -448,3 +448,129 @@ adversarial,mutation-sanity}.ts`. **Report:** this section.
 ## C.18 Next action
 
 Submit the closure commit for **independent Codex Sol re-review**. Do not begin M3.5.
+
+---
+
+# M3 SECOND RED-TEAM CLOSURE PATCH (Codex Sol recheck "C — NO-GO" remediation)
+
+The independent Codex Sol closure **recheck** of `95d7255…` returned **C — M3 NO-GO** with three
+findings still PARTIAL: **RTM3-01 CRITICAL**, **RTM3-03 HIGH**, **RTM3-11 MEDIUM**. All other
+previously blocking findings stayed CLOSED; no new CRITICAL/HIGH. This second, narrow patch closes
+the three. Independent acceptance is **not** claimed. Chronology: first closure (`95d7255`) did **not**
+pass the recheck; this patch is the follow-up.
+
+## D.1 Second-closure verdict
+
+**PATCH COMPLETE — READY FOR RE-REVIEW.** Starting SHA `95d7255be8be2a79895e0e91f86f70a969ce912f`,
+working tree clean. All seven gates exit 0; **254 tests / 11 files**; corpus reconciliation PASS
+(14 / 46 / 16·12·10·8 / private 2 / O2 8·O3 2·O4 4 / CORE 7·ASSIST 3·DIRECTORY 4). No factual corpus
+change (`git diff 95d7255 -- src/corpus/data` empty).
+
+## D.2 RTM3 recheck matrix
+
+| ID | Sev | Status | Evidence |
+| --- | --- | --- | --- |
+| RTM3-01 runtime PurchaseSignature | CRITICAL | **CLOSED** | matcher now proves ALL FOUR kinds — ELIGIBLE_BILL via `purchaseDomain`, NOMINAL_PACKAGE via `nominalPackage` (cost+unit); no merchant-only branch; UVK candy-bar/opera and Coney exploits fail closed; selectedScopeId invariant across families |
+| RTM3-03 tie API | HIGH | **CLOSED** | `winnerRef`/`runnerUpRef` omitted for CONFIRMED_TIE (and all non-unique statuses); tie truth is `confirmedTopRuleRefs`/`possibleAdditionalTopRuleRefs`/`topSetComplete`; a deterministic representative stays internal (never exposed as the winner) |
+| RTM3-11 nominal safe-integer | MEDIUM | **CLOSED** | corpus schema requires safe integers for `nominalMinorUnits`, `cashAcquisitionCostCentimos` (benefit + signature); runtime rejects unsafe nominal minor units / acquisition cost / context package cost; nominal rank delta asserted safe |
+
+Deferred (unchanged, still valid): **RTM3-08** (BEFORE WAVE 0 / SOURCE-PROOF INTEGRATION), **RTM3-09**
+(BEFORE ANY ADDITIONAL TICKET FIXED-PRICE RULE), **RTM3-12** (BEFORE PREDICTED SAVINGS DISPLAY / M7).
+Not claimed closed. No other CLOSED finding's behaviour changed (only fixture context updates required
+by the new proofs).
+
+## D.3 RTM3-01 final implementation (all four signature kinds runtime-verifiable)
+
+`matchPurchaseSignature` is an exhaustive switch with no merchant-only shortcut:
+
+- **EXACT_BUNDLE** — runtime `exactItems` normalized and compared item-for-item (unchanged).
+- **TICKETS** — runtime `ticketCount` + `ticketClass` equal the signature (unchanged).
+- **ELIGIBLE_BILL** — merchant AND runtime `purchaseDomain` (reusing the frozen `PurchaseDomain` type)
+  equal the signature; absent ⇒ MISSING_CONTEXT, different ⇒ scope not applicable.
+- **NOMINAL_PACKAGE** — merchant AND runtime `nominalPackage` (`cashAcquisitionCostCentimos` +
+  `nominalUnit`) equal the signature; absent ⇒ MISSING_CONTEXT, mismatch ⇒ not applicable.
+
+`selectedScopeId` selects only among runtime-matching scopes; it never validates a mismatch (tested
+for EXACT_BUNDLE, ELIGIBLE_BILL, TICKETS, NOMINAL_PACKAGE). The frozen NOMINAL_PACKAGE signature
+(merchant + cost + unit) uniquely distinguishes every current Coney package, so no speculative
+`packageId` was added.
+
+## D.4 ELIGIBLE_BILL runtime-proof behaviour (UVK exploit closed)
+
+Real Corpus-v1 UVK bill scopes `sc_uvk_combos` (CINEMA_CANDYBAR) and `sc_uvk_opera` (UVK_OPERA) can no
+longer be confused: `purchaseDomain = CINEMA_CANDYBAR` evaluates the candy-bar scope and yields NO
+winner if the opera scope is selected (and vice-versa); a missing `purchaseDomain` ⇒ MISSING_CONTEXT
+for either. Perroquet's two per-rule subtotal selectors remain one valid `SIT_DOWN_MEAL` domain (FIX07
+unchanged). All ELIGIBLE_BILL fixtures now supply their real corpus domain (Baco RESTAURANT_BILL,
+Embarcadero/Fridays RESTAURANT_FOOD, Perroquet SIT_DOWN_MEAL).
+
+## D.5 NOMINAL_PACKAGE runtime-proof behaviour (Coney exploit closed)
+
+Coney Active with merchant only no longer returns a false `BEST_CONFIRMED CON-DIN-A-01`; Coney Park no
+longer a false `CONFIRMED_TIE`. Missing `nominalPackage` ⇒ MISSING_CONTEXT; the correct package
+(S/45, `CONEY_PLAY_BALANCE`) ⇒ normal evaluation (Active → BEST_CONFIRMED Diners, Park → CONFIRMED_TIE);
+a wrong acquisition cost or unit ⇒ NO_MATCH (no nominal candidate ranks).
+
+## D.6 selectedScopeId mismatch behaviour
+
+Frozen invariant, tested per family: a selected scope whose signature does not match the runtime
+purchase is never confirmed — PJ Classic items + selected Americana scope (EXACT_BUNDLE); UVK candy-bar
+domain + selected opera scope (ELIGIBLE_BILL); ticketCount 1 + selected 2-ticket scope (TICKETS); wrong
+package + selected Coney scope (NOMINAL_PACKAGE). Each yields no `BEST_CONFIRMED` and `winnerRef`
+undefined.
+
+## D.7 RTM3-03 tie API correction
+
+`winnerRef` now denotes a UNIQUE confirmed best only (`hasUniqueWinner = (BEST_CONFIRMED | LIKELY) &&
+!tie`). For `CONFIRMED_TIE` — and every non-unique status — `winnerRef` and `runnerUpRef` are omitted;
+truth is `confirmedTopRuleRefs` / `possibleAdditionalTopRuleRefs` / `topSetComplete`. The
+lexicographic representative used internally for determinism is never exposed as the winner. Tie
+regressions assert `winnerRef === undefined` for Baco S/150, ordinary Fridays, and Coney Park; unique
+winners (Chinawok / Popeyes / Coney Active) keep `winnerRef`.
+
+## D.8 RTM3-11 nominal safe-integer correction
+
+Corpus Zod schema: `nominalMinorUnits` and every `cashAcquisitionCostCentimos` (benefit + NOMINAL_PACKAGE
+signature) must satisfy `Number.isSafeInteger` (a shared `safeInt` refinement — `z.number().int()`
+alone accepts values above 2^53−1). Runtime: the nominal grouping rejects an unsafe/negative/fractional
+`nominalMinorUnits` or `cashAcquisitionCostCentimos`; `validateContextMoney` rejects an unsafe
+`nominalPackage.cashAcquisitionCostCentimos`; and the nominal rank delta is asserted to be a safe
+integer. `NaN`/`Infinity`/`MAX_SAFE_INTEGER+1`/negative/fractional all fail closed — no
+`BEST_CONFIRMED`/`CONFIRMED_TIE` from unsafe nominal input. All frozen Coney rows remain valid.
+
+## D.9 Tests added / updated
+
+**New regressions** (`rtm3-closure.test.ts`): ELIGIBLE_BILL domain (UVK candy-bar/opera + missing);
+NOMINAL_PACKAGE (Coney Active/Park missing/correct/wrong-cost/wrong-unit); selectedScopeId TICKETS
+mismatch; nominal safe-integer runtime rejections. **New properties** (`properties.test.ts`): P21
+(ELIGIBLE_BILL domain mismatch ⇒ non-rankable), P22 (nominal unit/cost mismatch ⇒ non-rankable).
+**New schema tests** (`schema.test.ts`): nominal `MAX_SAFE_INTEGER+1`/negative/fractional rejected for
+minor units, benefit cost, and signature cost; frozen Coney rows accepted. **Updated fixtures**: every
+ELIGIBLE_BILL context supplies its real `purchaseDomain`; every nominal context supplies its
+`nominalPackage`; tie tests assert `winnerRef === undefined`. Suite: **254 tests / 11 files** (was 229).
+
+## D.10 Canonical fixture results
+
+FIX01–FIX12 all pass with explicit signature proof; REG-PJ-CROSS-SKU and SYN-REGULAR-BASELINE pass;
+no expected outcome weakened. Ties (FIX03, FIX08 ordinary, FIX11 Park) now assert `winnerRef` absent.
+
+## D.11 Corpus reconciliation
+
+Unchanged: 14 / 46 / 16·12·10·8 / private 2 / O2 8·O3 2·O4 4 / CORE 7·ASSIST 3·DIRECTORY 4. `git diff
+95d7255 -- src/corpus/data` is empty (schema/type/test changes only).
+
+## D.12 Exact quality-gate results
+
+`pnpm lint` · `typecheck` · `test` (**254 / 11 files**) · `corpus:validate` (PASS) · `build` ·
+`db:validate` · `format:check` — all exit 0.
+
+## D.13 Files changed (second closure)
+
+**Modified (engine):** `decide.ts`, `types.ts`, `index.ts`. **Modified (corpus):** `schema.ts`,
+`schema.test.ts`. **Modified (tests):** `engine.test.ts`, `golden/{harness,canonical,properties,
+adversarial,rtm3-closure}.ts`. **Report:** this section. No `src/corpus/data` change.
+
+## D.14 Next action
+
+Submit the second-closure commit for **independent Codex Sol re-review**. Do NOT begin M3.5. Do NOT
+self-declare M3 accepted.

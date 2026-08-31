@@ -10,7 +10,14 @@ import type {
   MerchantId,
   NominalUnit,
   ProviderFamily,
+  PurchaseDomain,
 } from '@/corpus';
+
+/** Structured runtime proof of a nominal-package purchase (RTM3-01) — never a merchant-only shortcut. */
+export interface RuntimeNominalPackage {
+  cashAcquisitionCostCentimos: Centimos;
+  nominalUnit: NominalUnit;
+}
 
 // ---- Eligibility portfolio (declarative, card-number-free; §7) ----
 export type Tri = 'YES' | 'NO' | 'UNKNOWN';
@@ -49,6 +56,17 @@ export interface PurchaseContext {
    * exact `(itemKey, qty)` equality). Absent ⇒ MISSING_CONTEXT for an exact-bundle scope.
    */
   exactItems?: CanonicalItemQty[];
+  /**
+   * The purchase domain of the actual bill (RTM3-01) — matched against an ELIGIBLE_BILL signature's
+   * `purchaseDomain`. Absent ⇒ MISSING_CONTEXT; a different domain ⇒ the scope is not applicable.
+   * `selectedScopeId` is never proof of purchase identity.
+   */
+  purchaseDomain?: PurchaseDomain;
+  /**
+   * Structured proof of the nominal package purchased (RTM3-01) — matched against a NOMINAL_PACKAGE
+   * signature's `cashAcquisitionCostCentimos` + `nominalUnit`. Absent ⇒ MISSING_CONTEXT.
+   */
+  nominalPackage?: RuntimeNominalPackage;
 }
 
 // ---- Bounds / materiality (§27/§28, RT-05) ----

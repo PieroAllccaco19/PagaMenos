@@ -101,6 +101,9 @@ function run(
 const ctxBill = (over: Partial<PurchaseContext> = {}): PurchaseContext => ({
   merchantId: 'm_fridays',
   wholeBillCentimos: 10000,
+  // Default ELIGIBLE_BILL runtime proof (RTM3-01); harmless for the EXACT_BUNDLE scope tests that
+  // also pass exactItems.
+  purchaseDomain: 'RESTAURANT_BILL',
   ...over,
 });
 
@@ -1109,7 +1112,11 @@ describe('nominal basis (RT-06) — never becomes PEN', () => {
       signatureKind: 'NOMINAL_PACKAGE',
       comparisonScopeRefs: ['ncp'],
     });
-  const nctx: PurchaseContext = { merchantId: 'm_coney_park' };
+  const nctx: PurchaseContext = {
+    merchantId: 'm_coney_park',
+    // Runtime NOMINAL_PACKAGE proof (RTM3-01) matching the nominal scope's signature (S/45, balance).
+    nominalPackage: { cashAcquisitionCostCentimos: 4500, nominalUnit: 'CONEY_PLAY_BALANCE' },
+  };
   const s = { ...nomScope, scopeId: 'ncp' };
   const port: EligibilityPortfolio = { instruments: [{ family: 'SIP_OH' }, { family: 'DINERS' }] };
 
