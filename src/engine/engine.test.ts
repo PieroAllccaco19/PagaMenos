@@ -713,6 +713,17 @@ describe('availability', () => {
       benefit: { type: 'FIXED_PRICE', fixedPriceCentimos: 8000 },
       eligibleSpendSelector: 'EXACT_SKU_BUNDLE',
       signatureKind: 'EXACT_BUNDLE',
+      // preRedemptionVerifiable is a RULE SEMANTIC, not a caller override.
+      constraints: {
+        temporal: {
+          kind: 'LOCAL_DATE_RANGE',
+          startDateInclusive: '2026-01-01',
+          endDateInclusive: '2026-12-31',
+        },
+        holidayPolicy: 'NONE',
+        combinability: 'NO',
+        ...(preVerif ? { preRedemptionVerifiable: true } : {}),
+      },
     });
     const sc = scope({
       requiredContext: ['BASKET', 'DATE_TIME'],
@@ -729,7 +740,6 @@ describe('availability', () => {
         operationalStates: [op('A'), op('B', { availability: availB })],
         scopes: [sc],
         context: ctxBill({ hasExactBundle: true }),
-        preRedemptionVerifiableRuleIds: preVerif ? ['B'] : [],
       }),
     );
   };
@@ -888,7 +898,62 @@ describe('source quality — total resolver, no default branch', () => {
     );
     expect(e.final?.status).toBe('SOURCE_CONFLICT');
   });
-  it('stale/unknown material candidate with empty rankable set ⇒ SOURCE_STALE', () => {
+  const exactSc = scope({
+    requiredContext: ['BASKET', 'DATE_TIME'],
+    allowedSelectors: ['EXACT_SKU_BUNDLE'],
+    signature: {
+      kind: 'EXACT_BUNDLE',
+      merchantId: 'm_fridays',
+      canonicalItems: [{ itemKey: 'a', qty: 1 }],
+    },
+  });
+  const FAM = ['IBK_PLIN', 'DINERS', 'SIP_OH', 'BCP_QORE'] as const;
+  // N non-fresh single-offer candidates (empty rankable set), each material by default (RT-05).
+  const emptySet = (states: RuleOperationalState['sourceQualityState'][]) => {
+    const rules = states.map((_, i) =>
+      rule({
+        ruleId: `R${i}`,
+        providerFamily: FAM[i]!,
+        benefit: { type: 'FIXED_PRICE', fixedPriceCentimos: 8000 - i },
+        eligibleSpendSelector: 'EXACT_SKU_BUNDLE',
+        signatureKind: 'EXACT_BUNDLE',
+      }),
+    );
+    const ops = states.map((s, i) => op(`R${i}`, { sourceQualityState: s }));
+    return decide(
+      run({
+        rules,
+        operationalStates: ops,
+        scopes: [exactSc],
+        context: ctxBill({ hasExactBundle: true }),
+      }),
+    );
+  };
+
+  it('STALE sole material candidate ⇒ SOURCE_STALE', () => {
+    expect(emptySet(['STALE']).final?.status).toBe('SOURCE_STALE');
+  });
+  it('INACCESSIBLE sole material candidate ⇒ SOURCE_STALE', () => {
+    expect(emptySet(['INACCESSIBLE']).final?.status).toBe('SOURCE_STALE');
+  });
+  it('UNKNOWN sole material candidate ⇒ NO_SAFE_WINNER (never SOURCE_STALE)', () => {
+    const e = emptySet(['UNKNOWN']);
+    expect(e.final?.status).toBe('NO_SAFE_WINNER');
+    expect(e.final?.status).not.toBe('SOURCE_STALE');
+  });
+
+  it('mixed blockers CONFLICTED + STALE + UNKNOWN ⇒ SOURCE_CONFLICT (precedence)', () => {
+    expect(emptySet(['CONFLICTED', 'STALE', 'UNKNOWN']).final?.status).toBe('SOURCE_CONFLICT');
+  });
+  it('mixed blockers STALE + UNKNOWN ⇒ SOURCE_STALE (UNKNOWN does not outrank stale)', () => {
+    expect(emptySet(['STALE', 'UNKNOWN']).final?.status).toBe('SOURCE_STALE');
+  });
+  it('UNKNOWN only ⇒ NO_SAFE_WINNER', () => {
+    expect(emptySet(['UNKNOWN', 'UNKNOWN']).final?.status).toBe('NO_SAFE_WINNER');
+  });
+
+  // Fresh winner coexisting with an UNKNOWN-source candidate.
+  const freshPlusUnknown = (bCost: number) => {
     const A = rule({
       ruleId: 'A',
       providerFamily: 'IBK_PLIN',
@@ -896,26 +961,29 @@ describe('source quality — total resolver, no default branch', () => {
       eligibleSpendSelector: 'EXACT_SKU_BUNDLE',
       signatureKind: 'EXACT_BUNDLE',
     });
-    const sc = scope({
-      requiredContext: ['BASKET', 'DATE_TIME'],
-      allowedSelectors: ['EXACT_SKU_BUNDLE'],
-      signature: {
-        kind: 'EXACT_BUNDLE',
-        merchantId: 'm_fridays',
-        canonicalItems: [{ itemKey: 'a', qty: 1 }],
-      },
+    const B = rule({
+      ruleId: 'B',
+      providerFamily: 'DINERS',
+      benefit: { type: 'FIXED_PRICE', fixedPriceCentimos: bCost },
+      eligibleSpendSelector: 'EXACT_SKU_BUNDLE',
+      signatureKind: 'EXACT_BUNDLE',
     });
-    for (const s of ['STALE', 'INACCESSIBLE', 'UNKNOWN'] as const) {
-      const e = decide(
-        run({
-          rules: [A],
-          operationalStates: [op('A', { sourceQualityState: s })],
-          scopes: [sc],
-          context: ctxBill({ hasExactBundle: true }),
-        }),
-      );
-      expect(e.final?.status).toBe('SOURCE_STALE');
-    }
+    return decide(
+      run({
+        rules: [A, B],
+        operationalStates: [op('A'), op('B', { sourceQualityState: 'UNKNOWN' })],
+        scopes: [exactSc],
+        context: ctxBill({ hasExactBundle: true }),
+      }),
+    );
+  };
+  it('fresh winner + material UNKNOWN candidate ⇒ NO_SAFE_WINNER', () => {
+    // B's source is UNKNOWN ⇒ UNKNOWN_OR_UNBOUNDED ⇒ material regardless of last-known price.
+    expect(freshPlusUnknown(7000).final?.status).toBe('NO_SAFE_WINNER');
+  });
+  it('fresh winner + UNKNOWN candidate is still material by default (RT-05 unbounded)', () => {
+    // Even when B's last-known price is worse, an UNKNOWN source cannot be bounded ⇒ material.
+    expect(freshPlusUnknown(9000).final?.status).toBe('NO_SAFE_WINNER');
   });
 });
 
@@ -1023,7 +1091,7 @@ describe('nominal basis (RT-06) — never becomes PEN', () => {
     id: string,
     family: RuleVersion['providerFamily'],
     minor: number,
-    cash = 4500,
+    cash: number | undefined = 4500,
     unit: 'CONEY_PLAY_BALANCE' = 'CONEY_PLAY_BALANCE',
   ) =>
     rule({
@@ -1034,7 +1102,8 @@ describe('nominal basis (RT-06) — never becomes PEN', () => {
         type: 'NON_CASH_NOMINAL',
         nominalMinorUnits: minor,
         nominalUnit: unit,
-        cashAcquisitionCostCentimos: cash,
+        // Absent ⇒ explicit UNKNOWN acquisition cost (no NaN/Infinity sentinel).
+        ...(cash !== undefined ? { cashAcquisitionCostCentimos: cash } : {}),
       },
       eligibleSpendSelector: 'EXACT_SKU_BUNDLE',
       signatureKind: 'NOMINAL_PACKAGE',
@@ -1107,9 +1176,24 @@ describe('nominal basis (RT-06) — never becomes PEN', () => {
     expect(e.final?.winnerRef).toBeUndefined();
   });
 
-  it('unknown (non-finite) acquisition cost refuses', () => {
-    const y = nomRule('Y', 'DINERS', 8600);
-    (y.benefit as { cashAcquisitionCostCentimos: number }).cashAcquisitionCostCentimos = Number.NaN;
+  it('absent (explicit UNKNOWN) acquisition cost refuses ⇒ NON_COMPARABLE', () => {
+    // Y omits cashAcquisitionCostCentimos entirely ⇒ explicit UNKNOWN (not a sentinel).
+    const y = rule({
+      ruleId: 'Y',
+      merchantIds: ['m_coney_park'],
+      providerFamily: 'DINERS',
+      benefit: {
+        type: 'NON_CASH_NOMINAL',
+        nominalMinorUnits: 8600,
+        nominalUnit: 'CONEY_PLAY_BALANCE',
+      },
+      eligibleSpendSelector: 'EXACT_SKU_BUNDLE',
+      signatureKind: 'NOMINAL_PACKAGE',
+      comparisonScopeRefs: ['ncp'],
+    });
+    expect(
+      y.benefit.type === 'NON_CASH_NOMINAL' && y.benefit.cashAcquisitionCostCentimos,
+    ).toBeUndefined();
     const e = decide(
       run({
         rules: [nomRule('X', 'SIP_OH', 8500), y],
@@ -1120,6 +1204,25 @@ describe('nominal basis (RT-06) — never becomes PEN', () => {
       }),
     );
     expect(e.final?.winnerRef).toBeUndefined();
+    expect(e.final?.candidates.every((c) => c.advisories.includes('NON_COMPARABLE'))).toBe(true);
+  });
+
+  it('a NaN / Infinity acquisition cost is a domain invariant error, never "unknown"', () => {
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, -1] as const) {
+      const y = nomRule('Y', 'DINERS', 8600);
+      (y.benefit as { cashAcquisitionCostCentimos: number }).cashAcquisitionCostCentimos = bad;
+      expect(() =>
+        decide(
+          run({
+            rules: [nomRule('X', 'SIP_OH', 8500), y],
+            operationalStates: [op('X'), op('Y')],
+            scopes: [s],
+            context: nctx,
+            portfolio: port,
+          }),
+        ),
+      ).toThrow();
+    }
   });
 });
 

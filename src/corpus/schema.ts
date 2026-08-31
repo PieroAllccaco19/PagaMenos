@@ -87,7 +87,8 @@ const benefitSchema = z.discriminatedUnion('type', [
     type: z.literal('NON_CASH_NOMINAL'),
     nominalMinorUnits: z.number().int().positive(),
     nominalUnit: z.enum(NOMINAL_UNITS),
-    cashAcquisitionCostCentimos: centimos,
+    // Optional ⇒ absent models an explicit UNKNOWN cost; a present value must be a valid céntimo.
+    cashAcquisitionCostCentimos: centimos.optional(),
   }),
 ]);
 
@@ -147,6 +148,7 @@ const constraintsSchema = z.strictObject({
   cardTier: z.string().optional(),
   membership: z.string().optional(),
   providerPrivateKey: z.string().optional(),
+  preRedemptionVerifiable: z.boolean().optional(),
   combinability: z.enum(['NO', 'UNKNOWN', 'YES']),
 });
 

@@ -67,7 +67,13 @@ export interface NonCashNominalBenefit {
   type: 'NON_CASH_NOMINAL';
   nominalMinorUnits: number;
   nominalUnit: NominalUnit;
-  cashAcquisitionCostCentimos: Centimos;
+  /**
+   * Cash paid to acquire the nominal package. OPTIONAL to model an explicit UNKNOWN acquisition
+   * cost (absent ⇒ unknown ⇒ RT-06 prerequisites unprovable ⇒ NON_COMPARABLE). A present value
+   * MUST be a finite integer ≥ 0 (invalid numbers are domain errors, never "unknown"). Every
+   * active Corpus-v1 nominal rule supplies a known valid cost.
+   */
+  cashAcquisitionCostCentimos?: Centimos;
 }
 export type Benefit =
   | PercentBenefit
@@ -126,6 +132,12 @@ export interface Constraints {
   cardTier?: string;
   membership?: string;
   providerPrivateKey?: string;
+  /**
+   * Rule-semantic (RT-01): whether the participant can verify dynamic availability (stock/fund/
+   * code) BEFORE payment. Part of the promotion, NOT a caller override. Absent ⇒ false; the engine
+   * never infers true. No active Corpus-v1 rule sets this (no frozen pre-verification evidence).
+   */
+  preRedemptionVerifiable?: boolean;
   combinability: 'NO' | 'UNKNOWN' | 'YES';
 }
 

@@ -91,7 +91,8 @@ type Econ =
       state: 'RANKABLE_NOMINAL';
       minorUnits: number;
       unit: NominalUnit;
-      cashAcquisitionCostCentimos: Centimos;
+      /** Undefined ⇒ explicit UNKNOWN acquisition cost (RT-06 prerequisite unprovable). */
+      cashAcquisitionCostCentimos: Centimos | undefined;
     };
 
 function missingContextFor(rule: RuleVersion, ctx: PurchaseContext): ContextReq[] {
@@ -291,7 +292,7 @@ interface Working {
   cashbackCentimos?: Centimos;
   nominalMinorUnits?: number;
   nominalUnit?: NominalUnit;
-  cashAcquisitionCostCentimos?: Centimos;
+  cashAcquisitionCostCentimos?: Centimos | undefined;
   // uncertainty metadata
   providerPrivate?: boolean;
   availabilityUncertain?: boolean;
@@ -443,8 +444,9 @@ function advisoriesFor(w: Working): CandidateAdvisory[] {
   if (w.missingContext && w.missingContext.length > 0) a.add('MISSING_CONTEXT');
   if (w.holidayUncertain) a.add('MISSING_CONTEXT');
   if (w.sourceUncertainty === 'CONFLICTED') a.add('CONFLICTED_CANDIDATE');
-  if (w.sourceUncertainty === 'STALE' || w.sourceUncertainty === 'UNKNOWN')
-    a.add('STALE_CANDIDATE');
+  // STALE covers INACCESSIBLE (mapped to 'STALE'). Source UNKNOWN is NOT relabeled as stale —
+  // it is insufficient source knowledge, surfaced via couldChangeDecision + rejectionReason.
+  if (w.sourceUncertainty === 'STALE') a.add('STALE_CANDIDATE');
   return [...a];
 }
 
@@ -463,7 +465,6 @@ export function evaluateScope(
 ): EngineDecisionResult {
   const basis = scope.comparisonBasis;
   const holidayCalendar = new Set(input.holidayCalendar ?? []);
-  const preVerifiable = new Set(input.preRedemptionVerifiableRuleIds ?? []);
 
   // Deterministic order (§35): sort members by ruleId before any classification/ranking.
   const sorted = [...members].sort((a, b) =>
@@ -577,7 +578,11 @@ export function evaluateScope(
     }
 
     // 5. Availability (§23).
-    const avail = resolveAvailability(op.availability, preVerifiable.has(rule.ruleId));
+    // Pre-redemption verifiability is a RULE SEMANTIC (RT-01), never a caller override.
+    const avail = resolveAvailability(
+      op.availability,
+      rule.constraints.preRedemptionVerifiable === true,
+    );
     if (!avail.rankable && !avail.uncertain) {
       w.rejectionReason = avail.rejectionReason;
       workings.push(w);
@@ -666,15 +671,21 @@ function resolveDecision(
   const nominalRefused: Working[] = [];
   if (basis === 'NOMINAL_VALUE_SAME_UNIT') {
     const noms = workings.filter((w) => w.bucket === 'RANKABLE_NOMINAL');
+    // A PRESENT cash acquisition cost must be a finite integer ≥ 0 — an invalid number is a domain
+    // error (fail-closed), NOT an "unknown" value. Absence (undefined) is the explicit unknown.
+    for (const w of noms) {
+      const cost = w.cashAcquisitionCostCentimos;
+      if (cost !== undefined && (!Number.isFinite(cost) || !Number.isInteger(cost) || cost < 0)) {
+        throw new SettlementInvariantError(
+          `invalid cash acquisition cost for ${w.ref.ruleId}: ${cost} (must be a finite integer ≥ 0)`,
+        );
+      }
+    }
     const units = new Set(noms.map((w) => w.nominalUnit));
     const costs = new Set(noms.map((w) => w.cashAcquisitionCostCentimos));
-    const costsKnown = noms.every(
-      (w) =>
-        w.cashAcquisitionCostCentimos !== undefined &&
-        Number.isInteger(w.cashAcquisitionCostCentimos) &&
-        w.cashAcquisitionCostCentimos >= 0,
-    );
-    const comparable = noms.length > 0 && units.size === 1 && costs.size === 1 && costsKnown;
+    // RT-06: prerequisites hold only when every candidate's cost is KNOWN (present) and equal.
+    const costsKnown = noms.every((w) => w.cashAcquisitionCostCentimos !== undefined);
+    const comparable = noms.length > 0 && units.size === 1 && costsKnown && costs.size === 1;
     if (comparable) {
       rankable = noms;
     } else {
@@ -771,12 +782,12 @@ function resolveDecision(
       if (tie) return 'CONFIRMED_TIE';
       return winner!.rule.confidence === 'MEDIUM' ? 'LIKELY' : 'BEST_CONFIRMED';
     }
-    // Rankable set empty — source/verify precedence.
+    // Rankable set empty — frozen precedence: SOURCE_CONFLICT > SOURCE_STALE > NO_SAFE_WINNER >
+    // NO_APPLICABLE_BENEFIT. STALE/INACCESSIBLE ⇒ SOURCE_STALE; source UNKNOWN is NOT stale —
+    // insufficient knowledge falls through to NO_SAFE_WINNER.
     const conflicted = uncertain.some((w) => w.sourceUncertainty === 'CONFLICTED' && w.__material);
     if (conflicted) return 'SOURCE_CONFLICT';
-    const staleLike = uncertain.some(
-      (w) => (w.sourceUncertainty === 'STALE' || w.sourceUncertainty === 'UNKNOWN') && w.__material,
-    );
+    const staleLike = uncertain.some((w) => w.sourceUncertainty === 'STALE' && w.__material);
     if (staleLike) return 'SOURCE_STALE';
     const anyMaterial = materialBlockers.length > 0 || materialUserResolvable.length > 0;
     const onlyPrivate =

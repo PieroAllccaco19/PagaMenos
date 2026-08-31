@@ -184,8 +184,6 @@ export interface DecideInput {
   selectedScopeId?: string;
   /** Authoritative explicit Lima holiday dates (YYYY-MM-DD); no external lookup. */
   holidayCalendar?: string[];
-  /** Rule ids whose UNKNOWN availability is user-verifiable before payment (§23). */
-  preRedemptionVerifiableRuleIds?: string[];
   /** Common independent baselines for display-only penSaved, keyed by scopeId (§15). */
   baselineByScopeId?: Record<string, Centimos>;
 }

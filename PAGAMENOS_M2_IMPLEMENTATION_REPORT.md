@@ -45,11 +45,12 @@ Deliberately small (§39): `decide` and `evaluateScope`; the typed invariant err
 `EligibilityPortfolio`, `PurchaseContext`, `RuleRef`, `Tri`, `PortfolioInstrument`). Arithmetic,
 eligibility, source, time and bounds internals stay unexported (unit-tested via relative imports).
 
-Core entry:
+Core entry (see §24 — the caller-supplied `preRedemptionVerifiableRuleIds` was **removed** in the
+closure patch; pre-redemption verifiability is now a rule semantic):
 ```ts
 decide({ rules, operationalStates, scopes, portfolio, context, evaluatedAt,
          intendedTransactionAt, selectedScopeId?, holidayCalendar?,
-         preRedemptionVerifiableRuleIds?, baselineByScopeId? }): EngineEvaluation
+         baselineByScopeId? }): EngineEvaluation
 ```
 
 ## 6. Money / settlement (`money.ts`) — integer céntimos only
@@ -85,16 +86,21 @@ distinction. `privateStates` are looked up independently — owning a BCP instru
 ## 9. Availability — total resolver
 
 `CONFIRMED_AVAILABLE`/`NOT_APPLICABLE` rank; `CONFIRMED_UNAVAILABLE` never ranks; `UNKNOWN` is
-uncertainty that **never creates `LIKELY`** — if material and not `preRedemptionVerifiable` ⇒
-`NO_SAFE_WINNER`; if pre-redemption-verifiable or provably non-material ⇒ public winner stands with a
-`DYNAMIC_AVAILABILITY` advisory. Exhaustive switch with a `never` default.
+uncertainty that **never creates `LIKELY`** — if material and the rule is not
+`preRedemptionVerifiable` ⇒ `NO_SAFE_WINNER`; if pre-redemption-verifiable or provably non-material ⇒
+public winner stands with a `DYNAMIC_AVAILABILITY` advisory. `preRedemptionVerifiable` is a **rule
+semantic** read from `Constraints`, not a caller override (see §24). Exhaustive switch with a `never`
+default.
 
-## 10. Source-quality resolver — total, no default branch
+## 10. Source-quality resolver — total, no default branch (corrected in §24)
 
 `FRESH` ranks; `STALE`, `INACCESSIBLE` (as stale-like), `CONFLICTED`, `UNKNOWN` are all non-rankable
-and carry a typed uncertainty class. With an empty rankable set, precedence is `SOURCE_CONFLICT` >
-`SOURCE_STALE`. Every state is handled explicitly (`never`-checked); no combination falls through.
-Publication is likewise total (`ACTIVE` ranks; `FUTURE`/`EXPIRED`/`QUARANTINED` excluded).
+and carry a typed uncertainty class. With an empty rankable set the frozen precedence is
+`SOURCE_CONFLICT` > `SOURCE_STALE` > `NO_SAFE_WINNER` > `NO_APPLICABLE_BENEFIT`: material CONFLICTED
+⇒ `SOURCE_CONFLICT`; else material STALE/INACCESSIBLE ⇒ `SOURCE_STALE`; else material **UNKNOWN**
+(insufficient source knowledge — **not** relabeled stale) ⇒ `NO_SAFE_WINNER`. Every state is handled
+explicitly (`never`-checked); no combination falls through. Publication is likewise total (`ACTIVE`
+ranks; `FUTURE`/`EXPIRED`/`QUARANTINED` excluded).
 
 ## 11. Plausible bounds / materiality (RT-05, §27/§28)
 
@@ -153,13 +159,16 @@ unequal cost refuses; different unit refuses; unknown cost refuses; delta never 
 matched; multi→requiresScopeSelection; selection; cross-merchant throws). Papa Johns real corpus
 (BCP Large Classic and Plin Large Americana share no scope; each PJ scope is single-family — no
 Plin-vs-BCP ranking). Properties (fast-check: cost never negative; discount ≤ cap; candidate order
-invariance of status/winner/delta). **Suite total: 104 tests / 6 files, all passing** (49 M0/M1 +
-55 M2).
+invariance of status/winner/delta). **Suite total after the closure patch: 112 tests / 6 files, all
+passing** (49 M0/M1 + 63 M2). See §24 for the closure-added source/pre-redemption/nominal
+regressions.
 
 ## 16. Corpus mutation audit
 
-**Zero corpus mutation.** `git status src/corpus prisma` is empty. No factual rows, counts, scopes,
-signatures, or operational states were edited. All synthetic engine fixtures live only in the test
+**Zero factual corpus mutation.** `git status src/corpus/data prisma` is empty — no rule values,
+counts, scopes, signatures, or operational states were edited. The closure patch (§24) touches only
+the M1 **type/schema representation** (`src/corpus/types.ts`, `src/corpus/schema.ts`) to add two
+optional fields; no active rule sets either. All synthetic engine fixtures live only in the test
 file, outside the active corpus. Reconciliation re-verified unchanged: merchants **14**, active
 rules **46**, providers **16 / 12 / 10 / 8**, provider-private **2**, overlap O2 8 · O3 2 ·
 O4-CONFIRMED 4, decision CORE 7 · ASSIST 3 · DIRECTORY 4.
@@ -178,18 +187,22 @@ The engine result is build-free; persistence/build metadata is a later-layer con
 | --- | --- |
 | `pnpm lint` | OK (exit 0) |
 | `pnpm typecheck` | OK (exit 0) |
-| `pnpm test` | 104 passed / 6 files (exit 0) |
+| `pnpm test` | 112 passed / 6 files (exit 0) |
 | `pnpm corpus:validate` | **PASS** — schema OK · lint 0 errors · all frozen counts match |
 | `pnpm build` | OK (exit 0) |
 | `pnpm db:validate` | OK — schema valid |
 | `pnpm format:check` | OK — all files match Prettier |
 
+_(Verification results above and in §24 are post-closure-patch.)_
+
 ## 19. Files changed
 
 **New:** `src/engine/{errors,money,time,types,eligibility,decide}.ts`, `src/engine/engine.test.ts`,
 `PAGAMENOS_M2_IMPLEMENTATION_REPORT.md`.
-**Modified:** `src/engine/index.ts` (M0 placeholder → small public API).
-No changes under `src/corpus`, `prisma`, `package.json`, or CI config.
+**Modified:** `src/engine/index.ts` (M0 placeholder → small public API). **Closure patch (§24) also
+modified:** `src/engine/{decide,types,engine.test}.ts` and the M1 representation
+`src/corpus/{types,schema}.ts` (two optional fields; no factual data). No changes under
+`src/corpus/data`, `prisma`, `package.json`, or CI config.
 
 ## 20. Final git status
 
@@ -210,8 +223,8 @@ closure baseline (M0/M1 not amended). Not pushed.
   UNKNOWN availability never yields `LIKELY` (§23 precedence over §9 step 8).
 - The 12 canonical golden fixtures and the full fast-check/adversarial program remain **M3** and were
   intentionally not built; M2 provides focused per-branch coverage only.
-- Nominal "unknown acquisition cost" is exercised via a non-finite-cost synthetic candidate, since
-  the frozen `NON_CASH_NOMINAL` type always carries a known cost.
+- Unknown nominal acquisition cost is now an **explicit absence** (see §24.3), not a non-finite
+  sentinel.
 
 ## 23. Exact recommended next action
 
@@ -219,3 +232,64 @@ Submit this report to the **independent M2 gate**. **Do not begin M3.** When aut
 12 canonical golden fixtures (explicit assertions) + the comprehensive fast-check/adversarial suite
 + the synthetic same-purchase regular-price-baseline property (RT-10 groundwork), over this frozen
 M1 corpus and M2 engine.
+
+---
+
+## 24. M2 Closure Patch (post-gate corrections)
+
+Applied after the independent gate returned **PASS WITH REQUIRED CLOSURE PATCH**. Engine
+architecture unchanged. **No factual corpus values or counts changed** (reconciliation re-verified:
+14 / 46 / 16·12·10·8 / provider-private 2 / O2 8·O3 2·O4 4 / CORE 7·ASSIST 3·DIRECTORY 4).
+
+### 24.1 SourceQuality `UNKNOWN` decision semantics — corrected
+
+`UNKNOWN` is insufficient source-quality knowledge, **not** evidence of staleness, and is no longer
+mapped to `SOURCE_STALE`. Frozen empty-rankable precedence `SOURCE_CONFLICT > SOURCE_STALE >
+NO_SAFE_WINNER > NO_APPLICABLE_BENEFIT`: material `CONFLICTED` ⇒ `SOURCE_CONFLICT`; else material
+`STALE`/`INACCESSIBLE` ⇒ `SOURCE_STALE`; else material `UNKNOWN`/unbounded ⇒ `NO_SAFE_WINNER`; else
+⇒ `NO_APPLICABLE_BENEFIT`. A fresh winner coexisting with a material `UNKNOWN`/`STALE`/`INACCESSIBLE`/
+`CONFLICTED` candidate ⇒ `NO_SAFE_WINNER`; a provably non-material candidate lets the winner stand.
+The candidate advisory for `UNKNOWN` source is no longer `STALE_CANDIDATE` (surfaced via
+`couldChangeDecision` + `rejectionReason` instead). No default branch.
+
+### 24.2 `preRedemptionVerifiable` — rule semantic, not caller override
+
+The caller input `preRedemptionVerifiableRuleIds` is **removed** from `DecideInput`. Pre-payment
+verifiability (RT-01) is now the rule-semantic field `Constraints.preRedemptionVerifiable?: boolean`
+(M1 type + Zod schema), **absent ⇒ false**; the engine never infers `true` and no caller path can
+promote a rule. **No active Corpus-v1 rule sets it** (no frozen pre-verification evidence) — all 46
+remain effectively `false`. The engine reads `rule.constraints.preRedemptionVerifiable === true`.
+
+### 24.3 Unknown nominal acquisition cost — explicit absence, not a sentinel
+
+`NonCashNominalBenefit.cashAcquisitionCostCentimos` is now **optional** (M1 type + schema): absent ⇒
+explicit UNKNOWN ⇒ RT-06 prerequisites unprovable ⇒ `NON_COMPARABLE`. A **present** value must be a
+finite integer ≥ 0; a `NaN`/`Infinity`/negative value is a `SettlementInvariantError` domain error
+(fail-closed), never "unknown". No `NaN`/`Infinity` sentinel is used anywhere. Every active nominal
+rule still supplies a known valid cost (M1 lint still asserts it equals the scope signature), so the
+corpus is unchanged.
+
+### 24.4 Coney multi-merchant invariant — frozen & documented
+
+`CON-SIP-01` is a single Sip campaign genuinely valid at **both** `m_coney_park` and
+`m_coney_active`; its `merchantIds` array contains both, and each of its two scopes belongs to a
+merchant it serves. The frozen engine invariant is: **for every rule/scope membership,
+`scope.merchantId` MUST be contained in `rule.merchantIds`**. Multi-merchant applicability does NOT
+permit use at any other merchant — `CrossMerchantMembershipError` and its regression are retained.
+(Earlier specification prose sometimes used a singular `merchantId`; the domain uses `merchantIds`.)
+Counts unchanged; the campaign is not split.
+
+### 24.5 Regressions added
+
+Source quality: `STALE` sole ⇒ `SOURCE_STALE`; `INACCESSIBLE` sole ⇒ `SOURCE_STALE`; `UNKNOWN` sole
+⇒ `NO_SAFE_WINNER`; mixed `CONFLICTED+STALE+UNKNOWN` ⇒ `SOURCE_CONFLICT`; `STALE+UNKNOWN` ⇒
+`SOURCE_STALE`; `UNKNOWN`-only ⇒ `NO_SAFE_WINNER`; fresh winner + material `UNKNOWN` ⇒
+`NO_SAFE_WINNER`. Pre-redemption: rule-semantic `preRedemptionVerifiable=false` + material UNKNOWN
+availability ⇒ `NO_SAFE_WINNER`; synthetic `preRedemptionVerifiable=true` + safe public winner ⇒
+winner stands + `DYNAMIC_AVAILABILITY`. Nominal: absent cost ⇒ `NON_COMPARABLE`; `NaN`/`Infinity`/
+negative cost ⇒ domain-error throw. **Suite: 112 tests / 6 files, all passing** (was 104).
+
+### 24.6 Verification (post-closure)
+
+`pnpm lint` · `typecheck` · `test` (112) · `corpus:validate` (**PASS**, counts unchanged) · `build`
+· `db:validate` · `format:check` — all exit 0.
