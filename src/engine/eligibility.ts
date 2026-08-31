@@ -26,6 +26,10 @@ function hasFamily(portfolio: EligibilityPortfolio, family: ProviderFamily): boo
   return portfolio.instruments.some((i) => i.family === family);
 }
 
+// RTM3-07: network/tier facts are PROVIDER-SCOPED. A fact about provider B (e.g. a BCP AMEX card, or
+// a global `network:AMEX` declaration) MUST NOT satisfy an IBK AMEX condition. We look only at
+// instruments of the relevant family, and declarations keyed to that family (`network:<FAMILY>:AMEX`).
+// A held family instrument with a defined, contradictory value beats any declaration (instrument wins).
 function resolveNetwork(
   portfolio: EligibilityPortfolio,
   family: ProviderFamily,
@@ -33,12 +37,14 @@ function resolveNetwork(
 ): Tri {
   const fam = portfolio.instruments.filter((i) => i.family === family);
   if (fam.some((i) => i.network === required)) return 'YES';
-  const decl = portfolio.declarations?.[`network:${required}`];
+  // Every held instrument of this family has a defined, different network ⇒ the participant does not
+  // hold a qualifying card for THIS provider — a declaration cannot override that contradiction.
+  if (fam.length > 0 && fam.every((i) => i.network !== undefined && i.network !== required)) {
+    return 'NO';
+  }
+  const decl = portfolio.declarations?.[`network:${family}:${required}`];
   if (decl === 'YES') return 'YES';
   if (decl === 'NO') return 'NO';
-  // A held family instrument whose network is defined and different ⇒ participant lacks that card.
-  if (fam.length > 0 && fam.every((i) => i.network !== undefined && i.network !== required))
-    return 'NO';
   return 'UNKNOWN';
 }
 
@@ -49,10 +55,10 @@ function resolveTier(
 ): Tri {
   const fam = portfolio.instruments.filter((i) => i.family === family);
   if (fam.some((i) => i.tier === required)) return 'YES';
-  const decl = portfolio.declarations?.[`tier:${required}`];
+  if (fam.length > 0 && fam.every((i) => i.tier !== undefined && i.tier !== required)) return 'NO';
+  const decl = portfolio.declarations?.[`tier:${family}:${required}`];
   if (decl === 'YES') return 'YES';
   if (decl === 'NO') return 'NO';
-  if (fam.length > 0 && fam.every((i) => i.tier !== undefined && i.tier !== required)) return 'NO';
   return 'UNKNOWN';
 }
 

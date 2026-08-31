@@ -283,3 +283,168 @@ A single M3 commit as a child of the M2 closure baseline (M0–M2 not amended); 
 Submit this report and the single M3 commit to the **independent code red-team by Codex Sol** against
 the actual M0–M3 repository. **Do not begin M3.5** (persistence), Prisma domain schema, participant
 UI, auth, analytics, source monitor, or any later milestone.
+
+---
+
+# M3 RED-TEAM CLOSURE PATCH (Codex Sol "C — M3 NO-GO" remediation)
+
+Independent verdict remediated: **CRITICAL 1 · HIGH 6 · MEDIUM 6**. This closure patch fixes the
+CRITICAL, all six HIGH, and the three interacting MEDIUM findings (RTM3-10/11/13). No M3.5 work; no
+architecture redesign. **Independent acceptance is NOT claimed here** — this records the remediation
+for re-review.
+
+## C.1 Closure verdict
+
+**PATCH COMPLETE — READY FOR RE-REVIEW.** Starting M3 SHA `3cf8663882688a7a2854cf20ff70c36643fccbde`,
+working tree clean. All seven gates exit 0; **229 tests / 11 files**; corpus reconciliation PASS
+(14 / 46 / 16·12·10·8 / private 2 / O2 8·O3 2·O4 4 / CORE 7·ASSIST 3·DIRECTORY 4).
+
+## C.2 RTM3 closure matrix
+
+| ID | Sev | Status | Evidence |
+| --- | --- | --- | --- |
+| RTM3-01 runtime PurchaseSignature | CRITICAL | **CLOSED** | `matchPurchaseSignature` gate in `evaluateScope`; `PurchaseContext.exactItems` + `ticketClass` replace the `hasExactBundle` boolean; `rtm3-closure.test.ts` (exact-bundle false / missing / true; UVK count 1·2·3; class correct/wrong/missing; PJ cross-SKU; selected-scope safety) |
+| RTM3-02 Fridays corpus fidelity | HIGH | **CLOSED** | FR-IBK-01 airport-only restriction removed (§C.4); FIX08 restored to tie / airport→IBK / holiday→Sip; counts reconcile |
+| RTM3-03 tie / top-set materiality | HIGH | **CLOSED** | equality is material again (`boundMateriality`); `couldImproveBestOutcome` vs `couldChangeTopSet`; `confirmedTopRuleRefs` / `possibleAdditionalTopRuleRefs` / `topSetComplete`; FIX03 = CONFIRMED_TIE with IBK material & top set incomplete; unique-winner-tieable ⇒ NO_SAFE_WINNER |
+| RTM3-04 monetary validation | HIGH | **CLOSED** | `assertSafeCentimos` (isSafeInteger); `percentBps ∈ (0,10000]`; BigInt multiply/divide; negative-cost throw; subtotal consistency |
+| RTM3-05 canonical identity | HIGH | **CLOSED** | `buildValidatedOpMap` rejects duplicate rule/scope ids, duplicate/orphan op states; missing evaluated-rule state throws; `CanonicalInputError` |
+| RTM3-06 strict instant parsing | HIGH | **CLOSED** | `parseStrictInstantMs` (corpus/instant.ts) requires a zone; rejects offsetless & impossible dates; wired into `epochMs`, `decide()`, and the corpus schema's LOCAL_DATETIME_RANGE |
+| RTM3-07 provider-scoped eligibility | HIGH | **CLOSED** | family-scoped network/tier; held instrument beats declaration; family-keyed declarations (`network:<FAMILY>:AMEX`) |
+| RTM3-10 combined uncertainty | MEDIUM | **CLOSED** | `isUserResolvable` requires EVERY material axis resolvable (source/cap/combinability/holiday/missing unresolvable; availability iff pre-verifiable; private resolvable) |
+| RTM3-11 subtotal / safe-int | MEDIUM | **CLOSED** | folded into RTM3-04 (`validateContextMoney`, `assertSafeCentimos`) |
+| RTM3-13 replace weak tests | MEDIUM | **CLOSED** | P20 + a dedicated BigInt oracle; non-negative property invokes `decide`; P11 exact; P14 adds different-units; P19 exact capped result; duplicate-key tested as invalid input |
+| RTM3-25 unknown-source explanation | (within 10) | **CLOSED** | a non-FRESH candidate always carries an explicit `rejectionReason` |
+
+## C.3 Deferred MEDIUM register (still valid, NOT closed)
+
+- **RTM3-08** independently-current bound for a stale source — **DEFERRED — BEFORE WAVE 0 /
+  SOURCE-PROOF INTEGRATION.** Conservative consequence acknowledged: every non-FRESH candidate stays
+  `UNKNOWN_OR_UNBOUNDED` ⇒ always material.
+- **RTM3-09** explicit per-ticket vs total ticket fixed-price semantics — **DEFERRED — BEFORE ADDING
+  ANY NEW TICKET FIXED-PRICE RULE.** UVK current behaviour (per-ticket × count) remains tested (FIX05).
+- **RTM3-12** typed compatible-baseline evidence — **DEFERRED — BEFORE SAVINGS DISPLAY / M7.** Ranking
+  remains independent of the display baseline (P7, SYN-REGULAR-BASELINE).
+
+## C.4 Fridays correction (RTM3-02)
+
+Authoritative Phase 0A-1B row (line 172): *"salon/takeaway; international airport included; …"* and
+the fixture table (347–349): ordinary-day tie, airport→Interbank, holiday→Sip.
+
+```
+FR-IBK-01 before:  constraints.locations = { include: ['airport'] }   // wrongly airport-ONLY
+FR-IBK-01 after :  (no `locations` field)                             // airport INCLUDED among ordinary locations
+```
+
+Reason: a factual **transcription** correction against already-frozen evidence (not a post-freeze
+campaign change). Only this one row changed in `src/corpus/data`; all frozen counts reconcile.
+
+## C.5 Runtime PurchaseSignature solution (RTM3-01)
+
+`PurchaseContext` now carries `exactItems?: CanonicalItemQty[]` and `ticketClass?: string` (the
+boolean `hasExactBundle` is removed). `matchPurchaseSignature(scope.signature, context)` runs once per
+scope and is total over the four kinds: EXACT_BUNDLE normalizes runtime items with the M1 rules and
+requires exact `(itemKey, qty)` equality (absent ⇒ MISSING_CONTEXT, mismatch ⇒ scope not applicable);
+TICKETS requires `ticketCount` and `ticketClass` to equal the signature; ELIGIBLE_BILL / NOMINAL_PACKAGE
+match by merchant (composition is not the promotion identity). A NO_MATCH scope's rules never rank; a
+selected scope that does not match is not evaluated economically (no BEST_CONFIRMED from a mismatch).
+
+## C.6 Tie / top-set solution (RTM3-03 §7–§11)
+
+Two questions are tracked per candidate: `couldImproveBestOutcome` (bound strictly beats the best) and
+`couldChangeTopSet` (bound equal-or-beats the best); `couldChangeDecision = couldChangeTopSet`.
+Equality is always material. Status: a strict-improver ⇒ NO_SAFE_WINNER; an equal-only candidate ⇒
+NO_SAFE_WINNER against a **unique** winner, but tolerated against an **existing tie** (the tie merely
+widens). The result exposes `confirmedTopRuleRefs`, `possibleAdditionalTopRuleRefs`, and
+`topSetComplete`, so a tie is never misrepresented by a lexicographic singular `winnerRef`. FIX03 Baco
+S/150 ⇒ `CONFIRMED_TIE`, confirmed top `[BV-BCP-01, BV-DIN-01, BV-SIP-01]`, possible-additional
+`[BV-IBK-01]`, `topSetComplete = false`, IBK `couldChangeDecision = true` / `couldImproveBestOutcome =
+false`. FIX04 (strict beat) and the unique-winner-tieable case ⇒ NO_SAFE_WINNER.
+
+## C.7 Monetary-validation solution (RTM3-04/11)
+
+`assertSafeCentimos` (`Number.isSafeInteger` + non-negative) guards every settlement input and every
+participant-rankable cost. `percentBps` must be in `(0, 10000]`. `percentDiscountCentimos` and the
+ticket/2×1 helpers use **BigInt** for multiply/divide with a safe-range bound-check, so the prior
+`MAX_SAFE_INTEGER` rounding defect is impossible (proven by a BigInt oracle to `Number.MAX_SAFE_INTEGER`).
+`validateContextMoney` enforces `food ≤ bill`, `nonAlcoholic ≤ bill`, `food + nonAlcoholic ≤ bill`; a
+negative payable throws (never clamps). The exact Fridays counterexample (`wholeBill 1000, food 10000`)
+fails closed.
+
+## C.8 Identity-validation solution (RTM3-05)
+
+`buildValidatedOpMap` rejects a duplicate `(ruleId, version)` or `scopeId`, a duplicate operational
+state (no last-write-wins), and an operational state referencing no supplied rule; `decide()` then
+requires exactly one operational state per evaluated rule. All raise `CanonicalInputError`. After
+validation, array order is irrelevant (P1/P2). Duplicate/missing identities are covered as invalid
+input in `rtm3-closure.test.ts` (both input orders).
+
+## C.9 Strict-time solution (RTM3-06)
+
+`parseStrictInstantMs` requires `YYYY-MM-DDThh:mm:ss[.fff](Z|±HH:MM)`, validates month/day-in-month
+(leap-aware)/hour/minute/second/offset, and computes the epoch itself (no `Date.parse`). `epochMs`
+uses it (so temporal evaluation and LOCAL_DATETIME_RANGE endpoints are strict), `decide()` validates
+`evaluatedAt`/`intendedTransactionAt` up front, and the corpus schema validates serialized datetime
+endpoints. `2026-02-30`, `2026-09-01`, `2026-09-01T00:00:00`, and non-leap `2026-02-29` are rejected;
+offset and `Z` instants (incl. the Lima 05:00Z boundary) are accepted.
+
+## C.10 Family-scoped eligibility solution (RTM3-07)
+
+`resolveNetwork`/`resolveTier` consider only instruments of the rule's provider family; a held family
+instrument with a defined, contradictory value returns NO (an instrument fact beats any declaration);
+declarations are family-scoped (`network:<FAMILY>:<VALUE>`). IBK-Visa + BCP-AMEX (+ a global AMEX
+declaration) ⇒ an IBK-AMEX promotion is **ineligible**; IBK-AMEX + BCP-Visa ⇒ eligible; membership
+(a merchant-loyalty fact) stays provider-independent. FIX10 still passes via per-family AMEX instruments.
+
+## C.11 Combined-uncertainty solution (RTM3-10)
+
+`isUserResolvable` is now conjunctive: a candidate is user-resolvable only if **every** material axis
+is resolvable before payment. Source quality, unknown cap, unknown combinability, holiday uncertainty,
+and missing context are unresolvable; availability is resolvable iff `preRedemptionVerifiable`;
+provider-private is resolvable. Availability-UNKNOWN (pre-verifiable) **plus** source-UNKNOWN ⇒
+NO_SAFE_WINNER (the source axis is not masked); availability-UNKNOWN (pre-verifiable) **plus**
+source-FRESH ⇒ the public winner stands with a `DYNAMIC_AVAILABILITY` advisory. A source-UNKNOWN
+candidate always carries an explicit `rejectionReason` (RTM3-25).
+
+## C.12 Golden results
+
+FIX01–FIX12 all pass; FIX03 reconciled with top-set semantics; FIX05 valid; **FIX08 restored** to the
+authoritative ordinary-tie / airport→IBK / holiday→Sip behaviour; **FIX09** evaluates the Qore overlay
+against the complete public set (IBK + Sip tie) with Qore advisory. REG-PJ-CROSS-SKU protects runtime
+(a Classic purchase cannot match the Americana scope). SYN-REGULAR-BASELINE and the truth table pass.
+No canonical fixture remains a spec/corpus conflict.
+
+## C.13 Property / adversarial corrections (RTM3-13)
+
+P20 rewritten as a BigInt oracle equality over safe-integer bills; the non-negative property invokes
+`decide`; P11 asserts exactly NO_SAFE_WINNER; P14 adds the different-units case; P19 asserts the exact
+capped result (fails if the cap were removed); duplicate-key behaviour is a separate invalid-input
+regression. New file `rtm3-closure.test.ts` adds targeted regressions for RTM3-01/04/05/06/07/10.
+
+## C.14 Corpus reconciliation
+
+Unchanged: merchants **14** (food 10 / ent 4), active rules **46**, providers **16 / 12 / 10 / 8**,
+provider-private **2**, overlap O2 8 · O3 2 · O4 4, decision CORE 7 · ASSIST 3 · DIRECTORY 4, excluded
+history 1. The only `src/corpus/data` change is the FR-IBK-01 location removal (§C.4).
+
+## C.15 Exact quality-gate results
+
+`pnpm lint` · `typecheck` · `test` (**229 / 11 files**) · `corpus:validate` (PASS) · `build` ·
+`db:validate` · `format:check` — all exit 0.
+
+## C.16 Purity audit
+
+`src/engine` and `src/corpus` remain free of db/app/analytics/sourcemon/services, Next, React, Prisma,
+`fs/net/http/process/env`, and `Date.parse` (the two `Date.parse` mentions are comments documenting its
+removal). `corpus/instant.ts` is pure. The boundary test stays green.
+
+## C.17 Files changed (closure patch)
+
+**New:** `src/corpus/instant.ts`, `src/engine/golden/rtm3-closure.test.ts`.
+**Modified (engine):** `decide.ts`, `eligibility.ts`, `errors.ts`, `money.ts`, `time.ts`, `types.ts`.
+**Modified (corpus):** `data/rules.ts` (FR-IBK-01 only), `index.ts` (export), `schema.ts` (strict
+instant). **Modified (tests):** `engine.test.ts`, `golden/{harness,synthetic,canonical,properties,
+adversarial,mutation-sanity}.ts`. **Report:** this section.
+
+## C.18 Next action
+
+Submit the closure commit for **independent Codex Sol re-review**. Do not begin M3.5.

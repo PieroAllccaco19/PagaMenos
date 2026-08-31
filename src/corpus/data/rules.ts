@@ -475,7 +475,10 @@ const BUILT: Built[] = [
     temporal: dr('2026-07-01', '2026-12-31'),
     holiday: 'EXCLUDED',
     channels: ['SALON', 'TAKEAWAY'],
-    locations: { include: ['airport'] },
+    // RTM3-02: the authoritative Phase 0A-1B row states "international airport INCLUDED" — the
+    // airport is covered in addition to ordinary salon/takeaway locations, i.e. NO airport-specific
+    // location restriction. The prior `include:['airport']` wrongly meant airport-ONLY (a factual
+    // transcription defect against the frozen evidence, not a post-freeze campaign change).
     stock: true,
     eligibility: 'DYNAMIC_EXTERNAL',
     source: 's_ibk_fridays',

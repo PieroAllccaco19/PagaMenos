@@ -3,6 +3,7 @@
 export * from './ids';
 export * from './types';
 export * from './derive';
+export * from './instant';
 export * from './lint';
 export { parseCorpus, corpusSchema } from './schema';
 export { CORPUS_V1 } from './data';

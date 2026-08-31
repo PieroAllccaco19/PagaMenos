@@ -55,3 +55,16 @@ export class TemporalInputError extends EngineInvariantError {
     this.name = 'TemporalInputError';
   }
 }
+
+/**
+ * The decision input violates canonical identity (RTM3-05): a duplicated `(ruleId, version)` or
+ * `scopeId`, an evaluated rule with zero or more-than-one operational state, or an operational state
+ * referencing no supplied rule. Fail-closed — the engine never silently resolves these (e.g.
+ * last-write-wins), which could fabricate a tie or drop a rule.
+ */
+export class CanonicalInputError extends EngineInvariantError {
+  constructor(message: string) {
+    super('CANONICAL_INPUT', message);
+    this.name = 'CanonicalInputError';
+  }
+}

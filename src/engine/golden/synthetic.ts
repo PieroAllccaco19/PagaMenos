@@ -171,6 +171,24 @@ export function costScope(
   };
 }
 
+/** A synthetic ELIGIBLE_BILL scope (composition is not the promotion identity; matches by merchant). */
+export function billScope(
+  scopeId = 'syn_bill',
+  merchantId: MerchantId = SYN_MERCHANT,
+  allowedSelectors: EligibleSpendSelector[] = ['WHOLE_BILL'],
+): ComparisonScope {
+  return {
+    scopeId,
+    merchantId,
+    comparisonBasis: 'EFFECTIVE_OUT_OF_POCKET_COST',
+    equivalenceGroup: `${scopeId}_grp`,
+    purchaseKind: scopeId.toUpperCase(),
+    requiredContext: ['AMOUNT', 'DATE_TIME'],
+    allowedSelectors,
+    signature: { kind: 'ELIGIBLE_BILL', merchantId, purchaseDomain: 'RESTAURANT_BILL' },
+  };
+}
+
 /** A synthetic NOMINAL_VALUE_SAME_UNIT package scope. */
 export function nominalScope(
   scopeId = 'syn_nom',

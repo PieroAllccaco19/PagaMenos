@@ -11,6 +11,7 @@ import { decide } from '../decide';
 import type { EligibilityPortfolio } from '../types';
 import {
   candidate,
+  exactItemsOf,
   finalOf,
   frozenExcluded,
   frozenRule,
@@ -40,7 +41,7 @@ describe('FIX01 — Chinawok chijaukay a lo pobre + drink: Plin beats Sip on out
       merchantId: 'm_chinawok',
       channel: 'SALON',
       branch: 'miraflores',
-      hasExactBundle: true,
+      exactItems: exactItemsOf(scope),
     },
     intendedTransactionAt: TUE,
   });
@@ -84,7 +85,7 @@ describe('FIX02 — Popeyes 6pcs + family potato: Sip fixed bundle beats BCP', (
     rules: [bcp, sip],
     operationalStates: [opState('POP-BCP-01'), opState('POP-SIP-02')],
     scopes: [scope],
-    context: { merchantId: 'm_popeyes', channel: 'SALON', hasExactBundle: true },
+    context: { merchantId: 'm_popeyes', channel: 'SALON', exactItems: exactItemsOf(scope) },
     intendedTransactionAt: TUE,
   });
   it('BEST_CONFIRMED winner SIP_OH at 2990, runner-up 3990, delta COST_CENTIMOS 1000', () => {
@@ -119,15 +120,23 @@ describe('FIX03 — Baco S/150 @ 20%: three capped 20% offers tie; unknown-cap I
       expect(candidate(final, id)?.rankable).toBe(true);
     }
   });
-  it('CONFIRMED_TIE — no false BEST_CONFIRMED manufactured', () => {
+  it('CONFIRMED_TIE among the confirmed candidates — no false BEST_CONFIRMED manufactured', () => {
     expect(final?.status).toBe('CONFIRMED_TIE');
+    // The confirmed top set is the three capped candidates; the unknown-cap IBK could still join it,
+    // so the top set is NOT complete (RTM3-03 §9).
+    const topIds = final?.confirmedTopRuleRefs.map((r) => r.ruleId).sort();
+    expect(topIds).toEqual(['BV-BCP-01', 'BV-DIN-01', 'BV-SIP-01']);
+    expect(final?.possibleAdditionalTopRuleRefs.map((r) => r.ruleId)).toEqual(['BV-IBK-01']);
+    expect(final?.topSetComplete).toBe(false);
   });
-  it('the unknown-cap IBK candidate is non-rankable and does NOT change the decision', () => {
+  it('the unknown-cap IBK candidate is non-rankable but IS decision-material (could join the tie)', () => {
     const ibk = candidate(final, 'BV-IBK-01');
     expect(ibk?.rankable).toBe(false);
     expect(ibk?.advisories).toContain('UNKNOWN_CAP');
-    // Its optimistic (uncapped) bound only EQUALS an already-tied winner ⇒ cannot change the tie.
-    expect(ibk?.couldChangeDecision).toBe(false);
+    // Equality is material to the top set (RTM3-03): IBK could join the tie though it cannot beat it.
+    expect(ibk?.couldChangeDecision).toBe(true);
+    expect(ibk?.couldChangeTopSet).toBe(true);
+    expect(ibk?.couldImproveBestOutcome).toBe(false);
   });
 });
 
@@ -158,6 +167,7 @@ describe('FIX04 — Baco S/1000 @ 20%: unknown-cap IBK becomes decision-material
     expect(ibk?.rankable).toBe(false);
     expect(ibk?.advisories).toContain('UNKNOWN_CAP');
     expect(ibk?.couldChangeDecision).toBe(true);
+    expect(ibk?.couldImproveBestOutcome).toBe(true); // could STRICTLY beat the capped winner
   });
 });
 
@@ -180,6 +190,7 @@ describe('FIX05 — UVK two standard tickets: IBK 2x1 (=P) vs Diners fixed 1980 
         branch: 'selected',
         ticketUnitPriceCentimos: P,
         ticketCount: 2,
+        ticketClass: 'STANDARD',
       },
       intendedTransactionAt: WED,
     });
@@ -328,8 +339,8 @@ describe('FIX07 — Perroquet: per-rule EligibleSpendSelector drives the winner 
 });
 
 // ============================================================ FIX08 — Fridays location / calendar switch
-describe('FIX08 — TGI Fridays: airport / holiday switch (IBK airport-only, Sip airport-excluded)', () => {
-  const ibk = frozenRule('FR-IBK-01'); // 25%, locations include ['airport'], holiday EXCLUDED
+describe('FIX08 — TGI Fridays location/calendar switch (RTM3-02 corrected: IBK airport-INCLUDED)', () => {
+  const ibk = frozenRule('FR-IBK-01'); // 25%, NO location restriction (airport included), holiday EXCLUDED
   const sip = frozenRule('FR-SIP-01'); // 25%, locations exclude ['airport'], holiday NONE
   const scope = frozenScope('sc_fridays_food');
   const publicRules = [ibk, sip];
@@ -345,14 +356,27 @@ describe('FIX08 — TGI Fridays: airport / holiday switch (IBK airport-only, Sip
     ...over,
   });
 
-  it('CORPUS FACT: the two public Fridays offers have complementary locations and can NEVER co-apply', () => {
-    // A literal both-applicable CONFIRMED_TIE between FR-IBK-01 and FR-SIP-01 is precluded by the
-    // frozen corpus: include:['airport'] and exclude:['airport'] are disjoint. Documented in the
-    // M3 report as a spec-vs-corpus discrepancy; the corpus is left UNALTERED. Both offers are 25%.
-    expect(ibk.constraints.locations).toEqual({ include: ['airport'] });
+  it('CORPUS FIDELITY: FR-IBK-01 carries no airport-only restriction (the airport is included)', () => {
+    // RTM3-02: the frozen Phase 0A-1B row is "international airport INCLUDED" — coverage in addition
+    // to ordinary salon/takeaway locations, i.e. no location restriction. Both public offers are 25%.
+    expect(ibk.constraints.locations).toBeUndefined();
     expect(sip.constraints.locations).toEqual({ exclude: ['airport'] });
     expect(ibk.benefit).toMatchObject({ type: 'PERCENT', percentBps: 2500 });
     expect(sip.benefit).toMatchObject({ type: 'PERCENT', percentBps: 2500 });
+  });
+
+  it('ordinary non-airport, non-holiday: IBK 25% ties Sip 25% at 11250 ⇒ CONFIRMED_TIE', () => {
+    const f = finalOf({
+      rules: publicRules,
+      operationalStates: ops,
+      scopes: [scope],
+      context: foodCtx({ branch: 'miraflores' }),
+      intendedTransactionAt: TUE,
+    });
+    expect(candidate(f, 'FR-IBK-01')?.effectiveCostCentimos).toBe(11250);
+    expect(candidate(f, 'FR-SIP-01')?.effectiveCostCentimos).toBe(11250);
+    expect(f?.status).toBe('CONFIRMED_TIE');
+    expect(f?.confirmedTopRuleRefs.map((r) => r.ruleId).sort()).toEqual(['FR-IBK-01', 'FR-SIP-01']);
   });
 
   it('airport, non-holiday: Sip excluded by location ⇒ IBK is the sole public winner', () => {
@@ -369,21 +393,7 @@ describe('FIX08 — TGI Fridays: airport / holiday switch (IBK airport-only, Sip
     expect(candidate(f, 'FR-IBK-01')?.effectiveCostCentimos).toBe(11250); // 25% of 15000
   });
 
-  it('airport, HOLIDAY: IBK holiday-excluded AND Sip location-excluded ⇒ no public benefit', () => {
-    const f = finalOf({
-      rules: publicRules,
-      operationalStates: ops,
-      scopes: [scope],
-      context: foodCtx({ branch: 'airport' }),
-      intendedTransactionAt: '2026-07-28T12:00:00-05:00',
-      holidayCalendar: ['2026-07-28'],
-    });
-    expect(candidate(f, 'FR-IBK-01')?.rejectionReason).toBe('holiday excluded');
-    expect(candidate(f, 'FR-SIP-01')?.rejectionReason).toBe('branch airport excluded');
-    expect(f?.status).toBe('NO_APPLICABLE_BENEFIT');
-  });
-
-  it('ordinary location, HOLIDAY: Sip (holiday NONE) is the sole safe public winner', () => {
+  it('ordinary non-airport, HOLIDAY: IBK holiday-excluded, Sip (no holiday exclusion) wins', () => {
     const f = finalOf({
       rules: publicRules,
       operationalStates: ops,
@@ -392,8 +402,6 @@ describe('FIX08 — TGI Fridays: airport / holiday switch (IBK airport-only, Sip
       intendedTransactionAt: '2026-07-28T12:00:00-05:00',
       holidayCalendar: ['2026-07-28'],
     });
-    // The holiday gate (step 2) fires before the location gate (economics), so IBK is rejected for
-    // its holiday exclusion — directly demonstrating the calendar switch the fixture is about.
     expect(candidate(f, 'FR-IBK-01')?.rejectionReason).toBe('holiday excluded');
     expect(f?.status).toBe('BEST_CONFIRMED');
     expect(f?.winnerRef?.ruleId).toBe('FR-SIP-01');
@@ -403,17 +411,21 @@ describe('FIX08 — TGI Fridays: airport / holiday switch (IBK airport-only, Sip
 
 // ============================================================ FIX09 — Fridays Qore provider-private overlay
 describe('FIX09 — Fridays Qore: a provider-private overlay stays advisory, never a confirmed winner', () => {
+  // §28: evaluate the Qore overlay against the COMPLETE relevant public set for this purchase — both
+  // FR-IBK-01 (now airport-included ⇒ applies at ordinary Lima branches too) and FR-SIP-01.
+  const ibk = frozenRule('FR-IBK-01'); // public 25%
   const sip = frozenRule('FR-SIP-01'); // public 25%
   const qore = frozenRule('FR-QORE-01'); // provider-private 50% (qore_active)
   const scope = frozenScope('sc_fridays_food');
   const port = (qoreState: 'YES' | 'NO' | 'UNKNOWN'): EligibilityPortfolio => ({
-    instruments: [{ family: 'SIP_OH' }, { family: 'BCP_QORE' }],
+    instruments: [{ family: 'IBK_PLIN' }, { family: 'SIP_OH' }, { family: 'BCP_QORE' }],
     privateStates: { qore_active: qoreState },
   });
   const runQ = (qoreState: 'YES' | 'NO' | 'UNKNOWN') =>
     finalOf({
-      rules: [sip, qore],
+      rules: [ibk, sip, qore],
       operationalStates: [
+        opState('FR-IBK-01', { availability: 'CONFIRMED_AVAILABLE' }),
         opState('FR-SIP-01', { availability: 'NOT_APPLICABLE' }),
         opState('FR-QORE-01', { availability: 'NOT_APPLICABLE' }),
       ],
@@ -430,25 +442,28 @@ describe('FIX09 — Fridays Qore: a provider-private overlay stays advisory, nev
     });
 
   for (const qoreState of ['UNKNOWN', 'YES'] as const) {
-    it(`qore_active = ${qoreState}: public BEST_CONFIRMED (Sip) stands; Qore is a VERIFY_FIRST advisory only`, () => {
+    it(`qore_active = ${qoreState}: public IBK+Sip CONFIRMED_TIE stands; Qore is a VERIFY_FIRST advisory only`, () => {
       const f = runQ(qoreState);
-      expect(f?.status).toBe('BEST_CONFIRMED');
-      expect(f?.winnerRef?.ruleId).toBe('FR-SIP-01');
+      // The complete public set ties at 25% (IBK + Sip); the 50% Qore overlay never joins it.
+      expect(f?.status).toBe('CONFIRMED_TIE');
+      expect(f?.confirmedTopRuleRefs.map((r) => r.ruleId).sort()).toEqual([
+        'FR-IBK-01',
+        'FR-SIP-01',
+      ]);
       const q = candidate(f, 'FR-QORE-01');
       expect(q?.rankable).toBe(false);
       expect(q?.advisories).toContain('VERIFY_FIRST');
       expect(q?.couldChangeDecision).toBe(true); // 50% upside exists, but user-resolvable
-      expect(f?.winnerRef?.ruleId).not.toBe('FR-QORE-01');
+      expect(f?.confirmedTopRuleRefs.map((r) => r.ruleId)).not.toContain('FR-QORE-01');
     });
   }
 
-  it('qore_active = NO: the Qore overlay is ineligible; Sip remains the confirmed winner', () => {
+  it('qore_active = NO: the Qore overlay is ineligible; the public IBK+Sip tie stands', () => {
     const f = runQ('NO');
     const q = candidate(f, 'FR-QORE-01');
     expect(q?.eligibility).toBe('INELIGIBLE');
     expect(q?.rankable).toBe(false);
-    expect(f?.status).toBe('BEST_CONFIRMED');
-    expect(f?.winnerRef?.ruleId).toBe('FR-SIP-01');
+    expect(f?.status).toBe('CONFIRMED_TIE');
   });
 });
 
@@ -471,6 +486,7 @@ describe('FIX10 — Cineplanet: the quarantined historical Sip row can never bec
     channel: 'WEB_APP' as const,
     ticketUnitPriceCentimos: 2000,
     ticketCount: 1,
+    ticketClass: 'ELIGIBLE_FORMAT',
     wholeBillCentimos: 2000,
   };
 
@@ -575,7 +591,7 @@ describe('FIX12 — Popeyes dynamic availability: confirmed / unavailable / unkn
         opState('POP-SIP-02', { availability: sipAvail }),
       ],
       scopes: [scope],
-      context: { merchantId: 'm_popeyes', channel: 'SALON', hasExactBundle: true },
+      context: { merchantId: 'm_popeyes', channel: 'SALON', exactItems: exactItemsOf(scope) },
       intendedTransactionAt: TUE,
     });
 
@@ -606,7 +622,7 @@ describe('FIX12 — Popeyes dynamic availability: confirmed / unavailable / unkn
         opState('POP-SIP-02', { availability: 'CONFIRMED_AVAILABLE' }),
       ],
       scopes: [scope],
-      context: { merchantId: 'm_popeyes', channel: 'SALON', hasExactBundle: true },
+      context: { merchantId: 'm_popeyes', channel: 'SALON', exactItems: exactItemsOf(scope) },
       intendedTransactionAt: TUE,
     });
     const resultA = decide(inputA);
@@ -630,54 +646,74 @@ describe('REG-PJ-CROSS-SKU — Papa Johns: different exact SKUs never enter one 
     expect(shared).toEqual([]);
   });
 
-  it('an underspecified Papa Johns context yields requiresScopeSelection — never a Plin-beats-BCP delta', () => {
+  const classicScope = frozenScope('sc_pj_large_classic');
+  const americanaScope = frozenScope('sc_pj_large_americana');
+  const bothScopes = [classicScope, americanaScope];
+  const bothOps = [
+    opState('PJ-BCP-01', { availability: 'CONFIRMED_AVAILABLE' }),
+    opState('PJ-PLIN-01', { availability: 'CONFIRMED_AVAILABLE' }),
+  ];
+
+  it('buying the Large Classic bundle matches ONLY the Large Classic scope (Americana cannot match)', () => {
     const e = runGolden({
       rules: [bcp, plin],
-      operationalStates: [
-        opState('PJ-BCP-01', { availability: 'CONFIRMED_AVAILABLE' }),
-        opState('PJ-PLIN-01', { availability: 'CONFIRMED_AVAILABLE' }),
-      ],
-      scopes: [frozenScope('sc_pj_large_classic'), frozenScope('sc_pj_large_americana')],
+      operationalStates: bothOps,
+      scopes: bothScopes,
       context: {
         merchantId: 'm_papa_johns',
         channel: 'SALON',
         branch: 'miraflores',
-        hasExactBundle: true,
+        exactItems: exactItemsOf(classicScope), // the ACTUAL purchase is the Large Classic bundle
       },
       intendedTransactionAt: TUE,
     });
-    expect(e.requiresScopeSelection).toBe(true);
-    expect(e.final).toBeUndefined();
-    // Each matched scope is single-offer (one family); no scope ranks BCP against Plin.
+    // Only the Large Classic scope matches the runtime purchase; the Americana scope never ranks.
+    expect(e.matchedScopes.map((s) => s.scopeId)).toEqual(['sc_pj_large_classic']);
+    expect(e.final?.scopeId).toBe('sc_pj_large_classic');
+    expect(e.final?.candidates.map((c) => c.ruleRef.ruleId)).toEqual(['PJ-BCP-01']);
+    expect(candidate(e.final, 'PJ-BCP-01')?.effectiveCostCentimos).toBe(2090);
+    // No decision ever ranks BCP against Plin ⇒ the forbidden S/7 delta cannot appear.
     for (const s of e.matchedScopes) {
-      const fams = new Set(s.decision.candidates.map((c) => c.comparisonBasis && c.ruleRef.ruleId));
-      expect(s.decision.candidates.length).toBe(1);
-      expect(fams.size).toBe(1);
-      // The forbidden "Plin wins by S/7" (2090 − 1390 = 700) delta must never appear.
       expect(s.decision.delta).not.toEqual({ kind: 'COST_CENTIMOS', amountCentimos: 700 });
     }
   });
 
-  it('selecting the Large Classic scope returns only the BCP offer (2090), never the Plin SKU', () => {
+  it('buying the Large Americana bundle matches ONLY the Americana scope (winner Plin 1390)', () => {
     const e = runGolden({
       rules: [bcp, plin],
-      operationalStates: [
-        opState('PJ-BCP-01', { availability: 'CONFIRMED_AVAILABLE' }),
-        opState('PJ-PLIN-01', { availability: 'CONFIRMED_AVAILABLE' }),
-      ],
-      scopes: [frozenScope('sc_pj_large_classic'), frozenScope('sc_pj_large_americana')],
+      operationalStates: bothOps,
+      scopes: bothScopes,
       context: {
         merchantId: 'm_papa_johns',
         channel: 'SALON',
         branch: 'miraflores',
-        hasExactBundle: true,
+        exactItems: exactItemsOf(americanaScope),
       },
-      selectedScopeId: 'sc_pj_large_classic',
       intendedTransactionAt: TUE,
     });
-    expect(e.final?.scopeId).toBe('sc_pj_large_classic');
-    expect(e.final?.candidates.map((c) => c.ruleRef.ruleId)).toEqual(['PJ-BCP-01']);
-    expect(candidate(e.final, 'PJ-BCP-01')?.effectiveCostCentimos).toBe(2090);
+    expect(e.matchedScopes.map((s) => s.scopeId)).toEqual(['sc_pj_large_americana']);
+    expect(e.final?.candidates.map((c) => c.ruleRef.ruleId)).toEqual(['PJ-PLIN-01']);
+    expect(candidate(e.final, 'PJ-PLIN-01')?.effectiveCostCentimos).toBe(1390);
+  });
+
+  it('supplying Large Classic items can NEVER match the Large Americana scope (runtime, not lint)', () => {
+    // Evaluate ONLY the Americana scope while buying the Classic bundle ⇒ the scope is not applicable
+    // (its rules never rank), so there is no Plin winner from a Classic purchase.
+    const e = runGolden({
+      rules: [plin],
+      operationalStates: [opState('PJ-PLIN-01', { availability: 'CONFIRMED_AVAILABLE' })],
+      scopes: [americanaScope],
+      context: {
+        merchantId: 'm_papa_johns',
+        channel: 'SALON',
+        branch: 'miraflores',
+        exactItems: exactItemsOf(classicScope), // Classic items vs an Americana scope
+      },
+      intendedTransactionAt: TUE,
+    });
+    expect(e.matchedScopes).toEqual([]);
+    expect(candidate(e.final, 'PJ-PLIN-01')?.rankable).toBe(false);
+    expect(candidate(e.final, 'PJ-PLIN-01')?.rejectionReason).toContain('scope not applicable');
   });
 });
 
@@ -744,7 +780,7 @@ describe('SYN-REGULAR-BASELINE — provider-advertised list price is NEVER the r
       ],
       scopes: [synScope],
       portfolio: port,
-      context: { merchantId: 'm_fridays', hasExactBundle: true },
+      context: { merchantId: 'm_fridays', exactItems: [{ itemKey: 'syn_item', qty: 1 }] },
       intendedTransactionAt: TUE,
       ...(baseline !== undefined ? { baselineByScopeId: { syn_same_bundle: baseline } } : {}),
     });

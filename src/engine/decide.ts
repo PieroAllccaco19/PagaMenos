@@ -1,12 +1,18 @@
 // PagaMenos · engine — the pure deterministic decision evaluator (§4/§5/§9).
 // Side-effect-free. Order-invariant (candidates are sorted by ruleId before ranking). Fail-closed:
 // impossible domain combinations throw typed invariant errors rather than defaulting to a winner.
-import { deriveRequiredContext, expectedBasis } from '@/corpus';
+import {
+  canonicalItemsEqual,
+  deriveRequiredContext,
+  expectedBasis,
+  parseStrictInstantMs,
+} from '@/corpus';
 import type {
   Centimos,
   ComparisonScope,
   ContextReq,
   NominalUnit,
+  PurchaseSignature,
   RuleOperationalState,
   RuleVersion,
 } from '@/corpus';
@@ -19,12 +25,15 @@ import {
   resolveSourceQuality,
 } from './eligibility';
 import {
+  CanonicalInputError,
   ComparisonBasisMismatchError,
   CrossMerchantMembershipError,
   SettlementInvariantError,
+  TemporalInputError,
 } from './errors';
 import {
   applyKnownCap,
+  assertSafeCentimos,
   cashbackCentimos as cashbackOf,
   fixedPriceTicketCostCentimos,
   minimumSpendMet,
@@ -45,6 +54,137 @@ import type {
   RuleRef,
   ScopeDecisionResult,
 } from './types';
+
+// ---- Runtime PurchaseSignature matcher (RTM3-01) ----
+// A boolean cannot prove WHICH bundle/ticket a participant is buying. The scope's frozen
+// PurchaseSignature is matched against the ACTUAL runtime purchase before any rule may rank.
+type SignatureMatch =
+  | { kind: 'MATCH' }
+  | { kind: 'MISSING'; missing: ContextReq[] }
+  | { kind: 'NO_MATCH'; reason: string };
+
+function matchPurchaseSignature(
+  signature: PurchaseSignature,
+  ctx: PurchaseContext,
+): SignatureMatch {
+  switch (signature.kind) {
+    case 'EXACT_BUNDLE': {
+      if (ctx.exactItems === undefined) return { kind: 'MISSING', missing: ['BASKET'] };
+      // Same normalization as M1 (stable key, positive-int qty, no duplicates, exact (key,qty)
+      // equality); malformed runtime items throw (fail-closed) rather than matching loosely.
+      return canonicalItemsEqual(ctx.exactItems, signature.canonicalItems)
+        ? { kind: 'MATCH' }
+        : { kind: 'NO_MATCH', reason: 'purchase items do not match the exact-bundle signature' };
+    }
+    case 'TICKETS': {
+      if (ctx.ticketCount === undefined || ctx.ticketClass === undefined) {
+        return { kind: 'MISSING', missing: ['TICKET_PRICE'] };
+      }
+      if (ctx.ticketCount !== signature.ticketCount) {
+        return {
+          kind: 'NO_MATCH',
+          reason: `ticket count ${ctx.ticketCount} ≠ signature ${signature.ticketCount}`,
+        };
+      }
+      if (ctx.ticketClass !== signature.ticketClass) {
+        return {
+          kind: 'NO_MATCH',
+          reason: `ticket class ${ctx.ticketClass} ≠ signature ${signature.ticketClass}`,
+        };
+      }
+      return { kind: 'MATCH' };
+    }
+    case 'ELIGIBLE_BILL':
+    case 'NOMINAL_PACKAGE':
+      // Composition is not the promotion identity; the merchant is already guaranteed by the
+      // decide() merchant filter. Per-rule bill/basket/nominal context is validated downstream.
+      return signature.merchantId === ctx.merchantId
+        ? { kind: 'MATCH' }
+        : { kind: 'NO_MATCH', reason: 'merchant mismatch' };
+    default: {
+      const _e: never = signature;
+      throw new SettlementInvariantError(`unhandled PurchaseSignature: ${JSON.stringify(_e)}`);
+    }
+  }
+}
+
+// ---- Money / identity / instant input validation (RTM3-04/05/06/11) ----
+function validateContextMoney(ctx: PurchaseContext): void {
+  for (const [v, label] of [
+    [ctx.wholeBillCentimos, 'wholeBillCentimos'],
+    [ctx.foodCentimos, 'foodCentimos'],
+    [ctx.nonAlcoholicBeverageCentimos, 'nonAlcoholicBeverageCentimos'],
+    [ctx.ticketUnitPriceCentimos, 'ticketUnitPriceCentimos'],
+  ] as const) {
+    if (v !== undefined) assertSafeCentimos(v, label);
+  }
+  if (
+    ctx.ticketCount !== undefined &&
+    (!Number.isSafeInteger(ctx.ticketCount) || ctx.ticketCount <= 0)
+  ) {
+    throw new SettlementInvariantError(
+      `ticketCount must be a positive safe integer: ${ctx.ticketCount}`,
+    );
+  }
+  // Subtotal consistency (RTM3-11): food/beverage are disjoint subtotals of the same payable bill.
+  const wb = ctx.wholeBillCentimos;
+  const fd = ctx.foodCentimos;
+  const nb = ctx.nonAlcoholicBeverageCentimos;
+  if (wb !== undefined) {
+    if (fd !== undefined && fd > wb) {
+      throw new SettlementInvariantError(`foodCentimos ${fd} exceeds wholeBillCentimos ${wb}`);
+    }
+    if (nb !== undefined && nb > wb) {
+      throw new SettlementInvariantError(
+        `nonAlcoholicBeverageCentimos ${nb} exceeds wholeBillCentimos ${wb}`,
+      );
+    }
+    if (fd !== undefined && nb !== undefined && fd + nb > wb) {
+      throw new SettlementInvariantError(
+        `foodCentimos + nonAlcoholicBeverageCentimos (${fd + nb}) exceeds wholeBillCentimos ${wb}`,
+      );
+    }
+  }
+}
+
+function assertStrictInstant(iso: string, label: string): void {
+  if (parseStrictInstantMs(iso) === null) {
+    throw new TemporalInputError(
+      `${label} must be a zone-qualified ISO-8601 instant (Z or ±HH:MM): ${iso}`,
+    );
+  }
+}
+
+/** RTM3-05: reject duplicate rule/scope identities and 0/>1/orphan operational states. */
+function buildValidatedOpMap(input: DecideInput): Map<string, RuleOperationalState> {
+  const ruleKeys = new Set<string>();
+  for (const r of input.rules) {
+    const key = `${r.ruleId}@${r.version}`;
+    if (ruleKeys.has(key)) {
+      throw new CanonicalInputError(`duplicate rule identity in decision input: ${key}`);
+    }
+    ruleKeys.add(key);
+  }
+  const scopeIds = new Set<string>();
+  for (const s of input.scopes) {
+    if (scopeIds.has(s.scopeId)) {
+      throw new CanonicalInputError(`duplicate scopeId in decision input: ${s.scopeId}`);
+    }
+    scopeIds.add(s.scopeId);
+  }
+  const opMap = new Map<string, RuleOperationalState>();
+  for (const op of input.operationalStates) {
+    const key = `${op.ruleId}@${op.version}`;
+    if (opMap.has(key)) {
+      throw new CanonicalInputError(`duplicate operational state for ${key} (no last-write-wins)`);
+    }
+    if (!ruleKeys.has(key)) {
+      throw new CanonicalInputError(`operational state references no supplied rule: ${key}`);
+    }
+    opMap.set(key, op);
+  }
+  return opMap;
+}
 
 // ---- Selector quantities (§16) ----
 function selectorQuantity(
@@ -111,8 +251,10 @@ function missingContextFor(rule: RuleVersion, ctx: PurchaseContext): ContextReq[
         }
         break;
       case 'BASKET':
+        // EXACT_SKU_BUNDLE identity is proven by the scope PurchaseSignature matcher (RTM3-01), so
+        // no per-rule BASKET check is needed here. General-bill selectors still need their subtotal.
         if (rule.eligibleSpendSelector === 'EXACT_SKU_BUNDLE') {
-          if (ctx.hasExactBundle === undefined) missing.push('BASKET');
+          // handled by matchPurchaseSignature
         } else if (selectorQuantity(rule.eligibleSpendSelector, ctx) === undefined) {
           missing.push('BASKET');
         }
@@ -224,10 +366,18 @@ function computeEconomics(rule: RuleVersion, ctx: PurchaseContext): Econ {
         c.cap && c.cap.kind === 'AMOUNT'
           ? applyKnownCap(b.fixedDiscountCentimos, c.cap.centimos)
           : b.fixedDiscountCentimos;
+      const cost = base - discount;
+      // A fixed discount larger than the bill would imply a negative payable — fail closed (RTM3-04),
+      // never clamp silently to zero.
+      if (cost < 0) {
+        throw new SettlementInvariantError(
+          `fixed discount ${discount} exceeds bill ${base} ⇒ negative effective cost`,
+        );
+      }
       return {
         state: 'RANKABLE_COST',
-        effectiveCostCentimos: base - discount,
-        optimisticCostCentimos: base - discount,
+        effectiveCostCentimos: cost,
+        optimisticCostCentimos: cost,
         roundingAmbiguous: false,
         cashbackCentimos: 0,
       };
@@ -326,7 +476,10 @@ interface Working {
   rejectionReason?: string | undefined;
   // Materiality scratch (populated during resolveDecision).
   __bound?: PlausibleBound;
-  __material?: boolean;
+  /** Optimistic bound could STRICTLY improve the best outcome (beat the best value). */
+  __improve?: boolean;
+  /** Optimistic bound could enter the top set (equal-or-beat the best value) = couldChangeDecision. */
+  __changeTopSet?: boolean;
 }
 
 function syntheticProof(
@@ -427,40 +580,44 @@ function boundFor(w: Working, basis: ComparisonScope['comparisonBasis']): Plausi
   return { kind: 'UNKNOWN_OR_UNBOUNDED', reason: 'no current-evidence bound available' };
 }
 
-function boundIsMaterial(
+// RTM3-03/§8: two independent questions.
+//   couldImproveBestOutcome — the optimistic bound STRICTLY beats the best value (cost <, nominal >).
+//   couldChangeTopSet       — the optimistic bound can equal-or-beat the best value (could join top).
+// Equality is ALWAYS material to the top set (couldChangeDecision = couldChangeTopSet), regardless of
+// whether the current confirmed top set has one candidate or many. The STATUS resolution (not the
+// materiality flag) decides whether an equal-only candidate forces NO_SAFE_WINNER (a unique winner
+// could become a tie ⇒ unsafe) or is tolerated (an existing tie merely widens ⇒ CONFIRMED_TIE with
+// an incomplete top set).
+interface BoundMateriality {
+  improve: boolean;
+  changeTopSet: boolean;
+}
+function boundMateriality(
   bound: PlausibleBound,
   basis: ComparisonScope['comparisonBasis'],
   winnerCost: Centimos | undefined,
   winnerNominal: number | undefined,
-  winnerIsTie: boolean,
-): boolean {
-  if (bound.kind === 'UNKNOWN_OR_UNBOUNDED') return true; // material by default (§28)
-  // Materiality = "could change the DECISION". A bound that STRICTLY beats the winner could make a
-  // new sole/joint winner ⇒ material. A bound that only EQUALS the winner is material iff the winner
-  // is currently UNIQUE (equality would convert BEST_CONFIRMED → CONFIRMED_TIE); if the winner set is
-  // ALREADY a tie, an equal bound merely joins/does-not-join a tie WITHOUT changing the decision
-  // status ⇒ non-material (M3 FIX03; consistent with §21's "confirmed UNIQUE winner" wording).
+): BoundMateriality {
+  if (bound.kind === 'UNKNOWN_OR_UNBOUNDED') return { improve: true, changeTopSet: true };
   if (
     basis === 'EFFECTIVE_OUT_OF_POCKET_COST' &&
     bound.kind === 'KNOWN_BOUND' &&
     'minPlausibleCostCentimos' in bound
   ) {
-    if (winnerCost === undefined) return true;
-    if (bound.minPlausibleCostCentimos < winnerCost) return true;
-    if (bound.minPlausibleCostCentimos === winnerCost) return !winnerIsTie;
-    return false;
+    if (winnerCost === undefined) return { improve: true, changeTopSet: true };
+    const b = bound.minPlausibleCostCentimos;
+    return { improve: b < winnerCost, changeTopSet: b <= winnerCost };
   }
   if (
     basis === 'NOMINAL_VALUE_SAME_UNIT' &&
     bound.kind === 'KNOWN_BOUND' &&
     'maxPlausibleValueMinorUnits' in bound
   ) {
-    if (winnerNominal === undefined) return true;
-    if (bound.maxPlausibleValueMinorUnits > winnerNominal) return true;
-    if (bound.maxPlausibleValueMinorUnits === winnerNominal) return !winnerIsTie;
-    return false;
+    if (winnerNominal === undefined) return { improve: true, changeTopSet: true };
+    const v = bound.maxPlausibleValueMinorUnits;
+    return { improve: v > winnerNominal, changeTopSet: v >= winnerNominal };
   }
-  return true;
+  return { improve: true, changeTopSet: true };
 }
 
 function advisoriesFor(w: Working): CandidateAdvisory[] {
@@ -478,11 +635,23 @@ function advisoriesFor(w: Working): CandidateAdvisory[] {
   return [...a];
 }
 
-/** User-resolvable uncertainty (does NOT block a confirmed public winner, §11/§21/§23). */
+/**
+ * A candidate is safely user-resolvable ONLY if EVERY material blocking axis can be verified before
+ * payment (RTM3-10). One resolvable axis must NOT mask another unresolvable one: source quality is
+ * never user-verifiable; unknown combinability, holiday-policy uncertainty and missing context are
+ * system-unresolvable; availability is resolvable iff the rule is `preRedemptionVerifiable`;
+ * provider-private eligibility is user-resolvable. A public winner may stand over a candidate only
+ * when all of that candidate's blocking axes are resolvable.
+ */
 function isUserResolvable(w: Working): boolean {
-  if (w.providerPrivate) return true;
-  if (w.availabilityUncertain && w.preRedemptionVerifiable) return true;
-  return false;
+  if (w.sourceUncertainty) return false;
+  if (w.unknownCap) return false; // the cap value is unknown; not user-verifiable before payment
+  if (w.unknownCombinability) return false;
+  if (w.holidayUncertain) return false;
+  if (w.missingContext && w.missingContext.length > 0) return false;
+  if (w.availabilityUncertain && !w.preRedemptionVerifiable) return false;
+  // Remaining axes — provider-private, availability with pre-redemption verifiability — are resolvable.
+  return true;
 }
 
 export function evaluateScope(
@@ -493,6 +662,11 @@ export function evaluateScope(
 ): EngineDecisionResult {
   const basis = scope.comparisonBasis;
   const holidayCalendar = new Set(input.holidayCalendar ?? []);
+
+  // RTM3-01: prove the ACTUAL runtime purchase matches this scope's frozen PurchaseSignature BEFORE
+  // any member rule may rank. A scope-wide gate: NO_MATCH ⇒ every member is a clean rejection (the
+  // scope is not this purchase); MISSING ⇒ every member is non-rankable pending context.
+  const sigMatch = matchPurchaseSignature(scope.signature, input.context);
 
   // Deterministic order (§35): sort members by ruleId before any classification/ranking.
   const sorted = [...members].sort((a, b) =>
@@ -524,17 +698,10 @@ export function evaluateScope(
     const ref: RuleRef = { ruleId: rule.ruleId, version: rule.version };
     const op = opStateByKey.get(`${rule.ruleId}@${rule.version}`);
     if (!op) {
-      workings.push({
-        rule,
-        ref,
-        advisories: [],
-        bucket: 'REJECTED',
-        eligibility: 'UNKNOWN',
-        sourceFresh: false,
-        provenanceRef: rule.provenance.observedAt,
-        rejectionReason: 'no operational state',
-      });
-      continue;
+      // Unreachable when decide() validated canonical identity, but fail closed defensively (§RTM3-05).
+      throw new CanonicalInputError(
+        `evaluated rule ${rule.ruleId}@${rule.version} has no operational state`,
+      );
     }
 
     const w: Working = {
@@ -546,6 +713,19 @@ export function evaluateScope(
       sourceFresh: op.sourceQualityState === 'FRESH',
       provenanceRef: rule.provenance.observedAt,
     };
+
+    // 0. PurchaseSignature gate (RTM3-01) — the purchase must be this scope's signature.
+    if (sigMatch.kind === 'NO_MATCH') {
+      w.rejectionReason = `scope not applicable: ${sigMatch.reason}`;
+      workings.push(w);
+      continue;
+    }
+    if (sigMatch.kind === 'MISSING') {
+      w.missingContext = sigMatch.missing;
+      w.bucket = 'UNCERTAIN';
+      workings.push(w);
+      continue;
+    }
 
     // 1. Publication (§25).
     const pub = resolvePublication(op.publicationState);
@@ -656,6 +836,8 @@ export function evaluateScope(
       w.nominalUnit = econ.unit;
       w.cashAcquisitionCostCentimos = econ.cashAcquisitionCostCentimos;
     } else {
+      // A participant-rankable effective cost MUST be a valid non-negative céntimo value (RTM3-04).
+      assertSafeCentimos(econ.effectiveCostCentimos, `effectiveCostCentimos for ${rule.ruleId}`);
       w.effectiveCostCentimos = econ.effectiveCostCentimos;
       w.optimisticCostCentimos = econ.optimisticCostCentimos;
       w.roundingAmbiguous = econ.roundingAmbiguous;
@@ -665,7 +847,12 @@ export function evaluateScope(
     // Non-FRESH source ⇒ uncertain (never rankable); provider-private / availability-unknown /
     // combinability-unknown / holiday-uncertain ⇒ uncertain; else confirmed rankable.
     const src = resolveSourceQuality(op.sourceQualityState);
-    if (!src.rankable) w.sourceUncertainty = src.uncertainty;
+    if (!src.rankable) {
+      w.sourceUncertainty = src.uncertainty;
+      // RTM3-25: a source-uncertain candidate (incl. UNKNOWN) always carries an explicit reason, so
+      // it never disappears from the audit output without explanation.
+      if (!w.rejectionReason) w.rejectionReason = src.rejectionReason;
+    }
 
     const uncertain =
       !!w.sourceUncertainty ||
@@ -778,49 +965,65 @@ function resolveDecision(
   }
 
   // ---- Materiality of uncertain candidates + rounding-ambiguity of non-winner rankables ----
-  const materialBlockers: Working[] = [];
-  const materialUserResolvable: Working[] = [];
+  // Partition system-unresolvable material candidates into "could strictly improve the best" vs
+  // "could only equal the best" (join the top set). User-resolvable material candidates never force
+  // NO_SAFE_WINNER (they are advisory), but they may leave the top set incomplete.
+  const systemImprovers: Working[] = []; // could strictly beat the best value ⇒ hard block
+  const systemEqualOnly: Working[] = []; // could only equal the best value ⇒ could join the top set
+  const userResolvableMaterial: Working[] = [];
   for (const w of uncertain) {
     const bound = boundFor(w, basis);
-    const material = boundIsMaterial(bound, basis, winnerCost, winnerNominal, tie);
+    const { improve, changeTopSet } = boundMateriality(bound, basis, winnerCost, winnerNominal);
     w.__bound = bound;
-    w.__material = material;
-    if (!material) continue;
-    if (isUserResolvable(w)) materialUserResolvable.push(w);
-    else materialBlockers.push(w);
+    w.__improve = improve;
+    w.__changeTopSet = changeTopSet;
+    if (!changeTopSet) continue;
+    if (isUserResolvable(w)) userResolvableMaterial.push(w);
+    else if (improve) systemImprovers.push(w);
+    else systemEqualOnly.push(w);
   }
-  // Rounding ambiguity: a non-winner rankable whose optimistic (rounded-up) cost could beat, or
-  // (against a unique winner) tie, the winner. Against an already-tied winner an equal optimistic
-  // cost only joins the tie ⇒ non-material (same "could change the decision" rule as above).
+  // Rounding ambiguity: a non-winner rankable whose optimistic (rounded-up) cost could beat or equal
+  // the winner is system-unresolvable (the ambiguity is intrinsic, not user-verifiable).
   if (basis === 'EFFECTIVE_OUT_OF_POCKET_COST' && winner && winnerCost !== undefined) {
     for (const w of rankable) {
       if (w === winner) continue;
       if (w.roundingAmbiguous && w.optimisticCostCentimos !== undefined) {
         const oc = w.optimisticCostCentimos;
-        if (oc < winnerCost || (oc === winnerCost && !tie)) materialBlockers.push(w);
+        w.__improve = oc < winnerCost;
+        w.__changeTopSet = oc <= winnerCost;
+        if (oc < winnerCost) systemImprovers.push(w);
+        else if (oc === winnerCost) systemEqualOnly.push(w);
       }
     }
   }
 
-  // ---- Status resolution (§10 precedence) ----
+  // ---- Status resolution (§10 precedence + RTM3-03 top-set semantics) ----
   const status = ((): EngineDecisionResult['status'] => {
     if (rankable.length > 0) {
-      if (materialBlockers.length > 0) return 'NO_SAFE_WINNER';
+      // A candidate that could STRICTLY beat the best is a hard block.
+      if (systemImprovers.length > 0) return 'NO_SAFE_WINNER';
+      if (systemEqualOnly.length > 0) {
+        // A candidate that could only TIE the best: safe iff the best is ALREADY a tie (widening a
+        // tie does not change the decision). Against a UNIQUE winner, being tie-able means uniqueness
+        // is not safe ⇒ NO_SAFE_WINNER (RTM3-03 §10).
+        return tie ? 'CONFIRMED_TIE' : 'NO_SAFE_WINNER';
+      }
       if (tie) return 'CONFIRMED_TIE';
       return winner!.rule.confidence === 'MEDIUM' ? 'LIKELY' : 'BEST_CONFIRMED';
     }
     // Rankable set empty — frozen precedence: SOURCE_CONFLICT > SOURCE_STALE > NO_SAFE_WINNER >
     // NO_APPLICABLE_BENEFIT. STALE/INACCESSIBLE ⇒ SOURCE_STALE; source UNKNOWN is NOT stale —
     // insufficient knowledge falls through to NO_SAFE_WINNER.
-    const conflicted = uncertain.some((w) => w.sourceUncertainty === 'CONFLICTED' && w.__material);
+    const conflicted = uncertain.some(
+      (w) => w.sourceUncertainty === 'CONFLICTED' && w.__changeTopSet,
+    );
     if (conflicted) return 'SOURCE_CONFLICT';
-    const staleLike = uncertain.some((w) => w.sourceUncertainty === 'STALE' && w.__material);
+    const staleLike = uncertain.some((w) => w.sourceUncertainty === 'STALE' && w.__changeTopSet);
     if (staleLike) return 'SOURCE_STALE';
-    const anyMaterial = materialBlockers.length > 0 || materialUserResolvable.length > 0;
+    const systemBlockers = systemImprovers.length + systemEqualOnly.length;
+    const anyMaterial = systemBlockers > 0 || userResolvableMaterial.length > 0;
     const onlyPrivate =
-      anyMaterial &&
-      materialBlockers.length === 0 &&
-      materialUserResolvable.every((w) => w.providerPrivate);
+      anyMaterial && systemBlockers === 0 && userResolvableMaterial.every((w) => w.providerPrivate);
     if (onlyPrivate) return 'VERIFY_FIRST';
     if (anyMaterial) return 'NO_SAFE_WINNER';
     // Nothing applicable/uncertain remained.
@@ -832,6 +1035,19 @@ function resolveDecision(
   const winnerStands =
     status === 'BEST_CONFIRMED' || status === 'CONFIRMED_TIE' || status === 'LIKELY';
 
+  // ---- Top set (RTM3-03 §9): the confirmed best members, plus any candidate that could still join.
+  const atBest = (w: Working): boolean =>
+    basis === 'EFFECTIVE_OUT_OF_POCKET_COST'
+      ? w.effectiveCostCentimos === winnerCost
+      : w.nominalMinorUnits === winnerNominal;
+  const confirmedTop = winnerStands ? rankable.filter(atBest) : [];
+  const confirmedSet = new Set(confirmedTop);
+  const possibleAdditional = winnerStands
+    ? workings.filter((w) => w.__changeTopSet === true && !confirmedSet.has(w))
+    : [];
+  const topSetComplete = winnerStands && possibleAdditional.length === 0;
+
+  const materialBlockers = [...systemImprovers, ...systemEqualOnly];
   const candidates = workings.map((w) => toCandidate(w, scope, basis, baseline));
   const advisories = candidates.filter((c) => c.advisories.length > 0);
 
@@ -853,6 +1069,9 @@ function resolveDecision(
     winnerRef: winnerStands ? winner?.ref : undefined,
     runnerUpRef: winnerStands && !tie ? runnerUp?.ref : undefined,
     delta: winnerStands ? delta : null,
+    confirmedTopRuleRefs: confirmedTop.map((w) => w.ref),
+    possibleAdditionalTopRuleRefs: possibleAdditional.map((w) => w.ref),
+    topSetComplete,
     candidates,
     advisories,
     explanation,
@@ -870,7 +1089,11 @@ function toCandidate(
     reason: 'not an uncertain candidate',
   };
   const isRankable = w.bucket === 'RANKABLE_COST' || w.bucket === 'RANKABLE_NOMINAL';
-  const couldChange = w.bucket === 'UNCERTAIN' ? !!w.__material : false;
+  // couldChangeDecision = couldChangeTopSet (RTM3-03/§8): the optimistic bound could equal-or-beat
+  // the confirmed best. couldImproveBestOutcome is the strict-beat subset. Both are populated for
+  // uncertain candidates and for rounding-ambiguous rankable non-winners.
+  const couldChangeTopSet = !!w.__changeTopSet;
+  const couldImproveBestOutcome = !!w.__improve;
   const penSaved =
     isRankable &&
     basis === 'EFFECTIVE_OUT_OF_POCKET_COST' &&
@@ -894,7 +1117,9 @@ function toCandidate(
     penSavedCentimos: penSaved,
     baselineRef: penSaved !== undefined ? `scope-baseline:${scope.scopeId}` : undefined,
     plausibleBound: bound,
-    couldChangeDecision: couldChange,
+    couldChangeDecision: couldChangeTopSet,
+    couldImproveBestOutcome,
+    couldChangeTopSet,
     confidence: w.rule.confidence,
     advisories: advisoriesFor(w),
     rejectionReason: w.rejectionReason,
@@ -938,8 +1163,11 @@ function buildExplanation(
  * ranking across separate purchase scopes; the engine never picks a scope by largest saving.
  */
 export function decide(input: DecideInput): EngineEvaluation {
-  const opStateByKey = new Map<string, RuleOperationalState>();
-  for (const op of input.operationalStates) opStateByKey.set(`${op.ruleId}@${op.version}`, op);
+  // ---- Fail-closed input validation (RTM3-04/05/06/11) BEFORE any economic reasoning ----
+  assertStrictInstant(input.evaluatedAt, 'evaluatedAt');
+  assertStrictInstant(input.intendedTransactionAt, 'intendedTransactionAt');
+  validateContextMoney(input.context);
+  const opStateByKey = buildValidatedOpMap(input);
 
   const merchantId = input.context.merchantId;
   const merchantScopes = input.scopes.filter((s) => s.merchantId === merchantId);
@@ -948,6 +1176,15 @@ export function decide(input: DecideInput): EngineEvaluation {
   for (const scope of merchantScopes) {
     const members = input.rules.filter((r) => r.comparisonScopeRefs.includes(scope.scopeId));
     if (members.length === 0) continue;
+    // Every evaluated rule must have exactly one operational state (RTM3-05; buildValidatedOpMap
+    // already rejected duplicates/orphans — this closes the missing-state case).
+    for (const r of members) {
+      if (!opStateByKey.has(`${r.ruleId}@${r.version}`)) {
+        throw new CanonicalInputError(
+          `evaluated rule ${r.ruleId}@${r.version} has no operational state`,
+        );
+      }
+    }
     const decision = evaluateScope(scope, members, opStateByKey, input);
     scopeResults.push({
       scopeId: scope.scopeId,
@@ -1008,6 +1245,9 @@ export function decide(input: DecideInput): EngineEvaluation {
       comparisonBasis: 'NON_COMPARABLE',
       status: 'NO_APPLICABLE_BENEFIT',
       delta: null,
+      confirmedTopRuleRefs: [],
+      possibleAdditionalTopRuleRefs: [],
+      topSetComplete: true,
       candidates: scopeResults.flatMap((s) => s.decision.candidates),
       advisories: [],
       explanation: `[${merchantId}] NO_APPLICABLE_BENEFIT: no scope matched merchant+context`,

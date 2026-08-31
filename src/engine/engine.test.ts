@@ -173,7 +173,7 @@ describe('settlement — money (integer céntimos only)', () => {
         rules: [r],
         operationalStates: [op('R')],
         scopes: [sc],
-        context: ctxBill({ hasExactBundle: true }),
+        context: ctxBill({ exactItems: [{ itemKey: 'a', qty: 1 }] }),
       }),
     );
     expect(e.final?.status).toBe('BEST_CONFIRMED');
@@ -201,7 +201,7 @@ describe('settlement — money (integer céntimos only)', () => {
         rules: [r],
         operationalStates: [op('R')],
         scopes: [sc],
-        context: ctxBill({ hasExactBundle: true }),
+        context: ctxBill({ exactItems: [{ itemKey: 'a', qty: 1 }] }),
       }),
     );
     expect(e.final?.candidates[0]?.effectiveCostCentimos).toBe(2990);
@@ -433,7 +433,7 @@ describe('temporal — America/Lima', () => {
         rules: [r],
         operationalStates: [op('R')],
         scopes: [sc],
-        context: ctxBill({ hasExactBundle: true }),
+        context: ctxBill({ exactItems: [{ itemKey: 'a', qty: 1 }] }),
         intendedTransactionAt: '2026-06-01T12:00:00-05:00',
       }),
     );
@@ -479,7 +479,7 @@ describe('eligibility — tri-state, conservative', () => {
       canonicalItems: [{ itemKey: 'a', qty: 1 }],
     },
   });
-  const exactCtx = ctxBill({ hasExactBundle: true });
+  const exactCtx = ctxBill({ exactItems: [{ itemKey: 'a', qty: 1 }] });
 
   it('deterministic public ranks when the family is held', () => {
     const e = decide(
@@ -739,7 +739,7 @@ describe('availability', () => {
         rules: [A, B],
         operationalStates: [op('A'), op('B', { availability: availB })],
         scopes: [sc],
-        context: ctxBill({ hasExactBundle: true }),
+        context: ctxBill({ exactItems: [{ itemKey: 'a', qty: 1 }] }),
       }),
     );
   };
@@ -798,7 +798,7 @@ describe('availability', () => {
         rules: [A, B],
         operationalStates: [op('A'), op('B', { availability: 'UNKNOWN' })],
         scopes: [sc],
-        context: ctxBill({ hasExactBundle: true }),
+        context: ctxBill({ exactItems: [{ itemKey: 'a', qty: 1 }] }),
       }),
     );
     expect(e.final?.status).toBe('BEST_CONFIRMED');
@@ -857,7 +857,7 @@ describe('source quality — total resolver, no default branch', () => {
         rules: [A, B],
         operationalStates: [op('A'), op('B', { sourceQualityState: srcB })],
         scopes: [sc],
-        context: ctxBill({ hasExactBundle: true }),
+        context: ctxBill({ exactItems: [{ itemKey: 'a', qty: 1 }] }),
       }),
     );
   };
@@ -893,7 +893,7 @@ describe('source quality — total resolver, no default branch', () => {
         rules: [A],
         operationalStates: [op('A', { sourceQualityState: 'CONFLICTED' })],
         scopes: [sc],
-        context: ctxBill({ hasExactBundle: true }),
+        context: ctxBill({ exactItems: [{ itemKey: 'a', qty: 1 }] }),
       }),
     );
     expect(e.final?.status).toBe('SOURCE_CONFLICT');
@@ -925,7 +925,7 @@ describe('source quality — total resolver, no default branch', () => {
         rules,
         operationalStates: ops,
         scopes: [exactSc],
-        context: ctxBill({ hasExactBundle: true }),
+        context: ctxBill({ exactItems: [{ itemKey: 'a', qty: 1 }] }),
       }),
     );
   };
@@ -973,7 +973,7 @@ describe('source quality — total resolver, no default branch', () => {
         rules: [A, B],
         operationalStates: [op('A'), op('B', { sourceQualityState: 'UNKNOWN' })],
         scopes: [exactSc],
-        context: ctxBill({ hasExactBundle: true }),
+        context: ctxBill({ exactItems: [{ itemKey: 'a', qty: 1 }] }),
       }),
     );
   };
@@ -1253,7 +1253,7 @@ describe('scope behaviour (§5)', () => {
         rules: [r],
         operationalStates: [op('R')],
         scopes: [exactScope('s1')],
-        context: ctxBill({ hasExactBundle: true }),
+        context: ctxBill({ exactItems: [{ itemKey: 'a', qty: 1 }] }),
       }),
     );
     expect(e.requiresScopeSelection).toBe(false);
@@ -1281,7 +1281,7 @@ describe('scope behaviour (§5)', () => {
         rules: [r1, r2],
         operationalStates: [op('R1'), op('R2')],
         scopes: [exactScope('s1'), exactScope('s2')],
-        context: ctxBill({ hasExactBundle: true }),
+        context: ctxBill({ exactItems: [{ itemKey: 'a', qty: 1 }] }),
       }),
     );
     expect(e.requiresScopeSelection).toBe(true);
@@ -1309,7 +1309,7 @@ describe('scope behaviour (§5)', () => {
         rules: [r1, r2],
         operationalStates: [op('R1'), op('R2')],
         scopes: [exactScope('s1'), exactScope('s2')],
-        context: ctxBill({ hasExactBundle: true }),
+        context: ctxBill({ exactItems: [{ itemKey: 'a', qty: 1 }] }),
         selectedScopeId: 's1',
       }),
     );
@@ -1372,14 +1372,28 @@ describe('Papa Johns real corpus — different exact SKUs are not directly compa
 
 // ================================================================== PROPERTIES
 describe('engine properties (fast-check, small)', () => {
-  it('effective cost is never negative for a percentage discount within a known cap', () => {
+  it('effective cost from decide() is never negative for a percentage discount (RTM3-13)', () => {
+    // RTM3-13: invoke PRODUCTION settlement via decide(), not a locally-clamped test expression.
     fc.assert(
       fc.property(
-        fc.integer({ min: 0, max: 500000 }),
+        fc.integer({ min: 1, max: 500000 }),
         fc.integer({ min: 1, max: 10000 }),
         (bill, bps) => {
-          const d = percentDiscountCentimos(bill, bps, 'FLOOR_TO_CENT').value;
-          return bill - Math.min(d, bill) >= 0;
+          const r = rule({
+            ruleId: 'R',
+            benefit: { type: 'PERCENT', percentBps: bps, rounding: 'FLOOR_TO_CENT' },
+            eligibleSpendSelector: 'WHOLE_BILL',
+          });
+          const e = decide(
+            run({
+              rules: [r],
+              operationalStates: [op('R')],
+              scopes: [scope()],
+              context: ctxBill({ wholeBillCentimos: bill }),
+            }),
+          );
+          const cost = e.final?.candidates[0]?.effectiveCostCentimos;
+          return cost !== undefined && cost >= 0 && Number.isSafeInteger(cost);
         },
       ),
     );
@@ -1431,7 +1445,7 @@ describe('engine properties (fast-check, small)', () => {
       },
     });
     const ops = [op('A'), op('B'), op('C')];
-    const ctx = ctxBill({ hasExactBundle: true });
+    const ctx = ctxBill({ exactItems: [{ itemKey: 'a', qty: 1 }] });
     const orderings: RuleVersion[][] = [
       [A, B, C],
       [C, B, A],

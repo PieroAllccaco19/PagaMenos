@@ -5,6 +5,33 @@ import type { RoundingRule } from '@/corpus';
 
 import { SettlementInvariantError } from './errors';
 
+/** The largest percentage a discount benefit may express: 100% (RTM3-04). */
+export const MAX_PERCENT_BPS = 10_000;
+
+/**
+ * Assert a PEN céntimo value is finite, a SAFE integer, and non-negative (RTM3-04/11). `isInteger`
+ * alone permits values above `Number.MAX_SAFE_INTEGER` where integer arithmetic silently loses
+ * precision; `isSafeInteger` closes that. Fail-closed — invalid money never reaches settlement.
+ */
+export function assertSafeCentimos(value: number, label: string): void {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new SettlementInvariantError(
+      `${label} must be a finite, safe, non-negative integer céntimo value: ${value}`,
+    );
+  }
+}
+
+/** Exact non-negative integer multiply via BigInt, rejecting a product outside the safe range. */
+function safeIntMul(a: number, b: number, label: string): number {
+  const product = BigInt(a) * BigInt(b);
+  if (product > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new SettlementInvariantError(
+      `${label} product exceeds the safe integer range: ${product}`,
+    );
+  }
+  return Number(product);
+}
+
 /** Result of a percentage-discount computation with an explicit ambiguity band for UNKNOWN rounding. */
 export interface DiscountBand {
   /** The value the engine uses conservatively (smallest discount ⇒ highest cost). */
@@ -27,17 +54,17 @@ export function percentDiscountCentimos(
   percentBps: number,
   rounding: RoundingRule,
 ): DiscountBand {
-  if (!Number.isInteger(eligibleSpendCentimos) || eligibleSpendCentimos < 0) {
+  assertSafeCentimos(eligibleSpendCentimos, 'eligibleSpendCentimos');
+  if (!Number.isSafeInteger(percentBps) || percentBps <= 0 || percentBps > MAX_PERCENT_BPS) {
     throw new SettlementInvariantError(
-      `eligibleSpendCentimos must be a non-negative integer: ${eligibleSpendCentimos}`,
+      `percentBps must be an integer in (0, ${MAX_PERCENT_BPS}]: ${percentBps}`,
     );
   }
-  if (!Number.isInteger(percentBps) || percentBps <= 0) {
-    throw new SettlementInvariantError(`percentBps must be a positive integer: ${percentBps}`);
-  }
-  const scaled = eligibleSpendCentimos * percentBps; // integer
-  const floorV = Math.floor(scaled / 10_000);
-  const halfUpV = Math.floor((scaled + 5_000) / 10_000); // round-half-up to the céntimo
+  // Exact BigInt arithmetic: the quotient is bounded by eligibleSpendCentimos (a safe integer),
+  // so no MAX_SAFE_INTEGER rounding artefact is possible even for very large bills.
+  const scaled = BigInt(eligibleSpendCentimos) * BigInt(percentBps);
+  const floorV = Number(scaled / 10_000n);
+  const halfUpV = Number((scaled + 5_000n) / 10_000n); // round-half-up to the céntimo
   switch (rounding) {
     case 'FLOOR_TO_CENT':
       return { value: floorV, lower: floorV, upper: floorV, ambiguous: false };
@@ -58,11 +85,7 @@ export function percentDiscountCentimos(
 
 /** Apply a known cap: discount = min(rawDiscount, capCentimos). */
 export function applyKnownCap(rawDiscountCentimos: Centimos, capCentimos: Centimos): Centimos {
-  if (!Number.isInteger(capCentimos) || capCentimos < 0) {
-    throw new SettlementInvariantError(
-      `capCentimos must be a non-negative integer: ${capCentimos}`,
-    );
-  }
+  assertSafeCentimos(capCentimos, 'capCentimos');
   return Math.min(rawDiscountCentimos, capCentimos);
 }
 
@@ -77,16 +100,17 @@ export function twoForOneCostCentimos(
   pay: number,
   of: number,
 ): Centimos {
-  if (!Number.isInteger(count) || count <= 0) {
-    throw new SettlementInvariantError(`ticket count must be a positive integer: ${count}`);
+  assertSafeCentimos(unitPriceCentimos, 'unitPriceCentimos');
+  if (!Number.isSafeInteger(count) || count <= 0) {
+    throw new SettlementInvariantError(`ticket count must be a positive safe integer: ${count}`);
   }
-  if (!Number.isInteger(pay) || !Number.isInteger(of) || pay <= 0 || of <= 0 || pay > of) {
+  if (!Number.isSafeInteger(pay) || !Number.isSafeInteger(of) || pay <= 0 || of <= 0 || pay > of) {
     throw new SettlementInvariantError(`invalid TWO_FOR_ONE pay/of: ${pay}/${of}`);
   }
   const fullGroups = Math.floor(count / of);
   const remainder = count % of;
   const paidUnits = fullGroups * pay + remainder;
-  return unitPriceCentimos * paidUnits;
+  return safeIntMul(unitPriceCentimos, paidUnits, 'unitPrice*paidUnits');
 }
 
 /**
@@ -98,15 +122,11 @@ export function fixedPriceTicketCostCentimos(
   fixedPricePerTicketCentimos: Centimos,
   count: number,
 ): Centimos {
-  if (!Number.isInteger(count) || count <= 0) {
-    throw new SettlementInvariantError(`ticket count must be a positive integer: ${count}`);
+  assertSafeCentimos(fixedPricePerTicketCentimos, 'fixedPricePerTicketCentimos');
+  if (!Number.isSafeInteger(count) || count <= 0) {
+    throw new SettlementInvariantError(`ticket count must be a positive safe integer: ${count}`);
   }
-  if (!Number.isInteger(fixedPricePerTicketCentimos) || fixedPricePerTicketCentimos < 0) {
-    throw new SettlementInvariantError(
-      `fixed ticket price must be a non-negative integer: ${fixedPricePerTicketCentimos}`,
-    );
-  }
-  return fixedPricePerTicketCentimos * count;
+  return safeIntMul(fixedPricePerTicketCentimos, count, 'fixedPrice*ticketCount');
 }
 
 /** Whether a rule's minimumSpend threshold is met by the eligible-spend quantity (RT-02). */

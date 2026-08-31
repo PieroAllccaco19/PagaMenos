@@ -21,7 +21,11 @@ const run = (
 ) =>
   decide({
     portfolio: ALL,
-    context: { merchantId: 'm_fridays', hasExactBundle: true, wholeBillCentimos: 10000 },
+    context: {
+      merchantId: 'm_fridays',
+      exactItems: [{ itemKey: 'syn_item', qty: 1 }],
+      wholeBillCentimos: 10000,
+    },
     evaluatedAt: AT,
     intendedTransactionAt: AT,
     ...over,

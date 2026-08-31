@@ -2,6 +2,7 @@
 // Build-free: NO gitSha / buildId / env / persistence fields. Money is integer céntimos;
 // nominal value is integer minor units in a named unit; the two are never conflated.
 import type {
+  CanonicalItemQty,
   Centimos,
   Channel,
   ComparisonBasis,
@@ -39,8 +40,15 @@ export interface PurchaseContext {
   nonAlcoholicBeverageCentimos?: Centimos;
   ticketUnitPriceCentimos?: Centimos;
   ticketCount?: number;
-  /** Whether the exact bundle that a FIXED_PRICE/FIXED_BUNDLE/EXACT_SKU rule identifies is present. */
-  hasExactBundle?: boolean;
+  /** Ticket class of the actual purchase (RTM3-01) — matched against a TICKETS signature's class. */
+  ticketClass?: string;
+  /**
+   * The participant's ACTUAL exact-bundle purchase items (RTM3-01). A boolean cannot prove WHICH
+   * bundle is being bought; these are matched item-for-item against an EXACT_BUNDLE scope's
+   * canonical signature using the M1 normalization (stable key, positive-int qty, no duplicates,
+   * exact `(itemKey, qty)` equality). Absent ⇒ MISSING_CONTEXT for an exact-bundle scope.
+   */
+  exactItems?: CanonicalItemQty[];
 }
 
 // ---- Bounds / materiality (§27/§28, RT-05) ----
@@ -134,7 +142,15 @@ export interface DecisionCandidate {
   penSavedCentimos?: Centimos | undefined;
   baselineRef?: string | undefined;
   plausibleBound: PlausibleBound;
+  /**
+   * `couldChangeDecision = couldImproveBestOutcome OR couldChangeTopSet` (RTM3-03/§8). An uncertain
+   * candidate whose optimistic bound can equal-or-beat the confirmed best value is decision-material.
+   */
   couldChangeDecision: boolean;
+  /** The optimistic bound could STRICTLY improve the best economic outcome (beat the best value). */
+  couldImproveBestOutcome: boolean;
+  /** The optimistic bound could enter the top set (equal-or-beat the best value). */
+  couldChangeTopSet: boolean;
   confidence: Confidence;
   advisories: CandidateAdvisory[];
   rejectionReason?: string | undefined;
@@ -146,9 +162,20 @@ export interface EngineDecisionResult {
   merchantId: MerchantId;
   comparisonBasis: ComparisonBasis;
   status: DecisionStatus;
+  /** Convenience singular winner for a UNIQUE confirmed best; for a tie see `confirmedTopRuleRefs`. */
   winnerRef?: RuleRef | undefined;
   runnerUpRef?: RuleRef | undefined;
   delta: RankDelta;
+  /**
+   * The confirmed top set (RTM3-03/§9): the safely-rankable candidates that achieve the best value.
+   * One element for a unique winner; all tied elements for a CONFIRMED_TIE; empty when no confirmed
+   * best is safe. A lexicographic `winnerRef` MUST NOT be read as the complete meaning of a tie.
+   */
+  confirmedTopRuleRefs: RuleRef[];
+  /** Uncertain candidates whose optimistic bound could join the top set (equal it) if resolved. */
+  possibleAdditionalTopRuleRefs: RuleRef[];
+  /** False iff some uncertain candidate could still enter the top set — the top set is not final. */
+  topSetComplete: boolean;
   candidates: DecisionCandidate[];
   advisories: DecisionCandidate[];
   explanation: string;

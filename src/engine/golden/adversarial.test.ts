@@ -21,7 +21,7 @@ const ALL: EligibilityPortfolio = {
 };
 const bundleCtx = (over: Partial<PurchaseContext> = {}): PurchaseContext => ({
   merchantId: 'm_fridays',
-  hasExactBundle: true,
+  exactItems: [{ itemKey: 'syn_item', qty: 1 }],
   wholeBillCentimos: 10000,
   ...over,
 });
@@ -117,7 +117,11 @@ describe('ADV — false winner from missing basket', () => {
     });
     // foodCentimos deliberately omitted ⇒ B's basket is missing ⇒ its value is unbounded.
     const f = runCost([A, B], [synOp('A'), synOp('B')], {
-      context: { merchantId: 'm_fridays', hasExactBundle: true, wholeBillCentimos: 10000 },
+      context: {
+        merchantId: 'm_fridays',
+        exactItems: [{ itemKey: 'syn_item', qty: 1 }],
+        wholeBillCentimos: 10000,
+      },
     });
     expect(cand(f, 'B')?.advisories).toContain('MISSING_CONTEXT');
     expect(f?.status).toBe('NO_SAFE_WINNER');

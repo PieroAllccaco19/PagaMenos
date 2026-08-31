@@ -27,7 +27,7 @@ const PORTFOLIO: EligibilityPortfolio = { instruments: FAMILIES.map((family) => 
 const AT = '2026-09-01T12:00:00-05:00';
 const richCtx = (over: Partial<PurchaseContext> = {}): PurchaseContext => ({
   merchantId: 'm_fridays',
-  hasExactBundle: true,
+  exactItems: [{ itemKey: 'syn_item', qty: 1 }],
   wholeBillCentimos: 10000,
   ...over,
 });
@@ -303,8 +303,13 @@ describe('P11 — a material non-fresh candidate is never silently dropped for a
           const A = fixedRule('A', 'IBK_PLIN', b + gap);
           const B = fixedRule('B', 'DINERS', b);
           const f = runCost([A, B], [synOp('A'), synOp('B', { sourceQualityState: src })]);
-          expect(f?.status).not.toBe('BEST_CONFIRMED');
-          expect(['NO_SAFE_WINNER', 'SOURCE_STALE', 'SOURCE_CONFLICT']).toContain(f?.status);
+          // A fresh rankable winner (A) coexists with a cheaper material non-fresh candidate (B) ⇒
+          // the EXACT required result is NO_SAFE_WINNER (the SOURCE_* statuses only arise when the
+          // rankable set is empty). B is never silently dropped to falsely confirm A.
+          expect(f?.status).toBe('NO_SAFE_WINNER');
+          expect(f?.candidates.find((c) => c.ruleRef.ruleId === 'B')?.couldChangeDecision).toBe(
+            true,
+          );
         },
       ),
     );
@@ -407,6 +412,17 @@ describe('P14 — nominal ranking requires same unit + known + equal cost + same
             nominalRule('Y', 'DINERS', v + gap, undefined, { merchantIds: ['m_coney_park'] }),
           ]);
           expect(unknownCost?.winnerRef).toBeUndefined();
+
+          // Different nominal units ⇒ non-comparable even at equal cost.
+          const yOther = nominalRule('Y', 'DINERS', v + gap, cash, {
+            merchantIds: ['m_coney_park'],
+          });
+          (yOther.benefit as { nominalUnit: string }).nominalUnit = 'OTHER_UNIT';
+          const differentUnit = runNom([
+            nominalRule('X', 'SIP_OH', v, cash, { merchantIds: ['m_coney_park'] }),
+            yOther,
+          ]);
+          expect(differentUnit?.winnerRef).toBeUndefined();
         },
       ),
     );
@@ -554,8 +570,8 @@ describe('P18 — minimum-spend boundary: min−1 ineligible, min & min+1 eligib
 });
 
 // ------------------------------------------------------------ P19 cap safety
-describe('P19 — a known percentage discount never exceeds its known cap', () => {
-  it('capped effective cost ≥ bill − cap for any bill/bps/cap', () => {
+describe('P19 — a known percentage discount equals the EXACT capped result (oracle)', () => {
+  it('capped effective cost == bill − min(floor(bill*bps/1e4), cap) — not a loose inequality', () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 0, max: 500000 }),
@@ -567,40 +583,32 @@ describe('P19 — a known percentage discount never exceeds its known cap', () =
             [synOp('A')],
             { context: richCtx({ wholeBillCentimos: bill }) },
           );
-          const cost = f?.candidates[0]?.effectiveCostCentimos;
-          if (cost !== undefined) expect(cost).toBeGreaterThanOrEqual(bill - capC);
+          const rawDiscount = Number((BigInt(bill) * BigInt(bps)) / 10000n); // BigInt oracle
+          const expected = bill - Math.min(rawDiscount, capC);
+          // The assertion FAILS if the cap were removed (unlike the previous inequality), so the cap
+          // is genuinely exercised.
+          expect(f?.candidates[0]?.effectiveCostCentimos).toBe(expected);
         },
       ),
     );
   });
 });
 
-// ------------------------------------------------------------ P20 integer settlement
-describe('P20 — integer céntimo settlement, no floating-point artefacts', () => {
-  it('every effective cost / delta amount is an integer', () => {
+// ------------------------------------------------------------ P20 integer settlement (BigInt oracle)
+describe('P20 — céntimo settlement is EXACT against an independent BigInt oracle', () => {
+  it('the engine percent cost equals the BigInt oracle and is a safe integer (no FP artefacts)', () => {
     fc.assert(
       fc.property(
-        fc.integer({ min: 0, max: 500000 }),
-        fc.integer({ min: 1, max: 9999 }),
-        fc.integer({ min: 0, max: 500000 }),
-        (bill, bps, fixed) => {
-          const f = runCost(
-            [
-              percentRule('A', 'IBK_PLIN', bps, {}),
-              fixedRule('B', 'DINERS', fixed, {
-                selector: 'WHOLE_BILL',
-                signatureKind: 'ELIGIBLE_BILL',
-              }),
-            ],
-            [synOp('A'), synOp('B')],
-            { context: richCtx({ wholeBillCentimos: bill }) },
-          );
-          for (const c of f?.candidates ?? []) {
-            if (c.effectiveCostCentimos !== undefined)
-              expect(Number.isInteger(c.effectiveCostCentimos)).toBe(true);
-          }
-          if (f?.delta && f.delta.kind === 'COST_CENTIMOS')
-            expect(Number.isInteger(f.delta.amountCentimos)).toBe(true);
+        fc.integer({ min: 0, max: Number.MAX_SAFE_INTEGER }),
+        fc.integer({ min: 1, max: 10000 }),
+        (bill, bps) => {
+          const f = runCost([percentRule('A', 'IBK_PLIN', bps, {})], [synOp('A')], {
+            context: richCtx({ wholeBillCentimos: bill }),
+          });
+          const oracleDiscount = Number((BigInt(bill) * BigInt(bps)) / 10000n);
+          const oracleCost = bill - oracleDiscount;
+          const cost = f?.candidates[0]?.effectiveCostCentimos;
+          return cost === oracleCost && cost !== undefined && Number.isSafeInteger(cost);
         },
       ),
     );

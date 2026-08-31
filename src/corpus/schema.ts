@@ -25,9 +25,13 @@ import {
   SOURCE_QUALITY_STATES,
   WEEKDAYS,
 } from './ids';
+import { isValidInstant } from './instant';
 import type { Corpus } from './types';
 
 const centimos = z.number().int().nonnegative();
+const strictInstant = z.string().refine(isValidInstant, {
+  message: 'invalid ISO-8601 instant; a zone-qualified date-time (Z or ±HH:MM) is required',
+});
 const merchantId = z.enum(MERCHANT_IDS);
 const selector = z.enum(ELIGIBLE_SPEND_SELECTORS);
 
@@ -102,8 +106,8 @@ const temporalSchema = z.discriminatedUnion('kind', [
   }),
   z.strictObject({
     kind: z.literal('LOCAL_DATETIME_RANGE'),
-    startInclusive: z.string(),
-    endExclusive: z.string(),
+    startInclusive: strictInstant,
+    endExclusive: strictInstant,
   }),
   // Start unknown, but observed active until a published end. `observedActiveAt` is provenance,
   // NOT a provider-declared campaign start; both dates must be valid Lima calendar dates.

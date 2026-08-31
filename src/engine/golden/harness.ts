@@ -10,7 +10,12 @@
 // supplies a CONFIRMED_AVAILABLE snapshot, exactly as a live source check would. No corpus rule
 // value is ever mutated here (verified by the M3 corpus-mutation audit).
 import { CORPUS_V1 } from '@/corpus';
-import type { ComparisonScope, RuleOperationalState, RuleVersion } from '@/corpus';
+import type {
+  CanonicalItemQty,
+  ComparisonScope,
+  RuleOperationalState,
+  RuleVersion,
+} from '@/corpus';
 
 import { decide } from '../decide';
 import type {
@@ -40,6 +45,14 @@ export function frozenScope(scopeId: string): ComparisonScope {
   const s = CORPUS_V1.scopes.find((x) => x.scopeId === scopeId);
   if (!s) throw new Error(`golden harness: no scope '${scopeId}' in Corpus v1`);
   return s;
+}
+
+/** The exact canonical items of an EXACT_BUNDLE scope (RTM3-01) — the real runtime purchase items. */
+export function exactItemsOf(scope: ComparisonScope): CanonicalItemQty[] {
+  if (scope.signature.kind !== 'EXACT_BUNDLE') {
+    throw new Error(`golden harness: scope '${scope.scopeId}' is not an EXACT_BUNDLE`);
+  }
+  return scope.signature.canonicalItems;
 }
 
 /**

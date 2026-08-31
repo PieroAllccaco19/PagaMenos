@@ -2,6 +2,7 @@
 // Peru (America/Lima) is a fixed UTC−05:00 offset year-round (no DST), so Lima calendar math is
 // deterministic: shift the instant by −5h and read UTC fields. No host-timezone dependency, no
 // external holiday API — only explicit corpus holiday facts/policies are honoured.
+import { parseStrictInstantMs } from '@/corpus';
 import type { Constraints, TemporalRange, Weekday } from '@/corpus';
 
 import { TemporalInputError } from './errors';
@@ -9,10 +10,18 @@ import { TemporalInputError } from './errors';
 const LIMA_OFFSET_MS = 5 * 60 * 60 * 1000; // UTC−05:00
 const WEEKDAY_BY_INDEX: Weekday[] = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
-/** Parse an ISO-8601 instant (with offset or Z) to epoch ms; throws on an unparseable value. */
+/**
+ * Parse a STRICT ISO-8601 instant (RTM3-06) to epoch ms; throws on anything permissive `Date.parse`
+ * would have silently accepted — an offsetless value (`2026-09-01`, `2026-09-01T12:00:00`) or an
+ * impossible date (`2026-02-30`). A zone (`Z` or ±HH:MM) is REQUIRED; components are range-validated.
+ */
 export function epochMs(iso: string): number {
-  const ms = Date.parse(iso);
-  if (Number.isNaN(ms)) throw new TemporalInputError(`unparseable instant: ${iso}`);
+  const ms = parseStrictInstantMs(iso);
+  if (ms === null) {
+    throw new TemporalInputError(
+      `invalid ISO-8601 instant: ${iso} (a zone-qualified date-time is required)`,
+    );
+  }
   return ms;
 }
 
