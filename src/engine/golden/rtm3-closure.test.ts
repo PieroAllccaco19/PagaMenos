@@ -615,3 +615,77 @@ describe('RTM3-11 (2nd closure) — nominal economics reject unsafe integers (fa
     ).toThrow(SettlementInvariantError);
   });
 });
+
+// ============================================================ RTM3-11 (micro-closure) positivity
+describe('RTM3-11 (micro-closure) — runtime nominalMinorUnits must be POSITIVE (> 0), like the schema', () => {
+  const pkg = {
+    cashAcquisitionCostCentimos: 4500,
+    nominalUnit: 'CONEY_PLAY_BALANCE' as NominalUnit,
+  };
+  const runNom = (rules: RuleVersion[]) =>
+    decide({
+      rules,
+      operationalStates: rules.map((r) => synOp(r.ruleId, { availability: 'NOT_APPLICABLE' })),
+      scopes: [nominalScope()],
+      portfolio: { instruments: [{ family: 'SIP_OH' }, { family: 'DINERS' }] },
+      context: { merchantId: 'm_coney_park', nominalPackage: pkg },
+      evaluatedAt: AT,
+      intendedTransactionAt: AT,
+    }).final;
+
+  it('nominalMinorUnits = -1 ⇒ typed fail-closed error (never BEST_CONFIRMED/CONFIRMED_TIE/LIKELY)', () => {
+    const neg = nominalRule('X', 'SIP_OH', -1, 4500, { merchantIds: ['m_coney_park'] });
+    const ok = nominalRule('Y', 'DINERS', 8500, 4500, { merchantIds: ['m_coney_park'] });
+    expect(() => runNom([neg, ok])).toThrow(SettlementInvariantError);
+  });
+  it('nominalMinorUnits = 0 ⇒ typed fail-closed error (no confirmed decision)', () => {
+    const zero = nominalRule('X', 'SIP_OH', 0, 4500, { merchantIds: ['m_coney_park'] });
+    const ok = nominalRule('Y', 'DINERS', 8500, 4500, { merchantIds: ['m_coney_park'] });
+    expect(() => runNom([zero, ok])).toThrow(SettlementInvariantError);
+  });
+  it('positive control: nominalMinorUnits = 1 with otherwise valid semantics remains valid', () => {
+    const one = nominalRule('X', 'SIP_OH', 1, 4500, { merchantIds: ['m_coney_park'] });
+    const f = runNom([one]);
+    expect(f?.status).toBe('BEST_CONFIRMED');
+    expect(f?.winnerRef?.ruleId).toBe('X');
+  });
+
+  it('real-corpus control: Coney Park ⇒ CONFIRMED_TIE, Coney Active ⇒ BEST_CONFIRMED Diners', () => {
+    const nomPort: EligibilityPortfolio = {
+      instruments: [{ family: 'SIP_OH' }, { family: 'DINERS' }],
+    };
+    const park = finalOf({
+      rules: [frozenRule('CON-SIP-01'), frozenRule('CON-DIN-P-01')],
+      operationalStates: [
+        opState('CON-SIP-01', { availability: 'NOT_APPLICABLE' }),
+        opState('CON-DIN-P-01', { availability: 'NOT_APPLICABLE' }),
+      ],
+      scopes: [frozenScope('sc_coney_park_play')],
+      portfolio: nomPort,
+      context: {
+        merchantId: 'm_coney_park',
+        channel: 'PICKUP',
+        nominalPackage: nominalPackageOf(frozenScope('sc_coney_park_play')),
+      },
+      intendedTransactionAt: AT,
+    });
+    expect(park?.status).toBe('CONFIRMED_TIE');
+    const active = finalOf({
+      rules: [frozenRule('CON-SIP-01'), frozenRule('CON-DIN-A-01')],
+      operationalStates: [
+        opState('CON-SIP-01', { availability: 'NOT_APPLICABLE' }),
+        opState('CON-DIN-A-01', { availability: 'NOT_APPLICABLE' }),
+      ],
+      scopes: [frozenScope('sc_coney_active_play')],
+      portfolio: nomPort,
+      context: {
+        merchantId: 'm_coney_active',
+        channel: 'PICKUP',
+        nominalPackage: nominalPackageOf(frozenScope('sc_coney_active_play')),
+      },
+      intendedTransactionAt: AT,
+    });
+    expect(active?.status).toBe('BEST_CONFIRMED');
+    expect(active?.winnerRef?.ruleId).toBe('CON-DIN-A-01');
+  });
+});

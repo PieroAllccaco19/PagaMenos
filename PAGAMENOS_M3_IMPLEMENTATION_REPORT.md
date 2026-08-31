@@ -574,3 +574,68 @@ adversarial,rtm3-closure}.ts`. **Report:** this section. No `src/corpus/data` ch
 
 Submit the second-closure commit for **independent Codex Sol re-review**. Do NOT begin M3.5. Do NOT
 self-declare M3 accepted.
+
+---
+
+# M3 FINAL MICRO-CLOSURE (RTM3-11 nominal positivity)
+
+The independent Codex Sol final second-closure recheck of `e4c7105…` returned **B — ONE FINAL
+MICRO-PATCH**: RTM3-01 (CRITICAL) and RTM3-03 (HIGH) are CLOSED; the sole remaining blocker was
+RTM3-11 (MEDIUM) PARTIAL, because the runtime accepted `nominalMinorUnits = 0` / `-1` even though the
+corpus schema requires a positive value. This micro-closure aligns the runtime with the schema.
+Independent acceptance is **not** claimed.
+
+Chronology (unchanged): `3cf8663` → C · `95d7255` → C · `e4c7105` → B · this micro-closure → pending
+independent confirmation.
+
+## E.1 RTM3-11 status: **CLOSED**
+
+Runtime `nominalMinorUnits` now enforces the same positivity invariant as the schema
+(`Number.isSafeInteger(v) && v > 0`); `0`, negatives, `NaN`, `Infinity`, fractional, and unsafe
+integers fail closed and can never yield `BEST_CONFIRMED` / `CONFIRMED_TIE` / `LIKELY`. The
+`cashAcquisitionCostCentimos` contract (safe integer ≥ 0 — zero is a valid céntimo cost) is unchanged.
+
+## E.2 Exact runtime guard (`src/engine/decide.ts`, nominal grouping)
+
+```ts
+if (
+  w.nominalMinorUnits !== undefined &&
+  (!Number.isSafeInteger(w.nominalMinorUnits) || w.nominalMinorUnits <= 0)
+) {
+  throw new SettlementInvariantError(
+    `invalid nominal minor units for ${w.ref.ruleId}: ${w.nominalMinorUnits} (must be a positive safe integer)`,
+  );
+}
+```
+
+## E.3 Tests added
+
+- Runtime (`rtm3-closure.test.ts`): `nominalMinorUnits = -1` ⇒ typed fail-closed error; `= 0` ⇒ typed
+  fail-closed error; positive control `= 1` ⇒ valid (`BEST_CONFIRMED`); real-corpus Coney controls.
+- Schema/runtime alignment (`schema.test.ts`): `nominalMinorUnits` `0` and `-1` rejected by the schema,
+  `1` accepted — the same positivity invariant on both sides.
+
+## E.4 Coney control results (real Corpus-v1, correct runtime nominal-package proof)
+
+- **Coney Park** ⇒ `CONFIRMED_TIE` (unchanged).
+- **Coney Active** ⇒ `BEST_CONFIRMED CON-DIN-A-01` (unchanged).
+
+## E.5 Corpus audit
+
+`git diff e4c7105 -- src/corpus/data` is **empty** — no factual corpus change. Counts reconcile:
+14 / 46 / 16·12·10·8 / private 2 / O2 8·O3 2·O4 4 / CORE 7·ASSIST 3·DIRECTORY 4.
+
+## E.6 Quality gates
+
+`pnpm lint` · `typecheck` · `test` (**259 / 11 files**) · `corpus:validate` (PASS) · `build` ·
+`db:validate` · `format:check` — all exit 0.
+
+## E.7 Deferred findings (unchanged)
+
+RTM3-08 (BEFORE WAVE 0 / SOURCE-PROOF INTEGRATION) · RTM3-09 (BEFORE ADDING ANOTHER TICKET
+FIXED-PRICE RULE) · RTM3-12 (BEFORE PREDICTED-SAVINGS DISPLAY / M7). Not claimed closed.
+
+## E.8 Next action
+
+Submit the micro-closure commit for **independent Codex Sol confirmation**. Do NOT begin M3.5. Do NOT
+self-declare M3 accepted.

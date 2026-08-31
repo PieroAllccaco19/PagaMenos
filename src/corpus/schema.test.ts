@@ -95,4 +95,20 @@ describe('corpus schema (strict)', () => {
       expect(() => parseCorpus(raw)).toThrow();
     });
   }
+
+  // RTM3-11 (micro-closure): nominalMinorUnits shares one POSITIVITY invariant with the runtime —
+  // −1 and 0 are rejected by both; 1 is valid by both. (Zero IS valid for a céntimo cost, so this is
+  // asserted only for nominalMinorUnits.)
+  it('schema rejects nominalMinorUnits = 0 and -1 but accepts 1 (aligned with runtime positivity)', () => {
+    const reject = (v: number) => {
+      const raw = deepClone();
+      raw.activeRules[nominalIndex(raw)].benefit.nominalMinorUnits = v;
+      expect(() => parseCorpus(raw)).toThrow();
+    };
+    reject(0);
+    reject(-1);
+    const raw = deepClone();
+    raw.activeRules[nominalIndex(raw)].benefit.nominalMinorUnits = 1;
+    expect(() => parseCorpus(raw)).not.toThrow();
+  });
 });

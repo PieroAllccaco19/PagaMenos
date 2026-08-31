@@ -927,9 +927,14 @@ function resolveDecision(
     // an unsafe/NaN/negative/fractional value is a domain error (fail-closed), never a winner. A
     // PRESENT cash acquisition cost must additionally be ≥ 0; absence is the explicit unknown.
     for (const w of noms) {
-      if (w.nominalMinorUnits !== undefined && !Number.isSafeInteger(w.nominalMinorUnits)) {
+      if (
+        w.nominalMinorUnits !== undefined &&
+        (!Number.isSafeInteger(w.nominalMinorUnits) || w.nominalMinorUnits <= 0)
+      ) {
+        // RTM3-11 (micro-closure): the runtime positivity invariant matches the corpus schema
+        // (`nominalMinorUnits > 0`); 0 and negatives fail closed, never a confirmed nominal decision.
         throw new SettlementInvariantError(
-          `invalid nominal minor units for ${w.ref.ruleId}: ${w.nominalMinorUnits} (must be a safe integer)`,
+          `invalid nominal minor units for ${w.ref.ruleId}: ${w.nominalMinorUnits} (must be a positive safe integer)`,
         );
       }
       const cost = w.cashAcquisitionCostCentimos;
