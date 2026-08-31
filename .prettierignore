@@ -1,0 +1,12 @@
+# Build / deps / generated
+node_modules/
+.next/
+out/
+dist/
+coverage/
+next-env.d.ts
+pnpm-lock.yaml
+prisma/generated/
+
+# Authoritative specification & research documents — never reformat.
+*.md

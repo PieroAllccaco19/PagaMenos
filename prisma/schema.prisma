@@ -1,0 +1,15 @@
+// PagaMenos — Prisma baseline (M0).
+//
+// Tooling and connection configuration only. NO Phase-0A domain models exist yet:
+// RuleVersion, ComparisonScope, PurchaseSignature, DecisionSnapshot, Participant, etc.
+// are introduced in later milestones (M1 corpus / M3.5 persistence) once their contracts
+// are implemented. Migrations are explicit — no ORM auto-sync (`prisma db push`) is used.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

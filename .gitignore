@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+
+# Test / build artifacts
+coverage/
+dist/
+*.tsbuildinfo
+
+# Environment & secrets (never commit real values)
+.env
+.env.local
+.env.*.local
+
+# Prisma generated client
+prisma/generated/
+
+# OS / editor
+.DS_Store
+Thumbs.db
