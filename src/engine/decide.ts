@@ -26,6 +26,7 @@ import {
 import {
   applyKnownCap,
   cashbackCentimos as cashbackOf,
+  fixedPriceTicketCostCentimos,
   minimumSpendMet,
   percentDiscountCentimos,
   twoForOneCostCentimos,
@@ -231,7 +232,23 @@ function computeEconomics(rule: RuleVersion, ctx: PurchaseContext): Econ {
         cashbackCentimos: 0,
       };
     }
-    case 'FIXED_PRICE':
+    case 'FIXED_PRICE': {
+      // A FIXED_PRICE over a TICKET_UNIT scope is a per-ticket price: total = price × ticketCount
+      // (e.g. UVK Diners S/9.90/ticket × 2 = S/19.80). An exact-bundle FIXED_PRICE is the flat
+      // bundle price. (M3 FIX05 exposed that the flat-price path ignored the ticket count.)
+      if (rule.eligibleSpendSelector === 'TICKET_UNIT') {
+        if (ctx.ticketCount === undefined) {
+          return { state: 'MISSING_CONTEXT', missing: ['TICKET_PRICE'] };
+        }
+        const cost = fixedPriceTicketCostCentimos(b.fixedPriceCentimos, ctx.ticketCount);
+        return {
+          state: 'RANKABLE_COST',
+          effectiveCostCentimos: cost,
+          optimisticCostCentimos: cost,
+          roundingAmbiguous: false,
+          cashbackCentimos: 0,
+        };
+      }
       return {
         state: 'RANKABLE_COST',
         effectiveCostCentimos: b.fixedPriceCentimos,
@@ -239,6 +256,7 @@ function computeEconomics(rule: RuleVersion, ctx: PurchaseContext): Econ {
         roundingAmbiguous: false,
         cashbackCentimos: 0,
       };
+    }
     case 'FIXED_BUNDLE':
       return {
         state: 'RANKABLE_COST',
@@ -414,15 +432,23 @@ function boundIsMaterial(
   basis: ComparisonScope['comparisonBasis'],
   winnerCost: Centimos | undefined,
   winnerNominal: number | undefined,
+  winnerIsTie: boolean,
 ): boolean {
   if (bound.kind === 'UNKNOWN_OR_UNBOUNDED') return true; // material by default (§28)
+  // Materiality = "could change the DECISION". A bound that STRICTLY beats the winner could make a
+  // new sole/joint winner ⇒ material. A bound that only EQUALS the winner is material iff the winner
+  // is currently UNIQUE (equality would convert BEST_CONFIRMED → CONFIRMED_TIE); if the winner set is
+  // ALREADY a tie, an equal bound merely joins/does-not-join a tie WITHOUT changing the decision
+  // status ⇒ non-material (M3 FIX03; consistent with §21's "confirmed UNIQUE winner" wording).
   if (
     basis === 'EFFECTIVE_OUT_OF_POCKET_COST' &&
     bound.kind === 'KNOWN_BOUND' &&
     'minPlausibleCostCentimos' in bound
   ) {
     if (winnerCost === undefined) return true;
-    return bound.minPlausibleCostCentimos <= winnerCost; // ≤ : equality is material (could tie)
+    if (bound.minPlausibleCostCentimos < winnerCost) return true;
+    if (bound.minPlausibleCostCentimos === winnerCost) return !winnerIsTie;
+    return false;
   }
   if (
     basis === 'NOMINAL_VALUE_SAME_UNIT' &&
@@ -430,7 +456,9 @@ function boundIsMaterial(
     'maxPlausibleValueMinorUnits' in bound
   ) {
     if (winnerNominal === undefined) return true;
-    return bound.maxPlausibleValueMinorUnits >= winnerNominal;
+    if (bound.maxPlausibleValueMinorUnits > winnerNominal) return true;
+    if (bound.maxPlausibleValueMinorUnits === winnerNominal) return !winnerIsTie;
+    return false;
   }
   return true;
 }
@@ -754,23 +782,22 @@ function resolveDecision(
   const materialUserResolvable: Working[] = [];
   for (const w of uncertain) {
     const bound = boundFor(w, basis);
-    const material = boundIsMaterial(bound, basis, winnerCost, winnerNominal);
+    const material = boundIsMaterial(bound, basis, winnerCost, winnerNominal, tie);
     w.__bound = bound;
     w.__material = material;
     if (!material) continue;
     if (isUserResolvable(w)) materialUserResolvable.push(w);
     else materialBlockers.push(w);
   }
-  // Rounding ambiguity: a non-winner rankable whose optimistic (rounded-up) cost could tie the winner.
+  // Rounding ambiguity: a non-winner rankable whose optimistic (rounded-up) cost could beat, or
+  // (against a unique winner) tie, the winner. Against an already-tied winner an equal optimistic
+  // cost only joins the tie ⇒ non-material (same "could change the decision" rule as above).
   if (basis === 'EFFECTIVE_OUT_OF_POCKET_COST' && winner && winnerCost !== undefined) {
     for (const w of rankable) {
       if (w === winner) continue;
-      if (
-        w.roundingAmbiguous &&
-        w.optimisticCostCentimos !== undefined &&
-        w.optimisticCostCentimos <= winnerCost
-      ) {
-        materialBlockers.push(w);
+      if (w.roundingAmbiguous && w.optimisticCostCentimos !== undefined) {
+        const oc = w.optimisticCostCentimos;
+        if (oc < winnerCost || (oc === winnerCost && !tie)) materialBlockers.push(w);
       }
     }
   }

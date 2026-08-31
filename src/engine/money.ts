@@ -89,6 +89,26 @@ export function twoForOneCostCentimos(
   return unitPriceCentimos * paidUnits;
 }
 
+/**
+ * FIXED_PRICE settlement over a ticket purchase: a fixed per-ticket price paid `count` times.
+ * A single-ticket scope (count = 1) collapses to the flat fixed price; a 2-ticket scope pays the
+ * fixed price twice (UVK Diners S/9.90/ticket × 2 = S/19.80). Independent of the ticket unit price.
+ */
+export function fixedPriceTicketCostCentimos(
+  fixedPricePerTicketCentimos: Centimos,
+  count: number,
+): Centimos {
+  if (!Number.isInteger(count) || count <= 0) {
+    throw new SettlementInvariantError(`ticket count must be a positive integer: ${count}`);
+  }
+  if (!Number.isInteger(fixedPricePerTicketCentimos) || fixedPricePerTicketCentimos < 0) {
+    throw new SettlementInvariantError(
+      `fixed ticket price must be a non-negative integer: ${fixedPricePerTicketCentimos}`,
+    );
+  }
+  return fixedPricePerTicketCentimos * count;
+}
+
 /** Whether a rule's minimumSpend threshold is met by the eligible-spend quantity (RT-02). */
 export function minimumSpendMet(
   constraints: Constraints,
