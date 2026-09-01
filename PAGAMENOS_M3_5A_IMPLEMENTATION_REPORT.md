@@ -645,3 +645,138 @@ Additive closure changes plus the corrected unreleased migration; engine/corpus 
 
 **STOP.** Independent code RECHECK by **Codex Sol** focused on P35A-01/02/05. Do not begin M3.5B or
 Wave 0.
+
+
+---
+
+# M3.5A FINAL MICRO-CLOSURE
+
+Independent Codex Sol recheck of `d7d30974b90f6c41ba2d83ee7586deab4b907237` returned **B — ONE FINAL
+MICRO-PATCH**: P35A-03/04 CLOSED; P35A-01, P35A-02, P35A-05 OPEN; plus a NEW **P35A-07** (concurrent
+idempotency/business identity race). This bounded micro-closure addresses exactly those three targets.
+No CRITICAL remains. Independent acceptance is NOT claimed; a final Codex Sol confirmation follows.
+
+## Starting SHA
+
+`d7d30974b90f6c41ba2d83ee7586deab4b907237` (working tree clean at start). One new micro-closure commit
+on top; not amended.
+
+## Files changed
+
+**New:** `src/lib/module-capability.test.ts` (AST-based capability scanner).
+**Modified:** `src/persistence/snapshot.ts` (central `assertReceiptMatchesRequest`),
+`src/db/decision-snapshot-repository.ts`, `src/services/{decide-and-persist,index}.ts`,
+`src/services/decide-and-persist.test.ts`, `src/db/decision-snapshot.integration.test.ts`,
+`src/db/staged-upgrade.integration.test.ts`, `eslint.config.mjs`, `src/lib/boundary.test.ts`,
+`scripts/pg-integration.ts`. **Unchanged:** `src/engine`, `src/corpus`.
+
+## A. P35A-01 / P35A-07 — race identity — **CLOSED (implementation claim)**
+
+The bug lived only in the repository's uniqueness-race reconciliation path (and the alias-conflict
+path), which returned a receipt's linked snapshot on `requestHash` match ALONE — so a concurrent
+`same key / same input / different business` caller could receive the OTHER business's snapshot.
+
+Fix: a SINGLE invariant `assertReceiptMatchesRequest({ receipt, snapshot, requestedBusinessDecisionKey,
+requestedRequestHash })` (in `snapshot.ts`) now guards EVERY receipt-return path — the service
+exact-retry path, the repository race-reconciliation path, and the alias-conflict path. Success
+requires BOTH `receipt.requestHash === requestedRequestHash` AND
+`linkedSnapshot.businessDecisionKey === requestedBusinessDecisionKey`; otherwise
+`IdempotencyConflictError`. `requestHash` semantics are unchanged (still `= inputHash`, §5).
+
+Real-Postgres regression **R1** (§7): `same key / same input A / business D1 vs D2` run concurrently,
+repeated 12× to actually exercise the reconciliation branch — exactly one succeeds, exactly one throws
+`IdempotencyConflictError`, one snapshot + one receipt for the key, and the winner's returned snapshot
+carries ITS OWN `businessDecisionKey` (the loser's business has zero snapshots). The full I1–I11 matrix
++ migrated-K_OLD + exact-retry-no-recompute remain green.
+
+## B. P35A-02 — module boundary — **CLOSED (implementation claim)**
+
+`no-restricted-imports` cannot see dynamic `import()`, `.js` suffixes or some relative forms, so a new
+AST-based **module-capability boundary test** (`src/lib/module-capability.test.ts`) enforces the
+CAPABILITY, not a spelling. It extracts every specifier (static import/export AND dynamic `import()`)
+with the TypeScript parser, normalizes it (strip `.js`/`.ts`, resolve relative traversal, drop the
+`@/` alias) to a canonical module id, and forbids the raw internals (`db/client`,
+`db/decision-snapshot-repository`, `persistence/{snapshot,provenance,build-meta}`, `@prisma/client`)
+and the deep DI module (`services/decide-and-persist`) from every production file except the exact
+sanctioned implementation. It scans the REAL source tree (zero offenders) and rejects all eight
+attack spellings (static/dynamic × alias/relative × with/without `.js`) plus raw-Prisma and
+deep-module forms from an arbitrary `services/evil-service.ts`. ESLint remains as a first line
+(`FORBIDDEN_WRITE_AND_DEEP` on app/lib/all-services; deep module allowed only from `services/index.ts`;
+raw internals allowed only from `services/decide-and-persist.ts`).
+
+Forged-pair recheck: an arbitrary service can obtain neither `DecisionSnapshotRepository.createDecision`
+nor `buildDecisionSnapshotDraft` nor raw `prisma.decisionSnapshot.create` through any module syntax,
+and the public surface accepts no caller-supplied output — so the forged Input-A/Output-B write has no
+mechanically-permitted route. Raw reads are covered by the same scanner (a caller cannot obtain
+`findSnapshotById`/raw rows and bypass integrity-verified `loadDecisionSnapshot`).
+
+## C. P35A-05 — trusted production service — **CLOSED (implementation claim)**
+
+Dependency injection was the remaining defect: the public API accepted
+`corpusProvenanceFactory`/`buildProviderFactory`, letting ordinary code (calling only the sanctioned
+service) substitute a fake provider and mislabel an incomplete SIP-only Chinawok as Corpus-v1.
+
+Fix — two tiers. PUBLIC `decideAndPersist(request)` / `loadDecisionSnapshot(id)` /
+`replayDecisionSnapshot(id)` take ONE argument and bind the TRUSTED production dependencies
+(`corpusV1ProvenanceProvider`, `envBuildMetadataProvider`, production repository, accepted engine) —
+no injection possible. INTERNAL `*WithDeps` keep injection for deterministic tests / provider-call
+counters / race testing; they are NOT re-exported by the barrel, and the deep module
+`@/services/decide-and-persist` is boundary-blocked, so DI is reachable only from the sanctioned file
+and tests. The lazy-provider contract is preserved (retry/alias construct no provider).
+
+Public-API attacks: passing a provider/deps argument to `decideAndPersist(request)` is a COMPILE error
+(`@ts-expect-error` guards), and the request type carries no `corpusVersion`/`gitSha`/`buildId`/
+provider/repository/output fields. Real-Postgres via the PUBLIC API: full Chinawok →
+`BEST_CONFIRMED CW-PLIN-01`; SIP-only → `CorpusProvenanceError` with zero snapshot & zero receipt rows.
+The default completeness algorithm (Chinawok/Popeyes) is unchanged.
+
+## PostgreSQL integration — **EXECUTED, 26/26 PASS**
+
+Ephemeral PostgreSQL 18.4, two DBs in one cluster: staged-upgrade (3) + main (23) = 26. Main adds R1
+(race identity), the public-API trusted tests (§28), the Chinawok/Popeyes completeness zero-row proofs,
+both tables' immutability, prototype/Date rejection, and two-table atomicity. Migration chain applies
+clean via `prisma migrate deploy`; the staged upgrade preserves `K_OLD` and blocks its reuse.
+
+## Offline gates — all exit 0
+
+`pnpm lint`, `pnpm typecheck`, `pnpm test` (**366**), `pnpm corpus:validate`, `pnpm build`,
+`pnpm db:validate`, `pnpm format:check`, `pnpm db:migrate:check`.
+
+## Public export audit (§35)
+
+- `src/db/index.ts`: `export {}` — no surface.
+- `src/services/index.ts`: `decideAndPersist`, `loadDecisionSnapshot`, `replayDecisionSnapshot`,
+  `DecideAndPersistRequest`, `DecisionSnapshotDto`/`ReplayComparison` types, typed errors. NOT
+  `DecideAndPersistDeps`, `*WithDeps`, providers, repository, engine, or output.
+- `src/persistence/index.ts`: canonicalize/hash, version constants, frozen schemas + read-side
+  verify/replay/coherence, `DecisionSnapshotDraft`/`BuildMetadata` TYPES, errors. NOT the draft
+  constructor, store impl, or providers.
+- Ordinary production code CANNOT override engine, corpus provenance, build provenance, repository, or
+  historical output — confirmed at the type/API level and by the module-capability scanner.
+
+## P35A-03 / P35A-04 — CLOSED, unchanged
+
+Standing regressions remain green (parse-once; canonicalizer prototype/Date/class/sparse rejection;
+exact v1 versions; local v1 tokens; local v1 instant parser).
+
+## P35A-06 — MEDIUM, DEFERRED BEFORE WAVE 0
+
+Real PostgreSQL integration executed locally (26/26); CI still has no Postgres service.
+
+## RT status (implementation claims pending Codex Sol)
+
+RT08 CLOSED FOR DECISION PERSISTENCE; RT09 CLOSED FOR DECISION PERSISTENCE; RT13 CLOSED.
+
+## Engine / corpus audit
+
+`git diff d7d30974…HEAD -- src/engine src/corpus/data` is empty.
+
+## Commit SHA
+
+One local final micro-closure commit (no push, no amend of `d7d30974…`). SHA reported in the delivery
+summary.
+
+## Exact next action
+
+**STOP.** Final independent Codex Sol confirmation focused on P35A-01/P35A-07, P35A-02, P35A-05, no new
+CRITICAL/HIGH, and quality gates. Do not begin M3.5B or Wave 0.

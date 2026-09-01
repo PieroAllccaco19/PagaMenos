@@ -1,33 +1,33 @@
-// PagaMenos · src/services — decide-and-persist orchestration (§8–§11/§14–§22/§38–§41).
+// PagaMenos · src/services — the SANCTIONED decision-persistence implementation (§8–§22/§38–§41).
 //
-// The SANCTIONED public write path. Order of operations closes P35A-01/02/03/05:
-//   1. reject a non-plain/adversarial request up front (§23/§26), then PARSE the input ONCE (§21);
-//   2. compute the request fingerprint and resolve an exact-retry receipt BEFORE any engine/corpus/
-//      build work (§8/§38) — a completed operation stays valid across deployments;
-//   3. resolve a business-alias BEFORE recomputing (§9/§39) — a new key durably aliases the existing
-//      snapshot without re-deciding or relabelling its original provenance;
-//   4. only for a genuinely new decision: run the accepted pure engine ONCE, validate its output,
-//      resolve TRUSTED corpus/build provenance (never caller-authored, §32), and persist the exact
-//      (parsed input, parsed output) pair with its initial receipt atomically (§10/§16).
+// TWO API TIERS (P35A-05 §19/§20):
+//   • PUBLIC — `decideAndPersist(request)`, `loadDecisionSnapshot(id)`, `replayDecisionSnapshot(id)`:
+//     ONE argument each, no dependency injection. They bind the TRUSTED production dependencies
+//     (Corpus-v1 provenance, environment build provider, production repository, accepted engine) so a
+//     production caller cannot substitute a fake provider and mislabel an incomplete comparison as
+//     Corpus-v1. These are the only surface re-exported by `src/services/index.ts`.
+//   • INTERNAL `*WithDeps` — injectable for deterministic tests / provider-call counters / race
+//     testing. They are NOT re-exported by the barrel, and this module's raw-capability specifier
+//     `@/services/decide-and-persist` is blocked (ESLint + the module-capability boundary test) for
+//     ordinary app/lib/service code, so DI is reachable only from the sanctioned file and tests.
 //
-// The request carries ONLY domain/transport data (input + two keys). Provenance is never a request
-// field. This module imports the internal persistence/db modules directly (the sanctioned boundary);
-// normal application code cannot reach those write APIs.
+// Order of operations: reject a non-plain request + parse once (§21/§23/§26); resolve an exact-retry
+// receipt BEFORE any engine/corpus/build work (§8/§38); resolve a business-alias without recomputing
+// (§9/§39); only for a genuinely new decision construct the TRUSTED providers lazily (§10/§11),
+// verify authenticity + candidate-set completeness, decide ONCE, and persist atomically (§16). Every
+// receipt-return path uses the single `assertReceiptMatchesRequest` identity invariant (§4/§5).
 import { decide, type DecideInput, type EngineEvaluation } from '@/engine';
 
 import { decisionSnapshotRepository } from '@/db/decision-snapshot-repository';
 import { assertCanonicalizable } from '@/persistence/canonical';
-import {
-  BusinessDecisionConflictError,
-  IdempotencyConflictError,
-  PersistenceInvariantError,
-} from '@/persistence/errors';
+import { BusinessDecisionConflictError, PersistenceInvariantError } from '@/persistence/errors';
 import {
   replayWithCurrentEngine,
   verifyHistoricalSnapshot,
   type ReplayComparison,
 } from '@/persistence/integrity';
 import {
+  assertReceiptMatchesRequest,
   buildDecisionSnapshotDraft,
   computeRequestHash,
   DECISION_PERSIST_OPERATION_SCOPE,
@@ -42,6 +42,7 @@ import {
   type CorpusProvenanceProvider,
 } from '@/persistence/provenance';
 
+/** PUBLIC request — ONLY authorized domain/transport data. No provenance, deps, engine, or output. */
 export interface DecideAndPersistRequest {
   /** The exact engine input to evaluate and (with its output) persist. */
   input: DecideInput;
@@ -51,17 +52,21 @@ export interface DecideAndPersistRequest {
   idempotencyKey: string;
 }
 
+/**
+ * INTERNAL injectable dependencies (§20). NOT part of the public request and NOT re-exported by the
+ * barrel; only tests / the sanctioned implementation may reach the `*WithDeps` functions that accept
+ * this. Every field defaults to the trusted production dependency.
+ */
 export interface DecideAndPersistDeps {
-  /** Persistence store (defaults to the shared repository). Injected in tests. */
+  /** Persistence store (defaults to the production repository). */
   repository?: DecisionPersistenceStore;
   /**
-   * FACTORY for the trusted corpus-provenance provider (§10/§11). It is invoked ONLY on the truly
-   * NEW-decision path — never for an exact retry or a business alias — so a completed operation never
-   * loads/hashes the current corpus. Defaults to `corpusV1ProvenanceProvider`.
+   * FACTORY for the trusted corpus-provenance provider — invoked ONLY on the truly NEW-decision path
+   * (§10/§11), never for an exact retry or a business alias. Defaults to `corpusV1ProvenanceProvider`.
    */
   corpusProvenanceFactory?: () => CorpusProvenanceProvider;
   /**
-   * FACTORY for the trusted build-metadata provider (§10/§11). Invoked ONLY on the new-decision path.
+   * FACTORY for the trusted build-metadata provider — invoked ONLY on the new-decision path.
    * Defaults to `envBuildMetadataProvider`.
    */
   buildProviderFactory?: () => BuildMetadataProvider;
@@ -73,18 +78,17 @@ function requireNonEmpty(value: string, label: string): string {
   return v;
 }
 
-/**
- * Evaluate `input` with the pure engine and persist the immutable decision snapshot, idempotently and
- * race-safely. Returns the persisted (or existing, on retry/alias) snapshot DTO. Throws a typed
- * conflict on a genuine key collision; the historical record is never rewritten.
- */
-export async function decideAndPersist(
+// ---------------------------------------------------------------------------------------------------
+// INTERNAL (injectable) implementations. Reachable only from the sanctioned file + tests (boundary).
+// ---------------------------------------------------------------------------------------------------
+
+/** INTERNAL: decide + persist with injectable trusted dependencies. See `decideAndPersist`. */
+export async function decideAndPersistWithDeps(
   request: DecideAndPersistRequest,
   deps: DecideAndPersistDeps = {},
 ): Promise<DecisionSnapshotDto> {
   const repository = deps.repository ?? decisionSnapshotRepository;
-  // NOTE: providers are NOT constructed here — only lazily on the new-decision path (§10/§11), so an
-  // exact retry / business alias never loads the current corpus or resolves the current build.
+  // Providers are NOT constructed here — only lazily on the new-decision path (§10/§11).
   const corpusProvenanceFactory = deps.corpusProvenanceFactory ?? corpusV1ProvenanceProvider;
   const buildProviderFactory = deps.buildProviderFactory ?? envBuildMetadataProvider;
 
@@ -99,7 +103,8 @@ export async function decideAndPersist(
   // requestHash === inputHash (frozen, §5); businessDecisionKey is always checked separately.
   const requestHash = computeRequestHash(parsedInput);
 
-  // 2. Exact-retry: a durable receipt resolves the operation without deciding/corpus/build (§8/§38).
+  // 2. Exact-retry: a durable receipt resolves the operation without deciding/corpus/build (§8/§38) —
+  //    but ONLY when it resolves the SAME request AND the SAME businessDecisionKey (§4/§5/P35A-07).
   const receipt = await repository.findReceipt(operationScope, idempotencyKey);
   if (receipt) {
     const snapshot = await repository.findSnapshotById(receipt.decisionSnapshotId);
@@ -108,13 +113,13 @@ export async function decideAndPersist(
         `idempotency receipt '${idempotencyKey}' references missing snapshot ${receipt.decisionSnapshotId}`,
       );
     }
-    if (
-      receipt.requestHash === requestHash &&
-      snapshot.businessDecisionKey === businessDecisionKey
-    ) {
-      return verifyHistoricalSnapshot(snapshot); // historical truth; engine NOT called
-    }
-    throw new IdempotencyConflictError(idempotencyKey, receipt.requestHash, requestHash);
+    assertReceiptMatchesRequest({
+      receipt,
+      snapshot,
+      requestedBusinessDecisionKey: businessDecisionKey,
+      requestedRequestHash: requestHash,
+    });
+    return verifyHistoricalSnapshot(snapshot); // historical truth; engine NOT called
   }
 
   // 3. Business-alias: an existing snapshot for this business key is durably aliased, not recomputed
@@ -165,12 +170,8 @@ export async function decideAndPersist(
   return verifyHistoricalSnapshot(dto);
 }
 
-/**
- * Load a persisted snapshot by id and fully verify it (§41): version-dispatched parse (in the
- * repository), hash integrity, and column↔payload coherence. Returns null if absent; throws
- * `SnapshotIntegrityError` / `SnapshotCoherenceError` on a corrupted or contradictory record.
- */
-export async function loadDecisionSnapshot(
+/** INTERNAL: load with an injectable store. See `loadDecisionSnapshot`. */
+export async function loadDecisionSnapshotWithDeps(
   id: string,
   deps: DecideAndPersistDeps = {},
 ): Promise<DecisionSnapshotDto | null> {
@@ -179,11 +180,8 @@ export async function loadDecisionSnapshot(
   return dto ? verifyHistoricalSnapshot(dto) : null;
 }
 
-/**
- * DIAGNOSTIC (§27): load a snapshot (fully verified) and re-run the CURRENT engine over its stored
- * historical input, returning both outputs distinctly. Never mutates history. Returns null if absent.
- */
-export async function replayDecisionSnapshot(
+/** INTERNAL: replay with an injectable store. See `replayDecisionSnapshot`. */
+export async function replayDecisionSnapshotWithDeps(
   id: string,
   deps: DecideAndPersistDeps = {},
 ): Promise<ReplayComparison | null> {
@@ -192,4 +190,35 @@ export async function replayDecisionSnapshot(
   if (!dto) return null;
   verifyHistoricalSnapshot(dto);
   return replayWithCurrentEngine(dto);
+}
+
+// ---------------------------------------------------------------------------------------------------
+// PUBLIC (trusted, one-argument) API — the only surface re-exported by src/services/index.ts.
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * Evaluate `request.input` with the accepted engine and persist the immutable decision snapshot,
+ * idempotently and race-safely, using TRUSTED production dependencies (no injection possible). Returns
+ * the persisted (or existing, on retry/alias) snapshot. Throws a typed conflict on a genuine key
+ * collision or an incomplete/inauthentic Corpus-v1 candidate set; history is never rewritten.
+ */
+export function decideAndPersist(request: DecideAndPersistRequest): Promise<DecisionSnapshotDto> {
+  return decideAndPersistWithDeps(request);
+}
+
+/**
+ * Load a persisted snapshot by id and fully verify it (§41): version-dispatched parse, hash
+ * integrity, and column↔payload coherence. Returns null if absent; throws on a corrupted/contradictory
+ * record.
+ */
+export function loadDecisionSnapshot(id: string): Promise<DecisionSnapshotDto | null> {
+  return loadDecisionSnapshotWithDeps(id);
+}
+
+/**
+ * DIAGNOSTIC (§27): load a snapshot (fully verified) and re-run the CURRENT engine over its stored
+ * historical input, returning both outputs distinctly. Never mutates history. Returns null if absent.
+ */
+export function replayDecisionSnapshot(id: string): Promise<ReplayComparison | null> {
+  return replayDecisionSnapshotWithDeps(id);
 }

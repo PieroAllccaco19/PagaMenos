@@ -30,7 +30,7 @@ import {
   CORPUS_VERSION,
   TEST_GIT_SHA,
 } from '../persistence/__fixtures__/decision-fixture';
-import { decideAndPersist } from '@/services/decide-and-persist';
+import { decideAndPersistWithDeps } from '@/services/decide-and-persist';
 import { corpusV1ProvenanceProvider, fixedBuildMetadataProvider } from '@/persistence/provenance';
 
 // Fixed staged constants (only meaningful within this test's own database).
@@ -152,7 +152,7 @@ describe('staged existing-data upgrade (§8)', () => {
     differentInput.evaluatedAt = '2026-09-15T12:00:00-05:00';
     differentInput.intendedTransactionAt = '2026-09-15T12:00:00-05:00';
     await expect(
-      decideAndPersist(
+      decideAndPersistWithDeps(
         { input: differentInput, businessDecisionKey: 'D_NEW_STAGED', idempotencyKey: K_OLD },
         {
           corpusProvenanceFactory: () => corpusV1ProvenanceProvider(),

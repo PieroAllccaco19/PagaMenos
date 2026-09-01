@@ -36,7 +36,7 @@ import {
   TEST_GIT_SHA,
   testBuildProvider,
 } from '../persistence/__fixtures__/decision-fixture';
-import { decideAndPersist } from '@/services/decide-and-persist';
+import { decideAndPersist, decideAndPersistWithDeps } from '@/services/decide-and-persist';
 
 const B = '2026-09-08T12:00:00-05:00'; // variant instants ⇒ a different request fingerprint
 
@@ -79,7 +79,7 @@ async function persist(
   variant = false,
   buildFactory?: () => BuildMetadataProvider,
 ) {
-  return decideAndPersist(
+  return decideAndPersistWithDeps(
     { input: input(variant), businessDecisionKey: bdk, idempotencyKey: idem },
     svcDeps(buildFactory),
   );
@@ -231,11 +231,11 @@ describe('concurrency (§44 I8/I9/I10)', () => {
     const bdk2 = uid();
     const key = uid();
     const results = await Promise.allSettled([
-      decideAndPersist(
+      decideAndPersistWithDeps(
         { input: input(false), businessDecisionKey: bdk1, idempotencyKey: key },
         svcDeps(),
       ),
-      decideAndPersist(
+      decideAndPersistWithDeps(
         { input: input(true), businessDecisionKey: bdk2, idempotencyKey: key },
         svcDeps(),
       ),
@@ -245,6 +245,68 @@ describe('concurrency (§44 I8/I9/I10)', () => {
     expect(rejected).toHaveLength(1);
     expect(rejected[0]!.reason).toBeInstanceOf(IdempotencyConflictError);
     expect(await countReceipts(key)).toBe(1);
+  });
+
+  // P35A-07 §7/§27 — the race Codex reproduced: same key + same input + DIFFERENT business, run
+  // concurrently ENOUGH times to actually exercise the uniqueness-race reconciliation branch.
+  it('R1 concurrent same key / same input / different business → one wins with ITS OWN snapshot', async () => {
+    for (let i = 0; i < 12; i++) {
+      const key = uid();
+      const d1 = uid();
+      const d2 = uid();
+      const A = input(false);
+      const results = await Promise.allSettled([
+        decideAndPersistWithDeps(
+          { input: A, businessDecisionKey: d1, idempotencyKey: key },
+          svcDeps(),
+        ),
+        decideAndPersistWithDeps(
+          { input: A, businessDecisionKey: d2, idempotencyKey: key },
+          svcDeps(),
+        ),
+      ]);
+      const fulfilled = results.filter((r) => r.status === 'fulfilled') as PromiseFulfilledResult<
+        Awaited<ReturnType<typeof decideAndPersistWithDeps>>
+      >[];
+      const rejected = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0]!.reason).toBeInstanceOf(IdempotencyConflictError);
+      // Exactly one snapshot + one receipt for the key; the winner got ITS OWN business decision,
+      // never the loser's snapshot.
+      expect(await countReceipts(key)).toBe(1);
+      const winnerBdk = fulfilled[0]!.value.businessDecisionKey;
+      expect([d1, d2]).toContain(winnerBdk);
+      expect(await countSnapshots(winnerBdk)).toBe(1);
+      const loserBdk = winnerBdk === d1 ? d2 : d1;
+      expect(await countSnapshots(loserBdk)).toBe(0);
+    }
+  });
+});
+
+describe('public API — trusted, no injection (P35A-05 §28)', () => {
+  it('full Chinawok via decideAndPersist(request) → BEST_CONFIRMED CW-PLIN-01', async () => {
+    const r = await decideAndPersist({
+      input: chinawokInput(),
+      businessDecisionKey: uid(),
+      idempotencyKey: uid(),
+    });
+    expect(r.decisionStatus).toBe('BEST_CONFIRMED');
+    expect(r.merchantId).toBe('m_chinawok');
+    expect(r.engineOutputJson.final?.winnerRef?.ruleId).toBe('CW-PLIN-01');
+  });
+
+  it('SIP-only Chinawok via the public API → completeness reject, zero rows', async () => {
+    const bdk = uid();
+    const key = uid();
+    const sip = chinawokInput();
+    sip.rules = sip.rules.filter((r) => r.ruleId !== 'CW-PLIN-01');
+    sip.operationalStates = sip.operationalStates.filter((o) => o.ruleId !== 'CW-PLIN-01');
+    await expect(
+      decideAndPersist({ input: sip, businessDecisionKey: bdk, idempotencyKey: key }),
+    ).rejects.toBeInstanceOf(CorpusProvenanceError);
+    expect(await countSnapshots(bdk)).toBe(0);
+    expect(await countReceipts(key)).toBe(0);
   });
 });
 
@@ -258,7 +320,7 @@ describe('Corpus-v1 candidate-set completeness (§27/§28/§33)', () => {
       (o) => o.ruleId !== 'CW-PLIN-01',
     );
     await expect(
-      decideAndPersist(
+      decideAndPersistWithDeps(
         { input: incomplete, businessDecisionKey: bdk, idempotencyKey: key },
         svcDeps(),
       ),
@@ -285,7 +347,7 @@ describe('Corpus-v1 candidate-set completeness (§27/§28/§33)', () => {
     const bdk = uid();
     const key = uid();
     await expect(
-      decideAndPersist(
+      decideAndPersistWithDeps(
         { input: incomplete, businessDecisionKey: bdk, idempotencyKey: key },
         svcDeps(),
       ),
@@ -352,7 +414,7 @@ describe('adversarial input rejected before persistence (§46)', () => {
     }) as Record<string, unknown>;
     Object.assign(evil, chinawokInput());
     await expect(
-      decideAndPersist(
+      decideAndPersistWithDeps(
         { input: evil as never, businessDecisionKey: bdk, idempotencyKey: key },
         svcDeps(),
       ),
@@ -366,7 +428,7 @@ describe('adversarial input rejected before persistence (§46)', () => {
     const withDate = chinawokInput() as unknown as Record<string, unknown>;
     withDate.evaluatedAt = new Date() as unknown as string;
     await expect(
-      decideAndPersist(
+      decideAndPersistWithDeps(
         { input: withDate as never, businessDecisionKey: bdk1, idempotencyKey: uid() },
         svcDeps(),
       ),

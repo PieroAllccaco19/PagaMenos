@@ -9,7 +9,11 @@
 // This module is INTERNAL: the draft constructor is deliberately not on the public barrel (P35A-02).
 import type { DecideInput, EngineEvaluation } from '@/engine';
 
-import { PersistenceInvariantError, SnapshotCoherenceError } from './errors';
+import {
+  IdempotencyConflictError,
+  PersistenceInvariantError,
+  SnapshotCoherenceError,
+} from './errors';
 import { canonicalHash } from './hash';
 import { sameInstantV1 } from './instant-v1';
 import {
@@ -59,6 +63,33 @@ export interface DecisionReceiptRecord {
   idempotencyKey: string;
   requestHash: string;
   decisionSnapshotId: string;
+}
+
+/**
+ * THE single receipt-identity invariant (P35A-01/P35A-07 §4/§5), used by EVERY receipt-return path
+ * (normal lookup, race reconciliation, alias). A receipt resolves a request successfully ONLY when
+ * BOTH hold: the frozen `requestHash` matches AND the linked snapshot's `businessDecisionKey` matches
+ * the requested one. Otherwise it is an `IdempotencyConflictError` — a receipt is NEVER returned to a
+ * caller merely because the request hash matched (that returned another caller's snapshot in the race
+ * Codex reproduced). Does not change the frozen meaning of `requestHash`.
+ */
+export function assertReceiptMatchesRequest(args: {
+  receipt: DecisionReceiptRecord;
+  snapshot: DecisionSnapshotDto;
+  requestedBusinessDecisionKey: string;
+  requestedRequestHash: string;
+}): void {
+  const { receipt, snapshot, requestedBusinessDecisionKey, requestedRequestHash } = args;
+  if (
+    receipt.requestHash !== requestedRequestHash ||
+    snapshot.businessDecisionKey !== requestedBusinessDecisionKey
+  ) {
+    throw new IdempotencyConflictError(
+      receipt.idempotencyKey,
+      receipt.requestHash,
+      requestedRequestHash,
+    );
+  }
 }
 
 /** Arguments for creating a brand-new decision (snapshot + its initial receipt), atomically. */

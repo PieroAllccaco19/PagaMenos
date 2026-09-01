@@ -12,12 +12,9 @@
 // normal application code — enforced by ESLint + boundary tests.
 import { Prisma, type PrismaClient } from '@prisma/client';
 
+import { BusinessDecisionConflictError, PersistenceInvariantError } from '@/persistence/errors';
 import {
-  BusinessDecisionConflictError,
-  IdempotencyConflictError,
-  PersistenceInvariantError,
-} from '@/persistence/errors';
-import {
+  assertReceiptMatchesRequest,
   parseDecisionSnapshotDto,
   type AttachAliasArgs,
   type CreateDecisionArgs,
@@ -159,19 +156,24 @@ export class DecisionSnapshotRepository implements DecisionPersistenceStore {
   private async reconcileCreate(args: CreateDecisionArgs): Promise<DecisionSnapshotDto | null> {
     const { operationScope, idempotencyKey, requestHash, draft } = args;
 
-    // 1. Idempotency: an existing receipt for this transport key wins.
+    // 1. Idempotency: an existing receipt for this transport key wins — but ONLY if it resolves the
+    //    SAME request (hash) AND the SAME businessDecisionKey (P35A-07). A concurrent same-key/
+    //    same-input/different-business writer must NOT receive the other business's snapshot.
     const receipt = await this.findReceipt(operationScope, idempotencyKey);
     if (receipt) {
-      if (receipt.requestHash === requestHash) {
-        const snapshot = await this.findSnapshotById(receipt.decisionSnapshotId);
-        if (!snapshot) {
-          throw new PersistenceInvariantError(
-            `receipt ${operationScope}/${idempotencyKey} references missing snapshot ${receipt.decisionSnapshotId}`,
-          );
-        }
-        return snapshot; // exact retry / concurrent duplicate — no new snapshot
+      const snapshot = await this.findSnapshotById(receipt.decisionSnapshotId);
+      if (!snapshot) {
+        throw new PersistenceInvariantError(
+          `receipt ${operationScope}/${idempotencyKey} references missing snapshot ${receipt.decisionSnapshotId}`,
+        );
       }
-      throw new IdempotencyConflictError(idempotencyKey, receipt.requestHash, requestHash);
+      assertReceiptMatchesRequest({
+        receipt,
+        snapshot,
+        requestedBusinessDecisionKey: draft.businessDecisionKey,
+        requestedRequestHash: requestHash,
+      });
+      return snapshot; // exact retry / concurrent duplicate — no new snapshot
     }
 
     // 2. Business decision: an existing snapshot for this business key is the historical truth.
@@ -214,10 +216,21 @@ export class DecisionSnapshotRepository implements DecisionPersistenceStore {
       if (!isUniqueViolation(e)) throw wrapUnexpected(e, 'attach alias receipt');
       const receipt = await this.findReceipt(operationScope, idempotencyKey);
       if (!receipt) throw wrapUnexpected(e, 'attach alias receipt (missing after conflict)');
-      if (receipt.requestHash === requestHash && receipt.decisionSnapshotId === snapshot.id) {
-        return snapshot; // concurrent identical alias
+      // The racing receipt must resolve the SAME request AND the SAME business decision (§4) —
+      // verify against the receipt's OWN linked snapshot, not merely the intended alias target.
+      const linked = await this.findSnapshotById(receipt.decisionSnapshotId);
+      if (!linked) {
+        throw new PersistenceInvariantError(
+          `receipt ${operationScope}/${idempotencyKey} references missing snapshot ${receipt.decisionSnapshotId}`,
+        );
       }
-      throw new IdempotencyConflictError(idempotencyKey, receipt.requestHash, requestHash);
+      assertReceiptMatchesRequest({
+        receipt,
+        snapshot: linked,
+        requestedBusinessDecisionKey: snapshot.businessDecisionKey,
+        requestedRequestHash: requestHash,
+      });
+      return snapshot; // concurrent identical alias (same business, same request)
     }
   }
 }

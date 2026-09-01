@@ -1,16 +1,16 @@
 // PagaMenos · src/services — SANCTIONED public surface for decision persistence (§29/§43).
 //
-// Normal application code uses ONLY these functions to persist/read historical decisions. Write goes
-// through `decideAndPersist` (validate → decide once → trusted provenance → atomic persist);
-// historical reads go through `loadDecisionSnapshot` / `replayDecisionSnapshot`, which verify hash
-// integrity + column↔payload coherence. The raw db client, repository write API and snapshot draft
-// constructor are NOT reachable from here.
+// Normal application code uses ONLY these one-argument functions to persist/read historical
+// decisions. `decideAndPersist(request)` binds the TRUSTED production dependencies — provenance/build
+// providers and the repository are NOT injectable through the public surface (P35A-05 §21). Historical
+// reads go through `loadDecisionSnapshot` / `replayDecisionSnapshot`, which verify hash integrity +
+// column↔payload coherence. The raw db client, repository, draft constructor, providers, and the
+// injectable `*WithDeps` / `DecideAndPersistDeps` surface are deliberately NOT re-exported here.
 export {
   decideAndPersist,
   loadDecisionSnapshot,
   replayDecisionSnapshot,
   type DecideAndPersistRequest,
-  type DecideAndPersistDeps,
 } from './decide-and-persist';
 
 // Types + typed errors consumers need to handle results/failures (read-only; no write capability).

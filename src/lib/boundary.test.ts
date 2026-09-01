@@ -36,6 +36,9 @@ const IMPORT_REPO_REL =
   "import { decisionSnapshotRepository } from '../db/decision-snapshot-repository';\nexport const x = decisionSnapshotRepository;\n";
 const IMPORT_DRAFT_REL =
   "import { buildDecisionSnapshotDraft } from '../persistence/snapshot';\nexport const x = buildDecisionSnapshotDraft;\n";
+// The deep DI module (P35A-05 §20) — exposes the injectable *WithDeps surface.
+const IMPORT_DEEP_SERVICE =
+  "import { decideAndPersistWithDeps } from '@/services/decide-and-persist';\nexport const x = decideAndPersistWithDeps;\n";
 
 describe('module-boundary enforcement (engine/corpus purity)', () => {
   it('rejects a prohibited @/db import from src/engine', async () => {
@@ -102,6 +105,20 @@ describe('sanctioned write-boundary enforcement (P35A-02 §13/§15)', () => {
       'src/services/decide-and-persist.ts',
       IMPORT_REPO + IMPORT_DRAFT + IMPORT_PROVENANCE,
     );
+    expect(ids).not.toContain('no-restricted-imports');
+  });
+
+  it('rejects the deep DI module from an arbitrary service and from src/app (P35A-05 §20)', async () => {
+    expect(await ruleIdsFor('src/services/evil-service.ts', IMPORT_DEEP_SERVICE)).toContain(
+      'no-restricted-imports',
+    );
+    expect(await ruleIdsFor('src/app/__probe__.ts', IMPORT_DEEP_SERVICE)).toContain(
+      'no-restricted-imports',
+    );
+  });
+
+  it('ALLOWS the deep DI module from the public barrel (src/services/index.ts)', async () => {
+    const ids = await ruleIdsFor('src/services/index.ts', IMPORT_DEEP_SERVICE);
     expect(ids).not.toContain('no-restricted-imports');
   });
 });

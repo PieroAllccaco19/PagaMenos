@@ -115,6 +115,29 @@ const FORBIDDEN_WRITE_INTERNALS = [
   },
 ];
 
+/**
+ * The decision-persistence implementation MODULE itself (P35A-05 §19/§20): importing it directly
+ * exposes the injectable `*WithDeps` surface (fake provenance/build providers). Ordinary code must use
+ * the public `@/services` barrel instead. Only the barrel (`src/services/index.ts`) and tests may
+ * import this deep module. The module-capability boundary test additionally covers dynamic import(),
+ * relative paths and `.js`/`.ts` suffixes, which `no-restricted-imports` cannot see reliably (§11).
+ */
+const FORBIDDEN_DEEP_SERVICE = [
+  {
+    group: [
+      '@/services/decide-and-persist',
+      '@/services/decide-and-persist.js',
+      '@/services/decide-and-persist.ts',
+      '**/services/decide-and-persist',
+    ],
+    message:
+      'Import the public @/services barrel (decideAndPersist / loadDecisionSnapshot / ' +
+      'replayDecisionSnapshot). The decide-and-persist module exposes injectable deps and is off-limits.',
+  },
+];
+
+const FORBIDDEN_WRITE_AND_DEEP = [...FORBIDDEN_WRITE_INTERNALS, ...FORBIDDEN_DEEP_SERVICE];
+
 export default tseslint.config(
   {
     ignores: [
@@ -143,7 +166,7 @@ export default tseslint.config(
     },
   },
   {
-    // Non-sanctioned application layers may not bypass the write boundary (P35A-02).
+    // Non-sanctioned application layers may not bypass the write boundary NOR the deep DI module.
     files: [
       'src/app/**/*.{ts,tsx}',
       'src/analytics/**/*.{ts,tsx}',
@@ -151,13 +174,21 @@ export default tseslint.config(
       'src/lib/**/*.{ts,tsx}',
     ],
     rules: {
-      'no-restricted-imports': ['error', { patterns: FORBIDDEN_WRITE_INTERNALS }],
+      'no-restricted-imports': ['error', { patterns: FORBIDDEN_WRITE_AND_DEEP }],
     },
   },
   {
-    // P35A-02 §13: ARBITRARY services are ALSO blocked from the raw write internals — an arbitrary
-    // service must not be able to import the repository/draft/providers and persist forged history.
+    // P35A-02 §13 / P35A-05 §20: ARBITRARY services are blocked from the raw write internals AND from
+    // the deep DI module — they must use the public @/services barrel.
     files: ['src/services/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: FORBIDDEN_WRITE_AND_DEEP }],
+    },
+  },
+  {
+    // The public barrel re-exports the public API from the deep module — allow the deep module here,
+    // but still forbid raw write internals.
+    files: ['src/services/index.ts'],
     rules: {
       'no-restricted-imports': ['error', { patterns: FORBIDDEN_WRITE_INTERNALS }],
     },

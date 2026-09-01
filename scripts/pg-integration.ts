@@ -125,8 +125,14 @@ async function main(): Promise<number> {
     );
 
     // 4b. MAIN PHASE: apply the full migration chain from a CLEAN database (explicit deploy; §24/§52),
-    //     then run the main integration suite.
-    const mainEnv: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: conn('pagamenos_test') };
+    //     then run the main integration suite. PAGAMENOS_GIT_SHA supplies a valid 40-hex build id so
+    //     the PUBLIC decideAndPersist(request) (which resolves build metadata from the trusted
+    //     environment, not from the request) can succeed for the public-API tests (§28).
+    const mainEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      DATABASE_URL: conn('pagamenos_test'),
+      PAGAMENOS_GIT_SHA: '0123456789abcdef0123456789abcdef01234567',
+    };
     runTool('npx prisma migrate deploy', { env: mainEnv, label: 'prisma migrate deploy (main)' });
     const main = runTool(
       'npx vitest run -c vitest.integration.config.ts src/db/decision-snapshot.integration.test.ts',
