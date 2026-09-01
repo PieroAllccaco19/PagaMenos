@@ -9,6 +9,7 @@
   },
   "type": "module",
   "scripts": {
+    "postinstall": "prisma generate",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
@@ -19,12 +20,15 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:integration": "tsx scripts/pg-integration.ts",
     "corpus:validate": "tsx scripts/corpus-validate.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:validate": "prisma validate",
     "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev"
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:check": "tsx scripts/migrate-check.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.2.0",

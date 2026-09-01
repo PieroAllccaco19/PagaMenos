@@ -1,9 +1,16 @@
-// PagaMenos — Prisma baseline (M0).
+// PagaMenos — Prisma schema.
 //
-// Tooling and connection configuration only. NO Phase-0A domain models exist yet:
-// RuleVersion, ComparisonScope, PurchaseSignature, DecisionSnapshot, Participant, etc.
-// are introduced in later milestones (M1 corpus / M3.5 persistence) once their contracts
-// are implemented. Migrations are explicit — no ORM auto-sync (`prisma db push`) is used.
+// M3.5A introduces the FIRST domain model: `DecisionSnapshot`, the durable, immutable, idempotent
+// persistence boundary for completed pure-engine decisions. Migrations are explicit and
+// version-controlled — no ORM auto-sync (`prisma db push`) and no startup auto-migrate.
+//
+// Immutability is enforced at the DATABASE level (append-only): BEFORE UPDATE / BEFORE DELETE
+// triggers RAISE EXCEPTION. Those triggers are not expressible in the Prisma schema language, so
+// they live in the migration SQL (prisma/migrations/*/migration.sql) and are guarded by the offline
+// `pnpm db:migrate:check` gate. Nothing here may be relied upon as the sole immutability guarantee.
+//
+// Later study-domain models (Participant, PurchaseOccasion, VerifiedValue, …) are deliberately NOT
+// created yet — they belong to M3.5B, designed together so their scientific invariants stay coherent.
 
 generator client {
   provider = "prisma-client-js"
@@ -12,4 +19,66 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+/// An immutable, append-only historical record of one completed engine decision (§5/§6/§12).
+///
+/// The exact effective engine input/output are stored verbatim as JSONB (`engineInputJson` /
+/// `engineOutputJson`) — the historical source of truth, self-contained and independent of the
+/// current corpus/rule/operational state (§3/§6). The typed columns are duplicated ONLY for efficient
+/// lookup and integrity (§21); they never redefine the JSON truth. `inputHash` / `outputHash` are
+/// SHA-256 fingerprints over the canonical serialization of those payloads (§8/§28).
+///
+/// No `updatedAt` (§13): the record has no mutable lifecycle. Corrections create NEW domain records,
+/// never edits. Database triggers forbid UPDATE and DELETE (see migration SQL).
+model DecisionSnapshot {
+  /// DB-assigned identity (gen_random_uuid()); the application never supplies it.
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  /// Domain-level completed-decision occurrence key (§11). UNIQUE. Distinct from idempotencyKey.
+  /// M3.5B binds how a future PurchaseIntent constructs this; M3.5A only enforces its uniqueness.
+  businessDecisionKey String @unique
+
+  /// Transport/request idempotency key (§10). UNIQUE. Exact retries resolve to the same row.
+  idempotencyKey String @unique
+
+  /// Versioning (§5/§7) — pins how to read this record forever.
+  snapshotSchemaVersion     String
+  engineInputSchemaVersion  String
+  engineOutputSchemaVersion String
+  engineContractVersion     String
+
+  /// Which factual corpus produced this decision (§6). Duplicated for query; the JSON holds the truth.
+  corpusVersion String
+
+  /// Queryable metadata lifted from the engine output (§21) — never the source of truth.
+  merchantId      String
+  selectedScopeId String?
+  decisionStatus  String
+
+  /// Offset-bearing instants preserved as timestamptz (§22).
+  evaluatedAt           DateTime @db.Timestamptz(6)
+  intendedTransactionAt DateTime @db.Timestamptz(6)
+
+  /// The exact historical engine input/output (§6). JSONB. Immutable.
+  engineInputJson  Json @db.JsonB
+  engineOutputJson Json @db.JsonB
+
+  /// SHA-256 (hex) fingerprints over the canonical serialization of the JSON payloads (§8).
+  inputHash  String
+  outputHash String
+
+  /// Application build metadata at the persistence boundary (§9). gitSha required; buildId optional.
+  gitSha  String
+  buildId String?
+
+  /// Insertion instant (§13 — createdAt only; no updatedAt).
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([merchantId])
+  @@index([corpusVersion])
+  @@index([decisionStatus])
+  @@index([evaluatedAt])
+  @@index([intendedTransactionAt])
+  @@map("decision_snapshot")
 }

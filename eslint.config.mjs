@@ -33,11 +33,15 @@ const FORBIDDEN_FOR_PURE_LAYER = [
       '@/services',
       '@/services/*',
       '@/services/**',
+      '@/persistence',
+      '@/persistence/*',
+      '@/persistence/**',
     ],
-    message: 'engine/corpus MUST NOT import the db/app/analytics/sourcemon/services layers.',
+    message:
+      'engine/corpus MUST NOT import the db/app/analytics/sourcemon/services/persistence layers.',
   },
   {
-    group: ['**/db', '**/db/*', '**/analytics', '**/sourcemon', '**/services'],
+    group: ['**/db', '**/db/*', '**/analytics', '**/sourcemon', '**/services', '**/persistence'],
     message: 'engine/corpus MUST NOT reach application/DB/UI layers via relative paths.',
   },
   {
@@ -54,6 +58,8 @@ const FORBIDDEN_FOR_PURE_LAYER = [
       'node:https',
       'child_process',
       'node:child_process',
+      'crypto',
+      'node:crypto',
       'os',
       'node:os',
       'process',
@@ -63,7 +69,9 @@ const FORBIDDEN_FOR_PURE_LAYER = [
       'tls',
       'node:tls',
     ],
-    message: 'engine/corpus MUST be I/O-free (no fs/net/http/child_process/os/process).',
+    message:
+      'engine/corpus MUST be I/O-free (no fs/net/http/child_process/os/process/crypto). ' +
+      'Hashing/build metadata belong at the persistence boundary (§8/§9).',
   },
 ];
 

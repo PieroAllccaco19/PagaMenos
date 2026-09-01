@@ -20,6 +20,9 @@ async function ruleIdsFor(relativeFilePath: string, code: string): Promise<strin
 
 const IMPORT_DB = "import { thing } from '@/db/client';\nexport const x = thing;\n";
 const IMPORT_PRISMA_AND_FS = "import '@prisma/client';\nimport 'node:fs';\nexport {};\n";
+const IMPORT_PERSISTENCE =
+  "import { canonicalHash } from '@/persistence';\nexport const x = canonicalHash;\n";
+const IMPORT_CRYPTO = "import { createHash } from 'node:crypto';\nexport const x = createHash;\n";
 
 describe('module-boundary enforcement (engine/corpus purity)', () => {
   it('rejects a prohibited @/db import from src/engine', async () => {
@@ -34,6 +37,21 @@ describe('module-boundary enforcement (engine/corpus purity)', () => {
 
   it('allows the same @/db import from src/services (non-pure layer)', async () => {
     const ids = await ruleIdsFor('src/services/__probe__.ts', IMPORT_DB);
+    expect(ids).not.toContain('no-restricted-imports');
+  });
+
+  it('rejects a prohibited @/persistence import from src/engine (§29)', async () => {
+    const ids = await ruleIdsFor('src/engine/__probe__.ts', IMPORT_PERSISTENCE);
+    expect(ids).toContain('no-restricted-imports');
+  });
+
+  it('rejects a node:crypto import from src/engine (hashing lives at the persistence boundary, §8)', async () => {
+    const ids = await ruleIdsFor('src/engine/__probe__.ts', IMPORT_CRYPTO);
+    expect(ids).toContain('no-restricted-imports');
+  });
+
+  it('allows @/persistence + node:crypto from src/services (non-pure layer)', async () => {
+    const ids = await ruleIdsFor('src/services/__probe__.ts', IMPORT_PERSISTENCE + IMPORT_CRYPTO);
     expect(ids).not.toContain('no-restricted-imports');
   });
 });

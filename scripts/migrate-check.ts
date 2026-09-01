@@ -1,0 +1,69 @@
+// PagaMenos · offline migration validation (§23/§37).
+//
+// A DB-free, CI-safe guard on the migration history. It does NOT connect to PostgreSQL; it asserts
+// the load-bearing structural facts that a schema-only `prisma validate` cannot see:
+//   • the migration lock declares the postgresql provider;
+//   • at least one migration exists and every migration.sql is non-empty;
+//   • the immutable DecisionSnapshot table is created; and
+//   • its append-only immutability triggers (no UPDATE / DELETE / TRUNCATE) are present.
+//
+// This catches the highest-impact regression — someone silently dropping the immutability triggers —
+// before it can reach a database.
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+
+const MIGRATIONS_DIR = join(process.cwd(), 'prisma', 'migrations');
+
+function fail(message: string): never {
+  console.error(`[db:migrate:check] FAIL: ${message}`);
+  process.exit(1);
+}
+
+function main(): void {
+  const lockPath = join(MIGRATIONS_DIR, 'migration_lock.toml');
+  const lock = readFileSync(lockPath, 'utf8');
+  if (!/provider\s*=\s*"postgresql"/.test(lock)) {
+    fail('migration_lock.toml does not declare provider = "postgresql"');
+  }
+
+  const dirs = readdirSync(MIGRATIONS_DIR).filter((name) => {
+    const full = join(MIGRATIONS_DIR, name);
+    return statSync(full).isDirectory();
+  });
+  if (dirs.length === 0) fail('no migration directories found');
+
+  let sawDecisionSnapshot = false;
+  const requiredTriggers = [
+    'decision_snapshot_no_update',
+    'decision_snapshot_no_delete',
+    'decision_snapshot_no_truncate',
+  ];
+
+  for (const dir of dirs) {
+    const sqlPath = join(MIGRATIONS_DIR, dir, 'migration.sql');
+    const sql = readFileSync(sqlPath, 'utf8');
+    if (sql.trim().length === 0) fail(`migration ${dir} has an empty migration.sql`);
+
+    if (/CREATE TABLE\s+"decision_snapshot"/i.test(sql)) {
+      sawDecisionSnapshot = true;
+      const missing = requiredTriggers.filter((t) => !sql.includes(t));
+      if (missing.length > 0) {
+        fail(
+          `migration ${dir} creates decision_snapshot but is missing immutability trigger(s): ` +
+            missing.join(', '),
+        );
+      }
+      if (!/RAISE EXCEPTION/i.test(sql)) {
+        fail(`migration ${dir} immutability function does not RAISE EXCEPTION`);
+      }
+    }
+  }
+
+  if (!sawDecisionSnapshot) fail('no migration creates the decision_snapshot table');
+
+  console.log(
+    `[db:migrate:check] OK — ${dirs.length} migration(s); decision_snapshot append-only triggers present.`,
+  );
+}
+
+main();

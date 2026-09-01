@@ -24,6 +24,11 @@ jobs:
       - name: Install (frozen lockfile)
         run: pnpm install --frozen-lockfile
 
+      # Generate the Prisma client so typecheck/build see the DecisionSnapshot model types.
+      # Schema-only; no database connection is made.
+      - name: Prisma generate
+        run: pnpm db:generate
+
       - name: Lint (includes engine/corpus boundary rules)
         run: pnpm lint
 
@@ -49,6 +54,12 @@ jobs:
         env:
           # Validation resolves env("DATABASE_URL"); a dummy value is enough (no DB connection).
           DATABASE_URL: postgresql://user:password@localhost:5432/pagamenos_validation?schema=public
+
+      # Offline migration guard: asserts the DecisionSnapshot append-only immutability triggers are
+      # present in the migration SQL (no DB connection). The real-Postgres integration suite
+      # (pnpm test:integration) runs locally against an ephemeral cluster, not in this offline CI.
+      - name: Migration check
+        run: pnpm db:migrate:check
 
       - name: Format check
         run: pnpm format:check
