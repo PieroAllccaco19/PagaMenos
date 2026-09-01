@@ -33,6 +33,8 @@ function main(): void {
   if (dirs.length === 0) fail('no migration directories found');
 
   // Each immutable table must be created AND carry no-update/delete/truncate triggers.
+  // Append-only tables (M3.5A decision tables + M3.5B-A1 study tables). `analysis_protocol` is
+  // freeze-guarded rather than plain append-only, so it is checked separately below.
   const immutableTables: Record<string, string[]> = {
     decision_snapshot: [
       'decision_snapshot_no_update',
@@ -44,15 +46,58 @@ function main(): void {
       'decision_idempotency_receipt_no_delete',
       'decision_idempotency_receipt_no_truncate',
     ],
+    experiment: ['experiment_no_update', 'experiment_no_delete', 'experiment_no_truncate'],
+    study_participant: [
+      'study_participant_no_update',
+      'study_participant_no_delete',
+      'study_participant_no_truncate',
+    ],
+    experiment_assignment: [
+      'experiment_assignment_no_update',
+      'experiment_assignment_no_delete',
+      'experiment_assignment_no_truncate',
+    ],
+    study_consent_event: [
+      'study_consent_event_no_update',
+      'study_consent_event_no_delete',
+      'study_consent_event_no_truncate',
+    ],
+    analysis_protocol_command_receipt: [
+      'analysis_protocol_command_receipt_no_update',
+      'analysis_protocol_command_receipt_no_delete',
+      'analysis_protocol_command_receipt_no_truncate',
+    ],
+    experiment_create_receipt: [
+      'experiment_create_receipt_no_update',
+      'experiment_create_receipt_no_delete',
+      'experiment_create_receipt_no_truncate',
+    ],
+    study_participant_registration_receipt: [
+      'study_participant_registration_receipt_no_update',
+      'study_participant_registration_receipt_no_delete',
+      'study_participant_registration_receipt_no_truncate',
+    ],
+    experiment_assignment_receipt: [
+      'experiment_assignment_receipt_no_update',
+      'experiment_assignment_receipt_no_delete',
+      'experiment_assignment_receipt_no_truncate',
+    ],
+    study_consent_command_receipt: [
+      'study_consent_command_receipt_no_update',
+      'study_consent_command_receipt_no_delete',
+      'study_consent_command_receipt_no_truncate',
+    ],
   };
   const seen = new Set<string>();
 
   let sawReceiptBackfill = false;
+  let allSql = '';
 
   for (const dir of dirs) {
     const sqlPath = join(MIGRATIONS_DIR, dir, 'migration.sql');
     const sql = readFileSync(sqlPath, 'utf8');
     if (sql.trim().length === 0) fail(`migration ${dir} has an empty migration.sql`);
+    allSql += `\n${sql}`;
 
     // The migration that DROPS the old snapshot idempotency column must preserve every key first
     // (P35A-01 §6/§42): a backfill INSERT from decision_snapshot into the receipt table, inside an
@@ -106,9 +151,40 @@ function main(): void {
     fail('no migration drops the snapshot idempotency column with a preserving receipt backfill');
   }
 
+  // M3.5B-A1 (spec §2.2/§4/§8.11/§9): the freeze-guard, the FROZEN-protocol experiment guard, the
+  // single-table consent CHECK, and each receipt operationScope CHECK must all be present.
+  if (!/CREATE TABLE\s+"analysis_protocol"/i.test(allSql)) {
+    fail('no migration creates the analysis_protocol table');
+  }
+  const requiredA1Objects = [
+    'analysis_protocol_freeze_guard', // freeze-guard function (§2.2)
+    'analysis_protocol_freeze_guard_update',
+    'analysis_protocol_freeze_guard_delete',
+    'analysis_protocol_no_truncate',
+    'experiment_requires_frozen_protocol', // FROZEN-protocol INSERT guard (§4)
+    'experiment_frozen_protocol_guard',
+    'study_consent_event_action_provenance_ck', // §8.11 single-table CHECK
+    'analysis_protocol_command_receipt_scope_ck', // receipt operationScope CHECKs (§9)
+    'experiment_create_receipt_scope_ck',
+    'study_participant_registration_receipt_scope_ck',
+    'experiment_assignment_receipt_scope_ck',
+    'study_consent_command_receipt_scope_ck',
+  ];
+  const missingA1 = requiredA1Objects.filter((name) => !allSql.includes(name));
+  if (missingA1.length > 0) {
+    fail(`M3.5B-A1 migration is missing required guard/constraint object(s): ${missingA1.join(', ')}`);
+  }
+  // The freeze-guard must permit ONLY the DRAFT→FROZEN transition (a literal check that the guard
+  // constrains the lifecycle transition, not merely that a trigger exists).
+  if (!/DRAFT->FROZEN|DRAFT→FROZEN/i.test(allSql)) {
+    fail('analysis_protocol freeze-guard does not document/enforce the one-way DRAFT->FROZEN transition');
+  }
+
   console.log(
     `[db:migrate:check] OK — ${dirs.length} migration(s); append-only triggers present for ` +
-      `${Object.keys(immutableTables).join(', ')}; receipt backfill precedes the key drop.`,
+      `${Object.keys(immutableTables).length} tables; analysis_protocol freeze-guard + experiment ` +
+      `FROZEN-protocol guard + consent §8.11 CHECK + receipt scope CHECKs present; receipt backfill ` +
+      `precedes the key drop.`,
   );
 }
 

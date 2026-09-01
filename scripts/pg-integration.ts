@@ -134,8 +134,11 @@ async function main(): Promise<number> {
       PAGAMENOS_GIT_SHA: '0123456789abcdef0123456789abcdef01234567',
     };
     runTool('npx prisma migrate deploy', { env: mainEnv, label: 'prisma migrate deploy (main)' });
+    // Main phase runs BOTH the accepted M3.5A decision integration suite AND the M3.5B-A1 study
+    // authority suite against the same clean database (the A1 migration composed over the M3.5A ones).
     const main = runTool(
-      'npx vitest run -c vitest.integration.config.ts src/db/decision-snapshot.integration.test.ts',
+      'npx vitest run -c vitest.integration.config.ts ' +
+        'src/db/decision-snapshot.integration.test.ts src/db/study-authority.integration.test.ts',
       { env: mainEnv, label: 'vitest integration (main)', allowFail: true },
     );
 

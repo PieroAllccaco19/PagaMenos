@@ -120,3 +120,289 @@ model DecisionIdempotencyReceipt {
   @@index([decisionSnapshotId])
   @@map("decision_idempotency_receipt")
 }
+
+// ===================================================================================================
+// M3.5B-A1 — Protocol / Experiment / Assignment / Consent authority (spec V2.1).
+//
+// ADDITIVE over accepted M3.5A: no M3.5A table, enum, or FK above is altered (SCI-24). Every A1
+// scientific table is append-only at the DATABASE level (BEFORE UPDATE/DELETE/TRUNCATE triggers that
+// RAISE), except `AnalysisProtocol` (freeze-guarded: one DRAFT→FROZEN UPDATE, then immutable) and
+// `Experiment` (immutable immediately after insert). Those triggers, the §8.11 consent CHECK, the
+// receipt operationScope/resultKind CHECKs, and the "Experiment must reference a FROZEN protocol"
+// guard are NOT expressible in Prisma and live in the migration SQL, gated by `pnpm db:migrate:check`.
+// ===================================================================================================
+
+/// AnalysisProtocol lifecycle (spec §2). One-way DRAFT → FROZEN; enforced by the freeze-guard trigger.
+enum AnalysisProtocolLifecycle {
+  DRAFT
+  FROZEN
+}
+
+/// Consent event action (spec §8.1). GRANTED carries provenance + NULL assertedEffectiveAt (§8.11);
+/// WITHDRAWN carries NULL provenance + optional assertedEffectiveAt.
+enum StudyConsentAction {
+  GRANTED
+  WITHDRAWN
+}
+
+/// Consent command receipt result (spec §8.9) — makes replay independently interpretable.
+enum StudyConsentResultKind {
+  EVENT_APPENDED
+  NO_OP_EFFECTIVE_STATE
+  CORRECTION_NOT_APPLIED
+}
+
+/// A single authoritative analysis-protocol representation (spec §2). NO lifted semantic scalar
+/// columns — all scientific semantics live in the verified `definitionJson`; `definitionDigest` =
+/// sha256(canonical(definitionJson)) @`canonicalizationVersion`. Registration inserts a complete
+/// DRAFT; freeze performs the ONLY permitted UPDATE (lifecycleStatus DRAFT→FROZEN, frozenAt
+/// NULL→trusted), every other column byte/semantically unchanged; after FROZEN the row is immutable
+/// and delete-protected (freeze-guard trigger, migration SQL). DRAFT editing is not provided.
+model AnalysisProtocol {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  /// Stable protocol-version identity (spec §2). UNIQUE — one row per version; a revision is a NEW row.
+  protocolVersion String @unique
+
+  /// Frozen local schema version used to parse `definitionJson` forever (historical dispatch, §2.1).
+  definitionSchemaVersion String
+
+  /// Canonicalization version used to serialize `definitionJson` for the digest forever (§2.1).
+  canonicalizationVersion String
+
+  /// The exact normalized definition (source of truth for ALL protocol semantics). JSONB. Immutable.
+  definitionJson Json @db.JsonB
+
+  /// SHA-256 (hex) over canonical(definitionJson) @`canonicalizationVersion` (§2). Re-verified fail-closed.
+  definitionDigest String
+
+  lifecycleStatus AnalysisProtocolLifecycle
+
+  /// Trusted freeze instant; NULL while DRAFT, set once (NULL→trusted) at freeze.
+  frozenAt DateTime? @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  experiments Experiment[]
+  receipts    AnalysisProtocolCommandReceipt[]
+
+  @@index([lifecycleStatus])
+  @@map("analysis_protocol")
+}
+
+/// An experiment bound to exactly one FROZEN AnalysisProtocol (spec §4). No `recruitmentPolicy`, no
+/// `assignedProtocolId`: the sole protocol path is `assignment → experiment → frozen protocol`.
+/// `frozenProtocolId` must reference a FROZEN protocol (FK + insert-time guard trigger). Immutable
+/// immediately after creation (no ordinary UPDATE/DELETE/TRUNCATE; triggers RAISE).
+model Experiment {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  experimentCode String @unique
+
+  frozenProtocolId String           @db.Uuid
+  frozenProtocol   AnalysisProtocol @relation(fields: [frozenProtocolId], references: [id])
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  assignments ExperimentAssignment[]
+  receipts    ExperimentCreateReceipt[]
+
+  @@index([frozenProtocolId])
+  @@map("experiment")
+}
+
+/// A study participant keyed by a STABLE, research-issued pseudonymous `recruitmentSubjectKey` (spec
+/// §5) — never a reissuable invitation/magic-link credential and never raw email. `participantCode`
+/// is an opaque public pseudonym generated AFTER dedup. Append-only (no UPDATE/DELETE/TRUNCATE).
+model StudyParticipant {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  /// Stable pseudonymous domain identity; UNIQUE (pre-creation dedup). No PII; not participant-authored.
+  recruitmentSubjectKey String @unique
+
+  /// Frozen normalization version of the recruitment-subject key.
+  recruitmentKeyVersion String
+
+  /// Opaque participant-facing pseudonym; UNIQUE; system-issued after dedup.
+  participantCode String @unique
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  assignments ExperimentAssignment[]
+  receipts    StudyParticipantRegistrationReceipt[]
+
+  @@map("study_participant")
+}
+
+/// Immutable official-population membership fact (spec §7). `enrolledAt` is trusted (system clock);
+/// `observationStartAt = enrolledAt`; no caller anchor/window/protocol id. `observationEndAt` is
+/// derived at analysis from the frozen protocol, never stored. NOT deleted on withdrawal
+/// (append-only: no UPDATE/DELETE/TRUNCATE).
+model ExperimentAssignment {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  experimentId String     @db.Uuid
+  experiment   Experiment @relation(fields: [experimentId], references: [id])
+
+  participantId String           @db.Uuid
+  participant   StudyParticipant @relation(fields: [participantId], references: [id])
+
+  /// Trusted enrollment instant (system clock, sampled by the service).
+  enrolledAt DateTime @db.Timestamptz(6)
+
+  /// Observation window anchor; equal to `enrolledAt` (§7).
+  observationStartAt DateTime @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  consentEvents StudyConsentEvent[]
+  receipts      ExperimentAssignmentReceipt[]
+
+  @@unique([experimentId, participantId])
+  @@index([experimentId])
+  @@index([participantId])
+  @@map("experiment_assignment")
+}
+
+/// Append-only consent event stream per assignment (spec §8). Ordered by `consentSeq` (never by
+/// asserted time). Provenance (`consentVersion`/`privacyNoticeVersion`/`optionalEvidenceConsent`) is
+/// NOT NULL on GRANTED and NULL on WITHDRAWN; `assertedEffectiveAt` is NULL on GRANTED (§8.11 CHECK,
+/// migration SQL) and optional on WITHDRAWN. `capturedAt` is trusted (sampled under the assignment
+/// row lock). Append-only (no UPDATE/DELETE/TRUNCATE).
+model StudyConsentEvent {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  assignmentId String               @db.Uuid
+  assignment   ExperimentAssignment @relation(fields: [assignmentId], references: [id])
+
+  /// Per-assignment strictly-increasing sequence; the ONLY ordering/authorization authority.
+  consentSeq Int
+
+  action StudyConsentAction
+
+  /// GRANTED: NOT NULL. WITHDRAWN: NULL. (§8.11 CHECK.)
+  consentVersion String?
+
+  /// GRANTED: NOT NULL. WITHDRAWN: NULL. (§8.11 CHECK.)
+  privacyNoticeVersion String?
+
+  /// GRANTED: NOT NULL. WITHDRAWN: NULL. (§8.11 CHECK.)
+  optionalEvidenceConsent Boolean?
+
+  /// GRANTED: MUST be NULL (§8.11 CHECK). WITHDRAWN: MAY be NULL; can narrow retrospective authz (§8.6).
+  assertedEffectiveAt DateTime? @db.Timestamptz(6)
+
+  /// Trusted authorization instant, sampled under the assignment row lock (§8.10).
+  capturedAt DateTime @db.Timestamptz(6)
+
+  /// Knowledge time (when the fact was recorded).
+  recordedAt DateTime @default(now()) @db.Timestamptz(6)
+
+  receipts StudyConsentCommandReceipt[]
+
+  @@unique([assignmentId, consentSeq])
+  @@index([assignmentId])
+  @@map("study_consent_event")
+}
+
+/// Idempotency receipt for protocol register/freeze (spec §9). Concrete strong FK to AnalysisProtocol;
+/// no polymorphic target. Append-only. `operationScope` is a trusted constant (CHECK in migration SQL).
+model AnalysisProtocolCommandReceipt {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  /// PROTOCOL_REGISTER_V1 | PROTOCOL_FREEZE_V1 (CHECK, migration SQL).
+  operationScope String
+  idempotencyKey String
+  requestHash    String
+
+  analysisProtocolId String           @db.Uuid
+  analysisProtocol   AnalysisProtocol @relation(fields: [analysisProtocolId], references: [id])
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([operationScope, idempotencyKey])
+  @@index([analysisProtocolId])
+  @@map("analysis_protocol_command_receipt")
+}
+
+/// Idempotency receipt for experiment creation (spec §9). Concrete FK to Experiment. Append-only.
+model ExperimentCreateReceipt {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  /// EXPERIMENT_CREATE_V1 (CHECK, migration SQL).
+  operationScope String
+  idempotencyKey String
+  requestHash    String
+
+  experimentId String     @db.Uuid
+  experiment   Experiment @relation(fields: [experimentId], references: [id])
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([operationScope, idempotencyKey])
+  @@index([experimentId])
+  @@map("experiment_create_receipt")
+}
+
+/// Idempotency receipt for participant registration (spec §6/§9). Concrete FK to StudyParticipant.
+/// Append-only. A different transport key for the same subject aliases the same participant.
+model StudyParticipantRegistrationReceipt {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  /// PARTICIPANT_REGISTER_V1 (CHECK, migration SQL).
+  operationScope String
+  idempotencyKey String
+  requestHash    String
+
+  participantId String           @db.Uuid
+  participant   StudyParticipant @relation(fields: [participantId], references: [id])
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([operationScope, idempotencyKey])
+  @@index([participantId])
+  @@map("study_participant_registration_receipt")
+}
+
+/// Idempotency receipt for participant assignment (spec §9). Concrete FK to ExperimentAssignment.
+model ExperimentAssignmentReceipt {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  /// ASSIGN_PARTICIPANT_V1 (CHECK, migration SQL).
+  operationScope String
+  idempotencyKey String
+  requestHash    String
+
+  assignmentId String               @db.Uuid
+  assignment   ExperimentAssignment @relation(fields: [assignmentId], references: [id])
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([operationScope, idempotencyKey])
+  @@index([assignmentId])
+  @@map("experiment_assignment_receipt")
+}
+
+/// Idempotency receipt for a consent command (spec §8.5/§8.9/§9). `consentEventId` references the
+/// event representing the DURABLE effective state associated with the command (not universally the
+/// event created by the command); `resultKind` distinguishes EVENT_APPENDED / NO_OP_EFFECTIVE_STATE /
+/// CORRECTION_NOT_APPLIED. Concrete FK, no nullable/polymorphic target. Append-only.
+model StudyConsentCommandReceipt {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  /// CONSENT_GRANT_V1 | CONSENT_WITHDRAW_V1 (CHECK, migration SQL).
+  operationScope String
+  idempotencyKey String
+  requestHash    String
+
+  resultKind StudyConsentResultKind
+
+  consentEventId String            @db.Uuid
+  consentEvent   StudyConsentEvent @relation(fields: [consentEventId], references: [id])
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([operationScope, idempotencyKey])
+  @@index([consentEventId])
+  @@map("study_consent_command_receipt")
+}

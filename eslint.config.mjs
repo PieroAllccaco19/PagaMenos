@@ -138,6 +138,48 @@ const FORBIDDEN_DEEP_SERVICE = [
 
 const FORBIDDEN_WRITE_AND_DEEP = [...FORBIDDEN_WRITE_INTERNALS, ...FORBIDDEN_DEEP_SERVICE];
 
+/**
+ * M3.5B-A1 trusted study-administration surface (spec §11/§13): the protocol/experiment/recruitment/
+ * assignment admin service modules and their aggregating barrel `@/services/study-admin`. These are
+ * off-limits to participant-facing/app code and to arbitrary services; only a trusted admin entrypoint
+ * (or the study-admin barrel + tests) may import them. Raw study repositories (`@/db/study-*`) are
+ * already covered by the `@/db/**` write-internal patterns above. Enforcement of operation-specific
+ * ownership is completed by the module-capability AST test (dynamic import / relative / suffix proof).
+ */
+const FORBIDDEN_STUDY_ADMIN = [
+  {
+    group: [
+      '@/services/study-protocol-admin',
+      '@/services/study-experiment-admin',
+      '@/services/study-recruitment',
+      '@/services/study-assignment-admin',
+      '@/services/study-admin',
+      '**/services/study-protocol-admin',
+      '**/services/study-experiment-admin',
+      '**/services/study-recruitment',
+      '**/services/study-assignment-admin',
+      '**/services/study-admin',
+    ],
+    message:
+      'The trusted study-admin write capabilities (protocol/experiment/recruitment/assignment) are ' +
+      'off-limits to participant-facing/app code. Reach them only via @/services/study-admin from a ' +
+      'trusted admin entrypoint; participant-facing code uses the @/services barrel (consent/read).',
+  },
+];
+
+/** The sanctioned M3.5B-A1 study implementation files that may reach their own raw study repositories
+ * (analogous to the decision-persistence sanctioned file). Operation-specific ownership between them is
+ * enforced by the module-capability AST test, not by ESLint. */
+const SANCTIONED_STUDY_IMPL_FILES = [
+  'src/services/study-protocol-admin.ts',
+  'src/services/study-experiment-admin.ts',
+  'src/services/study-recruitment.ts',
+  'src/services/study-assignment-admin.ts',
+  'src/services/study-consent.ts',
+  'src/services/study-analysis.ts',
+  'src/services/study-admin.ts',
+];
+
 export default tseslint.config(
   {
     ignores: [
@@ -174,15 +216,22 @@ export default tseslint.config(
       'src/lib/**/*.{ts,tsx}',
     ],
     rules: {
-      'no-restricted-imports': ['error', { patterns: FORBIDDEN_WRITE_AND_DEEP }],
+      'no-restricted-imports': [
+        'error',
+        { patterns: [...FORBIDDEN_WRITE_AND_DEEP, ...FORBIDDEN_STUDY_ADMIN] },
+      ],
     },
   },
   {
     // P35A-02 §13 / P35A-05 §20: ARBITRARY services are blocked from the raw write internals AND from
-    // the deep DI module — they must use the public @/services barrel.
+    // the deep DI module — they must use the public @/services barrel. M3.5B-A1: also blocked from the
+    // trusted study-admin surface (the sanctioned study impl files are exempted below).
     files: ['src/services/**/*.{ts,tsx}'],
     rules: {
-      'no-restricted-imports': ['error', { patterns: FORBIDDEN_WRITE_AND_DEEP }],
+      'no-restricted-imports': [
+        'error',
+        { patterns: [...FORBIDDEN_WRITE_AND_DEEP, ...FORBIDDEN_STUDY_ADMIN] },
+      ],
     },
   },
   {
@@ -198,6 +247,15 @@ export default tseslint.config(
     // load/replay live in this same file and use repository READ methods, so this one exemption
     // covers the entire sanctioned surface (§13/§17).
     files: ['src/services/decide-and-persist.ts'],
+    rules: {
+      'no-restricted-imports': 'off',
+    },
+  },
+  {
+    // The sanctioned M3.5B-A1 study implementation files may reach their OWN raw study repositories
+    // (and the study-admin barrel may aggregate the admin services). Operation-specific ownership is
+    // enforced mechanically by the module-capability AST test (src/lib/module-capability.test.ts).
+    files: SANCTIONED_STUDY_IMPL_FILES,
     rules: {
       'no-restricted-imports': 'off',
     },

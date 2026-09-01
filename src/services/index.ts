@@ -26,3 +26,43 @@ export {
   BuildProvenanceError,
   PersistenceInvariantError,
 } from '@/persistence';
+
+// ---------------------------------------------------------------------------------------------------
+// M3.5B-A1 PARTICIPANT-FACING / READ surface. The consent surface operates only through a TRUSTED
+// participant context (§12). The trusted ADMIN write capabilities (protocol/experiment/recruitment/
+// assignment) are intentionally NOT re-exported here — they live behind `@/services/study-admin`, off
+// limits to participant-facing/app code (module-capability AST test).
+export {
+  recordConsentGrant,
+  recordConsentWithdrawal,
+  type RecordConsentGrantRequest,
+  type RecordConsentWithdrawalRequest,
+  type ConsentCommandResult,
+  type ConsentResultKind,
+} from './study-consent';
+export { loadFrozenProtocolForAnalysis, type LoadFrozenProtocolRef } from './study-analysis';
+
+// The trusted participant context (nominal; minted by a trusted adapter) and the pure A1 helpers +
+// typed study errors that consumers need to interpret results/failures (no write capability).
+export {
+  mintTrustedParticipantContext,
+  deriveConsentAuthorizationIntervals,
+  wasCollectionAuthorizedAtKnownTime,
+  effectiveConsentState,
+  type TrustedParticipantContext,
+  type ConsentEventFact,
+  type AuthorizationInterval,
+  StudyError,
+  StudyValidationError,
+  StudyIdempotencyConflictError,
+  StudyDomainConflictError,
+  StudyConsentInvalidTransitionError,
+  StudyConsentUpdateNotSupportedError,
+  StudyProtocolNotFrozenError,
+  StudyProtocolDigestMismatchError,
+  StudyProtocolAlreadyFrozenError,
+  UnsupportedStudyVersionError,
+  StudyRecruitmentResolutionError,
+  StudyAssignmentOwnershipError,
+  StudyInvariantError,
+} from '@/study';

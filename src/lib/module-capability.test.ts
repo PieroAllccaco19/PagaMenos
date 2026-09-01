@@ -322,3 +322,150 @@ describe('non-literal dynamic-import closure (P35A-02 root defect §9/§10/§12)
     expect(NON_LITERAL_DYNAMIC_IMPORT_FORBIDDEN).toBe('NON_LITERAL_DYNAMIC_IMPORT_FORBIDDEN');
   });
 });
+
+// ===================================================================================================
+// M3.5B-A1 — operation-specific study capability ownership (spec §11/§27).
+//
+// Extends the accepted AST boundary with OPERATION-SPECIFIC allowlists: each raw study repository is
+// reachable only from its OWNING sanctioned service(s); each trusted admin service module is reachable
+// only from the study-admin barrel (and, for the read-only analysis load, the public @/services
+// barrel). Enforcement is syntax-proof (static/dynamic import, relative paths, `.js`/`.ts` suffixes,
+// static template literals) via the same TS-AST extractor. Non-literal dynamic imports remain covered
+// by the fail-closed rule above for every protected file, study modules included.
+// ===================================================================================================
+
+/** Raw study repository (src-relative, no ext) → the ONLY sanctioned service files that may import it. */
+const STUDY_RAW_OWNERS: Record<string, string[]> = {
+  'db/study-protocol-repository': ['services/study-protocol-admin.ts', 'services/study-analysis.ts'],
+  'db/study-experiment-repository': ['services/study-experiment-admin.ts'],
+  'db/study-participant-repository': ['services/study-recruitment.ts'],
+  'db/study-assignment-repository': ['services/study-assignment-admin.ts'],
+  'db/study-consent-repository': ['services/study-consent.ts'],
+};
+
+/** Trusted admin service module → the ONLY files that may import it (study-admin barrel; read-only
+ * analysis load additionally reachable from the public @/services barrel). Empty ⇒ tests only. */
+const STUDY_ADMIN_OWNERS: Record<string, string[]> = {
+  'services/study-protocol-admin': ['services/study-admin.ts'],
+  'services/study-experiment-admin': ['services/study-admin.ts'],
+  'services/study-recruitment': ['services/study-admin.ts'],
+  'services/study-assignment-admin': ['services/study-admin.ts'],
+  'services/study-analysis': ['services/study-admin.ts', 'services/index.ts'],
+  'services/study-admin': [],
+};
+
+/** Study boundary violations for one file's source (literal specifiers only; non-literal handled by
+ * the fail-closed rule above). Returns human-readable offense strings, or [] if clean. */
+function studyBoundaryViolations(code: string, fromSrcRel: string): string[] {
+  const out: string[] = [];
+  const isTest = isTestOrFixture(fromSrcRel);
+  const isDbFile = fromSrcRel.startsWith('db/');
+  for (const site of importSites(code)) {
+    if (site.type !== 'literal') continue;
+    const n = normalize(site.specifier, fromSrcRel);
+    if (!n || !n.module) continue;
+    const mod = n.module;
+    if (/^db\/study-/.test(mod)) {
+      // Raw study internals: only db/ files, the mapped owners, and tests may import them.
+      if (isTest || isDbFile) continue;
+      const owners = STUDY_RAW_OWNERS[mod] ?? [];
+      if (owners.includes(fromSrcRel)) continue;
+      out.push(`raw-study:${mod}`);
+      continue;
+    }
+    if (Object.prototype.hasOwnProperty.call(STUDY_ADMIN_OWNERS, mod)) {
+      if (isTest) continue;
+      if (STUDY_ADMIN_OWNERS[mod]!.includes(fromSrcRel)) continue;
+      out.push(`study-admin:${mod}`);
+    }
+  }
+  return out;
+}
+
+describe('M3.5B-A1 study capability ownership — real source tree (§11/§27)', () => {
+  it('no file outside the sanctioned owner imports a raw study repository or trusted admin service', () => {
+    const offenders: string[] = [];
+    for (const abs of walk(SRC)) {
+      const rel = path.relative(SRC, abs).replace(/\\/g, '/');
+      const code = readFileSync(abs, 'utf8');
+      for (const v of studyBoundaryViolations(code, rel)) offenders.push(`${rel} → ${v}`);
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe('M3.5B-A1 study capability ownership — arbitrary-module probes (§11/§27)', () => {
+  it('participant-facing/app code cannot import a raw study repository (any spelling)', () => {
+    const attacks = [
+      "import { studyConsentRepository } from '@/db/study-consent-repository';",
+      "import x from '@/db/study-protocol-repository.js';",
+      "const x = await import('../db/study-participant-repository');",
+      'const x = await import(`@/db/study-assignment-repository`);',
+    ];
+    for (const code of attacks) {
+      expect(studyBoundaryViolations(code, 'app/consent-page.ts'), code).not.toEqual([]);
+    }
+  });
+
+  it('an arbitrary service cannot import a raw study repository it does not own', () => {
+    expect(
+      studyBoundaryViolations(
+        "import { studyConsentRepository } from '@/db/study-consent-repository';",
+        'services/evil-service.ts',
+      ),
+    ).not.toEqual([]);
+  });
+
+  it('one study service cannot reach ANOTHER capability raw repository (operation-specific)', () => {
+    // The consent service owns only the consent repo; reaching the protocol repo is a violation.
+    expect(
+      studyBoundaryViolations(
+        "import { analysisProtocolRepository } from '@/db/study-protocol-repository';",
+        'services/study-consent.ts',
+      ),
+    ).not.toEqual([]);
+    // …but its OWN repo is allowed.
+    expect(
+      studyBoundaryViolations(
+        "import { studyConsentRepository } from '@/db/study-consent-repository';",
+        'services/study-consent.ts',
+      ),
+    ).toEqual([]);
+  });
+
+  it('participant-facing/app code cannot import a trusted admin service or the admin barrel', () => {
+    const attacks = [
+      "import { createExperiment } from '@/services/study-experiment-admin';",
+      "import { registerStudyParticipant } from '@/services/study-recruitment';",
+      "import { freezeAnalysisProtocol } from '@/services/study-admin';",
+      "const x = await import('../services/study-assignment-admin');",
+    ];
+    for (const code of attacks) {
+      expect(studyBoundaryViolations(code, 'app/admin-page.ts'), code).not.toEqual([]);
+    }
+  });
+
+  it('the study-admin barrel MAY aggregate the admin services (owner-allowed)', () => {
+    expect(
+      studyBoundaryViolations(
+        "export { createExperiment } from './study-experiment-admin';\nexport { assignParticipant } from './study-assignment-admin';",
+        'services/study-admin.ts',
+      ),
+    ).toEqual([]);
+  });
+
+  it('the public @/services barrel MAY re-export the read-only analysis load but NOT admin writes', () => {
+    expect(
+      studyBoundaryViolations(
+        "export { loadFrozenProtocolForAnalysis } from './study-analysis';",
+        'services/index.ts',
+      ),
+    ).toEqual([]);
+    expect(
+      studyBoundaryViolations(
+        "export { createExperiment } from './study-experiment-admin';",
+        'services/index.ts',
+      ),
+    ).not.toEqual([]);
+  });
+});
