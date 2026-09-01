@@ -49,9 +49,30 @@ function encode(value: unknown, path: string): string {
   }
 
   if (Array.isArray(value)) {
-    // Array order is significant and preserved; a hole/undefined element becomes null (JSON parity).
+    // Sparse arrays serialize inconsistently and are a corruption vector — reject them (§24). Every
+    // index in [0, length) must be a real own element; explicit `null` is fine, a hole is not.
+    for (let i = 0; i < value.length; i++) {
+      if (!(i in value)) {
+        throw new PersistenceInvariantError(
+          `sparse array at ${path}[${i}] cannot be canonicalized`,
+        );
+      }
+    }
+    // Array order is significant and preserved; an explicit `undefined` element becomes null (JSON
+    // parity) — a HOLE was already rejected above.
     const parts = value.map((el, i) => (el === undefined ? 'null' : encode(el, `${path}[${i}]`)));
     return `[${parts.join(',')}]`;
+  }
+
+  // Only PLAIN objects (Object.prototype or null prototype) are canonicalizable (§23/§25). A Date, a
+  // Map/Set, a class instance, or any object carrying a prototype `toJSON`/getters could serialize
+  // differently later (e.g. through JSONB) — fail closed rather than store a value that will not
+  // round-trip to the same bytes.
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) {
+    throw new PersistenceInvariantError(
+      `non-plain object (prototype ${proto?.constructor?.name ?? 'unknown'}) at ${path} cannot be canonicalized`,
+    );
   }
 
   // Plain object: sort keys by code point, drop undefined-valued keys.
@@ -71,4 +92,14 @@ function encode(value: unknown, path: string): string {
  */
 export function canonicalize(value: unknown): string {
   return encode(value, '$');
+}
+
+/**
+ * Fail closed if `value` is not pure, plain, finite JSON (§23/§26): a Date, class instance, Map/Set,
+ * prototype-`toJSON` object, sparse array, non-finite number, bigint, function or symbol anywhere in
+ * the structure throws `PersistenceInvariantError`. Used at the write boundary to reject an
+ * adversarial/non-plain request BEFORE any engine or DB work. Returns void.
+ */
+export function assertCanonicalizable(value: unknown): void {
+  encode(value, '$');
 }

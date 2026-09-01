@@ -1,31 +1,43 @@
-// PagaMenos · src/db — DecisionSnapshot repository (§10/§11/§16/§26/§30).
+// PagaMenos · src/db — decision persistence repository (§10/§11/§16/§26/§30, P35A-01).
 //
-// The ONLY write path to the immutable decision table. It provides race-safe idempotent insertion
-// keyed on two independent unique columns (transport `idempotencyKey`, domain `businessDecisionKey`)
-// and translates known PostgreSQL failures into typed persistence errors — application code never
-// parses raw driver strings. There is intentionally NO update/delete method; immutability is ALSO
-// enforced at the DB level by triggers (defense in depth, §12).
+// The ONLY write path to the immutable decision tables. It persists a snapshot together with its
+// INITIAL durable idempotency receipt atomically, and durably aliases additional transport keys to an
+// existing snapshot. Idempotency + business uniqueness are enforced by real unique constraints
+// (transport `(operationScope, idempotencyKey)` on receipts; domain `businessDecisionKey` on
+// snapshots), reconciled race-safely on conflict. Known PostgreSQL failures are translated into typed
+// persistence errors. There is intentionally NO update/delete method; both tables are also immutable
+// at the DB level (triggers).
+//
+// INTERNAL module (P35A-02): imported only by the sanctioned service (and infra/tests), never by
+// normal application code — enforced by ESLint + boundary tests.
 import { Prisma, type PrismaClient } from '@prisma/client';
 
 import {
   BusinessDecisionConflictError,
   IdempotencyConflictError,
   PersistenceInvariantError,
+} from '@/persistence/errors';
+import {
+  computeRequestHash,
   parseDecisionSnapshotDto,
+  type AttachAliasArgs,
+  type CreateDecisionArgs,
+  type DecisionPersistenceStore,
+  type DecisionReceiptRecord,
   type DecisionSnapshotDraft,
-  type DecisionSnapshotDto,
-} from '@/persistence';
+} from '@/persistence/snapshot';
+import type { DecisionSnapshotDto } from '@/persistence/schema';
 
 import { prisma as defaultPrisma } from './client';
 
-type Row = Prisma.DecisionSnapshotGetPayload<Record<string, never>>;
+type SnapshotRow = Prisma.DecisionSnapshotGetPayload<Record<string, never>>;
+type ReceiptRow = Prisma.DecisionIdempotencyReceiptGetPayload<Record<string, never>>;
 
-/** Map a persisted row to a validated DTO (dates → ISO strings; strict schema re-validation, §7). */
-function rowToDto(row: Row): DecisionSnapshotDto {
+/** Map a persisted snapshot row to a validated DTO (dates → ISO strings; version-dispatched, §28). */
+function rowToDto(row: SnapshotRow): DecisionSnapshotDto {
   return parseDecisionSnapshotDto({
     id: row.id,
     businessDecisionKey: row.businessDecisionKey,
-    idempotencyKey: row.idempotencyKey,
     snapshotSchemaVersion: row.snapshotSchemaVersion,
     engineInputSchemaVersion: row.engineInputSchemaVersion,
     engineOutputSchemaVersion: row.engineOutputSchemaVersion,
@@ -46,10 +58,18 @@ function rowToDto(row: Row): DecisionSnapshotDto {
   });
 }
 
-function toCreateData(draft: DecisionSnapshotDraft): Prisma.DecisionSnapshotCreateInput {
+function receiptRowToRecord(row: ReceiptRow): DecisionReceiptRecord {
+  return {
+    operationScope: row.operationScope,
+    idempotencyKey: row.idempotencyKey,
+    requestHash: row.requestHash,
+    decisionSnapshotId: row.decisionSnapshotId,
+  };
+}
+
+function snapshotCreateData(draft: DecisionSnapshotDraft): Prisma.DecisionSnapshotCreateInput {
   return {
     businessDecisionKey: draft.businessDecisionKey,
-    idempotencyKey: draft.idempotencyKey,
     snapshotSchemaVersion: draft.snapshotSchemaVersion,
     engineInputSchemaVersion: draft.engineInputSchemaVersion,
     engineOutputSchemaVersion: draft.engineOutputSchemaVersion,
@@ -60,8 +80,8 @@ function toCreateData(draft: DecisionSnapshotDraft): Prisma.DecisionSnapshotCrea
     decisionStatus: draft.decisionStatus,
     evaluatedAt: new Date(draft.evaluatedAt),
     intendedTransactionAt: new Date(draft.intendedTransactionAt),
-    // Stored verbatim as JSONB (the historical truth). Canonicalization drops undefined keys exactly
-    // as JSONB does, so a reloaded record re-hashes identically to the stored inputHash/outputHash.
+    // Stored verbatim as JSONB (historical truth). Canonicalization drops undefined keys exactly as
+    // JSONB does, so a reloaded record re-hashes identically to the stored inputHash/outputHash.
     engineInputJson: draft.engineInputJson as unknown as Prisma.InputJsonValue,
     engineOutputJson: draft.engineOutputJson as unknown as Prisma.InputJsonValue,
     inputHash: draft.inputHash,
@@ -75,84 +95,20 @@ function isUniqueViolation(e: unknown): e is Prisma.PrismaClientKnownRequestErro
   return e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002';
 }
 
-export class DecisionSnapshotRepository {
+export class DecisionSnapshotRepository implements DecisionPersistenceStore {
   constructor(private readonly prisma: PrismaClient = defaultPrisma) {}
 
-  /**
-   * Idempotently persist an immutable decision snapshot (§10/§11/§16/§26).
-   *
-   * First write of a key pair ⇒ create. An EXACT retry (same idempotencyKey, same business key, same
-   * input/output hashes) ⇒ the existing row is returned, no duplicate. A conflicting reuse ⇒ a typed
-   * conflict error, and the historical row is NEVER overwritten:
-   *   • same idempotencyKey, different payload ⇒ `IdempotencyConflictError`;
-   *   • same businessDecisionKey, different payload ⇒ `BusinessDecisionConflictError`.
-   *
-   * Race safety rests on the DB unique constraints (not an in-memory check): concurrent identical
-   * writes → one insert wins, the loser catches P2002 and resolves to the winner's committed row.
-   */
-  async persist(draft: DecisionSnapshotDraft): Promise<DecisionSnapshotDto> {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const row = await this.prisma.decisionSnapshot.create({ data: toCreateData(draft) });
-        return rowToDto(row);
-      } catch (e) {
-        if (!isUniqueViolation(e)) throw wrapUnexpected(e, 'persist decision snapshot');
-        const resolved = await this.reconcile(draft);
-        if (resolved) return resolved;
-        // A conflicting row existed at insert time but is now absent (the other writer rolled back);
-        // retry the insert once before giving up.
-      }
-    }
-    throw new PersistenceInvariantError(
-      `unique violation on persist for idempotencyKey '${draft.idempotencyKey}' but no conflicting ` +
-        `row could be resolved after retry`,
-    );
+  async findReceipt(
+    operationScope: string,
+    idempotencyKey: string,
+  ): Promise<DecisionReceiptRecord | null> {
+    const row = await this.prisma.decisionIdempotencyReceipt.findUnique({
+      where: { operationScope_idempotencyKey: { operationScope, idempotencyKey } },
+    });
+    return row ? receiptRowToRecord(row) : null;
   }
 
-  /**
-   * Reconcile a unique-violation against the already-committed row. Returns the existing DTO for an
-   * exact retry / safe duplicate, throws the appropriate typed conflict for a genuine mismatch, or
-   * returns null when neither key resolves (the conflicting writer rolled back — caller may retry).
-   */
-  private async reconcile(draft: DecisionSnapshotDraft): Promise<DecisionSnapshotDto | null> {
-    const byIdem = await this.prisma.decisionSnapshot.findUnique({
-      where: { idempotencyKey: draft.idempotencyKey },
-    });
-    if (byIdem) {
-      const sameDecision =
-        byIdem.inputHash === draft.inputHash &&
-        byIdem.outputHash === draft.outputHash &&
-        byIdem.businessDecisionKey === draft.businessDecisionKey;
-      if (sameDecision) return rowToDto(byIdem); // exact retry — return existing, no duplicate
-      throw new IdempotencyConflictError(
-        draft.idempotencyKey,
-        byIdem.inputHash,
-        byIdem.outputHash,
-        draft.inputHash,
-        draft.outputHash,
-      );
-    }
-    const byBiz = await this.prisma.decisionSnapshot.findUnique({
-      where: { businessDecisionKey: draft.businessDecisionKey },
-    });
-    if (byBiz) {
-      // Same historical decision reached via a different transport key ⇒ safe duplicate (§11).
-      if (byBiz.inputHash === draft.inputHash && byBiz.outputHash === draft.outputHash) {
-        return rowToDto(byBiz);
-      }
-      throw new BusinessDecisionConflictError(
-        draft.businessDecisionKey,
-        byBiz.inputHash,
-        byBiz.outputHash,
-        draft.inputHash,
-        draft.outputHash,
-      );
-    }
-    return null;
-  }
-
-  /** Load a snapshot by id, or null if absent. */
-  async findById(id: string): Promise<DecisionSnapshotDto | null> {
+  async findSnapshotById(id: string): Promise<DecisionSnapshotDto | null> {
     const row = await this.prisma.decisionSnapshot
       .findUnique({ where: { id } })
       .catch((e: unknown) => {
@@ -161,18 +117,111 @@ export class DecisionSnapshotRepository {
     return row ? rowToDto(row) : null;
   }
 
-  /** Load a snapshot by transport idempotency key, or null if absent. */
-  async findByIdempotencyKey(idempotencyKey: string): Promise<DecisionSnapshotDto | null> {
-    const row = await this.prisma.decisionSnapshot.findUnique({ where: { idempotencyKey } });
-    return row ? rowToDto(row) : null;
-  }
-
-  /** Load a snapshot by domain business decision key, or null if absent. */
-  async findByBusinessDecisionKey(
+  async findSnapshotByBusinessKey(
     businessDecisionKey: string,
   ): Promise<DecisionSnapshotDto | null> {
     const row = await this.prisma.decisionSnapshot.findUnique({ where: { businessDecisionKey } });
     return row ? rowToDto(row) : null;
+  }
+
+  /**
+   * Persist a NEW decision: snapshot + its initial receipt atomically (§16/§51). On a unique
+   * violation, race-reconcile to the already-committed state: an existing receipt for this key
+   * resolves the idempotency (same request → return its snapshot; different → IdempotencyConflict); an
+   * existing snapshot for this business key resolves the business decision (same request → alias +
+   * return; different → BusinessDecisionConflict). Neither present ⇒ the other writer rolled back ⇒
+   * retry once.
+   */
+  async createDecision(args: CreateDecisionArgs): Promise<DecisionSnapshotDto> {
+    const { draft, operationScope, idempotencyKey, requestHash } = args;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const row = await this.prisma.$transaction(async (tx) => {
+          const snapshot = await tx.decisionSnapshot.create({ data: snapshotCreateData(draft) });
+          await tx.decisionIdempotencyReceipt.create({
+            data: { operationScope, idempotencyKey, requestHash, decisionSnapshotId: snapshot.id },
+          });
+          return snapshot;
+        });
+        return rowToDto(row);
+      } catch (e) {
+        if (!isUniqueViolation(e)) throw wrapUnexpected(e, 'persist new decision');
+        const resolved = await this.reconcileCreate(args);
+        if (resolved) return resolved;
+        // Both keys momentarily absent (the conflicting writer rolled back) — retry the insert once.
+      }
+    }
+    throw new PersistenceInvariantError(
+      `unique violation persisting decision for idempotencyKey '${idempotencyKey}' but no ` +
+        `conflicting row could be resolved after retry`,
+    );
+  }
+
+  private async reconcileCreate(args: CreateDecisionArgs): Promise<DecisionSnapshotDto | null> {
+    const { operationScope, idempotencyKey, requestHash, draft } = args;
+
+    // 1. Idempotency: an existing receipt for this transport key wins.
+    const receipt = await this.findReceipt(operationScope, idempotencyKey);
+    if (receipt) {
+      if (receipt.requestHash === requestHash) {
+        const snapshot = await this.findSnapshotById(receipt.decisionSnapshotId);
+        if (!snapshot) {
+          throw new PersistenceInvariantError(
+            `receipt ${operationScope}/${idempotencyKey} references missing snapshot ${receipt.decisionSnapshotId}`,
+          );
+        }
+        return snapshot; // exact retry / concurrent duplicate — no new snapshot
+      }
+      throw new IdempotencyConflictError(idempotencyKey, receipt.requestHash, requestHash);
+    }
+
+    // 2. Business decision: an existing snapshot for this business key is the historical truth.
+    const existing = await this.findSnapshotByBusinessKey(draft.businessDecisionKey);
+    if (existing) {
+      const existingRequestHash = computeRequestHash(
+        existing.businessDecisionKey,
+        existing.engineInputJson,
+      );
+      if (existingRequestHash === requestHash) {
+        // Same historical decision reached via a new/racing key ⇒ durably alias, then return it.
+        return this.attachAliasReceipt({
+          operationScope,
+          idempotencyKey,
+          requestHash,
+          snapshot: existing,
+        });
+      }
+      throw new BusinessDecisionConflictError(
+        draft.businessDecisionKey,
+        existingRequestHash,
+        requestHash,
+      );
+    }
+
+    return null;
+  }
+
+  /**
+   * Durably consume a new transport key as an alias of an existing snapshot (§9/§11). Race-safe: a
+   * concurrent identical alias resolves to the same snapshot; a concurrent same-key/different-request
+   * alias raises IdempotencyConflict.
+   */
+  async attachAliasReceipt(args: AttachAliasArgs): Promise<DecisionSnapshotDto> {
+    const { operationScope, idempotencyKey, requestHash, snapshot } = args;
+    try {
+      await this.prisma.decisionIdempotencyReceipt.create({
+        data: { operationScope, idempotencyKey, requestHash, decisionSnapshotId: snapshot.id },
+      });
+      return snapshot;
+    } catch (e) {
+      if (!isUniqueViolation(e)) throw wrapUnexpected(e, 'attach alias receipt');
+      const receipt = await this.findReceipt(operationScope, idempotencyKey);
+      if (!receipt) throw wrapUnexpected(e, 'attach alias receipt (missing after conflict)');
+      if (receipt.requestHash === requestHash && receipt.decisionSnapshotId === snapshot.id) {
+        return snapshot; // concurrent identical alias
+      }
+      throw new IdempotencyConflictError(idempotencyKey, receipt.requestHash, requestHash);
+    }
   }
 }
 
@@ -181,9 +230,7 @@ function wrapUnexpected(e: unknown, whileDoing: string): PersistenceInvariantErr
   const message = e instanceof Error ? e.message : String(e);
   return new PersistenceInvariantError(
     `unexpected database failure while ${whileDoing}: ${message}`,
-    {
-      cause: e,
-    },
+    { cause: e },
   );
 }
 

@@ -98,3 +98,50 @@ describe('canonicalize — rejects non-finite / non-JSON values (fail-closed)', 
     expect(() => canonicalize({ a: { b: [1, NaN] } })).toThrow(/a\.b\[1\]/);
   });
 });
+
+describe('canonicalize — rejects non-plain prototypes (§23/§25)', () => {
+  it('throws on a Date instance', () => {
+    expect(() => canonicalize(new Date())).toThrow(PersistenceInvariantError);
+    expect(() => canonicalize({ at: new Date() })).toThrow(PersistenceInvariantError);
+  });
+
+  it('throws on a class instance', () => {
+    class Widget {
+      x = 1;
+    }
+    expect(() => canonicalize(new Widget())).toThrow(PersistenceInvariantError);
+  });
+
+  it('throws on Map / Set', () => {
+    expect(() => canonicalize(new Map())).toThrow(PersistenceInvariantError);
+    expect(() => canonicalize(new Set())).toThrow(PersistenceInvariantError);
+  });
+
+  it('throws on an object whose prototype carries toJSON (exact adversarial shape)', () => {
+    const evil = Object.create({
+      toJSON() {
+        return { hacked: true };
+      },
+    }) as Record<string, unknown>;
+    evil.merchantId = 'm_chinawok';
+    expect(() => canonicalize(evil)).toThrow(PersistenceInvariantError);
+  });
+
+  it('accepts a null-prototype plain object', () => {
+    const obj = Object.assign(Object.create(null), { a: 1, b: 2 });
+    expect(canonicalize(obj)).toBe('{"a":1,"b":2}');
+  });
+});
+
+describe('canonicalize — rejects sparse arrays (§24)', () => {
+  it('throws on a hole', () => {
+    // eslint-disable-next-line no-sparse-arrays
+    expect(() => canonicalize([1, , 3])).toThrow(PersistenceInvariantError);
+    expect(() => canonicalize(Array(1))).toThrow(PersistenceInvariantError);
+  });
+
+  it('accepts explicit null and explicit undefined (→ null) elements', () => {
+    expect(canonicalize([1, null, 3])).toBe('[1,null,3]');
+    expect(canonicalize([1, undefined, 3])).toBe('[1,null,3]');
+  });
+});

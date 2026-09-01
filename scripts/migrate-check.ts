@@ -4,8 +4,8 @@
 // the load-bearing structural facts that a schema-only `prisma validate` cannot see:
 //   • the migration lock declares the postgresql provider;
 //   • at least one migration exists and every migration.sql is non-empty;
-//   • the immutable DecisionSnapshot table is created; and
-//   • its append-only immutability triggers (no UPDATE / DELETE / TRUNCATE) are present.
+//   • the immutable DecisionSnapshot AND DecisionIdempotencyReceipt tables are created; and
+//   • their append-only immutability triggers (no UPDATE / DELETE / TRUNCATE) are present.
 //
 // This catches the highest-impact regression — someone silently dropping the immutability triggers —
 // before it can reach a database.
@@ -32,37 +32,50 @@ function main(): void {
   });
   if (dirs.length === 0) fail('no migration directories found');
 
-  let sawDecisionSnapshot = false;
-  const requiredTriggers = [
-    'decision_snapshot_no_update',
-    'decision_snapshot_no_delete',
-    'decision_snapshot_no_truncate',
-  ];
+  // Each immutable table must be created AND carry no-update/delete/truncate triggers.
+  const immutableTables: Record<string, string[]> = {
+    decision_snapshot: [
+      'decision_snapshot_no_update',
+      'decision_snapshot_no_delete',
+      'decision_snapshot_no_truncate',
+    ],
+    decision_idempotency_receipt: [
+      'decision_idempotency_receipt_no_update',
+      'decision_idempotency_receipt_no_delete',
+      'decision_idempotency_receipt_no_truncate',
+    ],
+  };
+  const seen = new Set<string>();
 
   for (const dir of dirs) {
     const sqlPath = join(MIGRATIONS_DIR, dir, 'migration.sql');
     const sql = readFileSync(sqlPath, 'utf8');
     if (sql.trim().length === 0) fail(`migration ${dir} has an empty migration.sql`);
 
-    if (/CREATE TABLE\s+"decision_snapshot"/i.test(sql)) {
-      sawDecisionSnapshot = true;
-      const missing = requiredTriggers.filter((t) => !sql.includes(t));
-      if (missing.length > 0) {
-        fail(
-          `migration ${dir} creates decision_snapshot but is missing immutability trigger(s): ` +
-            missing.join(', '),
-        );
-      }
-      if (!/RAISE EXCEPTION/i.test(sql)) {
-        fail(`migration ${dir} immutability function does not RAISE EXCEPTION`);
+    for (const [table, triggers] of Object.entries(immutableTables)) {
+      if (new RegExp(`CREATE TABLE\\s+"${table}"`, 'i').test(sql)) {
+        seen.add(table);
+        const missing = triggers.filter((t) => !sql.includes(t));
+        if (missing.length > 0) {
+          fail(
+            `migration ${dir} creates ${table} but is missing immutability trigger(s): ` +
+              missing.join(', '),
+          );
+        }
+        if (!/RAISE EXCEPTION/i.test(sql)) {
+          fail(`migration ${dir} immutability function for ${table} does not RAISE EXCEPTION`);
+        }
       }
     }
   }
 
-  if (!sawDecisionSnapshot) fail('no migration creates the decision_snapshot table');
+  for (const table of Object.keys(immutableTables)) {
+    if (!seen.has(table)) fail(`no migration creates the immutable ${table} table`);
+  }
 
   console.log(
-    `[db:migrate:check] OK — ${dirs.length} migration(s); decision_snapshot append-only triggers present.`,
+    `[db:migrate:check] OK — ${dirs.length} migration(s); append-only triggers present for ` +
+      `${Object.keys(immutableTables).join(', ')}.`,
   );
 }
 

@@ -13,6 +13,7 @@ import { decide, type EngineEvaluation } from '@/engine';
 import { SnapshotIntegrityError } from './errors';
 import { canonicalHash } from './hash';
 import type { DecisionSnapshotDto } from './schema';
+import { verifySnapshotCoherence } from './snapshot';
 
 /**
  * Verify a snapshot's stored hashes match a fresh canonical hash of its stored payloads. Returns the
@@ -28,6 +29,17 @@ export function verifySnapshotIntegrity(dto: DecisionSnapshotDto): DecisionSnaps
   if (outputHash !== dto.outputHash) {
     throw new SnapshotIntegrityError('outputHash', dto.outputHash, outputHash, dto.id);
   }
+  return dto;
+}
+
+/**
+ * Full historical read verification (§41): recompute+verify BOTH hashes AND verify the queryable
+ * columns agree with the payload (coherence). Any hash mismatch → `SnapshotIntegrityError`; any
+ * column/payload contradiction → `SnapshotCoherenceError`. Returns the dto on success.
+ */
+export function verifyHistoricalSnapshot(dto: DecisionSnapshotDto): DecisionSnapshotDto {
+  verifySnapshotIntegrity(dto);
+  verifySnapshotCoherence(dto);
   return dto;
 }
 

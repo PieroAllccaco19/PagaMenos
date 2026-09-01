@@ -1,10 +1,13 @@
-// PagaMenos · src/persistence — public surface for immutable decision persistence (M3.5A).
+// PagaMenos · src/persistence — CURATED public surface (P35A-02 §14/§43).
 //
-// Pure/near-pure helpers: canonical serialization, hashing, frozen v1 payload schemas, snapshot
-// assembly, integrity + diagnostic replay, build metadata, and the typed persistence errors. This
-// layer may import the pure engine (§29 allows persistence → engine) and Node crypto; it holds no
-// Prisma/DB client (that is `src/db`). The engine/corpus purity boundary is unaffected.
-export { canonicalize, type Canonicalizable } from './canonical';
+// This barrel exposes ONLY read-safe helpers, versioned schemas (for validation), typed errors, and
+// types. It deliberately does NOT export the write constructors or provenance providers — the draft
+// constructor `buildDecisionSnapshotDraft`, the `DecisionPersistenceStore` implementation, and the
+// trusted build/corpus providers live in internal modules (`./snapshot`, `./provenance`,
+// `./build-meta`) imported ONLY by the sanctioned service (and infra), so normal application code
+// cannot assemble/persist an arbitrary snapshot by importing this barrel. The engine/corpus purity
+// boundary is unaffected (persistence may import the engine; the reverse is forbidden).
+export { canonicalize, assertCanonicalizable, type Canonicalizable } from './canonical';
 export { sha256Hex, canonicalHash } from './hash';
 
 export {
@@ -14,37 +17,37 @@ export {
   ENGINE_CONTRACT_VERSION,
 } from './versions';
 
+// Read/validation-only schema surface (no write capability).
 export {
   engineInputV1Schema,
   engineOutputV1Schema,
   decisionSnapshotDtoSchema,
+  parseDecisionSnapshot,
   type EngineInputV1,
   type EngineOutputV1,
   type DecisionSnapshotDto,
 } from './schema';
 
-export {
-  buildDecisionSnapshotDraft,
-  parseDecisionSnapshotDto,
-  deriveDecisionStatus,
-  REQUIRES_SCOPE_SELECTION,
-  type DecisionSnapshotDraft,
-  type DecisionSnapshotStore,
-  type BuildDraftArgs,
-} from './snapshot';
-
+// Read-side integrity/coherence + diagnostic replay (never mutate history).
 export {
   verifySnapshotIntegrity,
+  verifyHistoricalSnapshot,
   replayWithCurrentEngine,
   type ReplayComparison,
 } from './integrity';
 
-export { resolveBuildMetadata, type BuildMetadata } from './build-meta';
+export { verifySnapshotCoherence, type DecisionSnapshotDraft } from './snapshot';
+
+export type { BuildMetadata } from './build-meta';
 
 export {
   PersistenceError,
   IdempotencyConflictError,
   BusinessDecisionConflictError,
   SnapshotIntegrityError,
+  SnapshotCoherenceError,
+  UnsupportedSnapshotVersionError,
+  CorpusProvenanceError,
+  BuildProvenanceError,
   PersistenceInvariantError,
 } from './errors';

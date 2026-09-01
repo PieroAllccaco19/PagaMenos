@@ -256,3 +256,227 @@ delivery summary.
 **STOP.** Do not begin M3.5B, participant workflows, or Wave 0. Next step: **independent code review by
 Codex Sol** of the M3.5A persistence guarantees (historical completeness, canonical hashing,
 DB-level immutability, idempotency/business uniqueness, purity boundary).
+
+
+---
+
+# M3.5A RED-TEAM CLOSURE
+
+Independent Codex Sol review of `eb8a575d54d359ab63f19a20cfa978f18eeefc6d` returned **B — ACCEPTABLE
+AFTER SPECIFIC PATCH** with five HIGH findings (P35A-01…05) and one MEDIUM (P35A-06). This section
+records the closure. Independent acceptance is NOT claimed here; the next step is a Codex Sol recheck.
+
+## 1. Starting SHA
+
+`eb8a575d54d359ab63f19a20cfa978f18eeefc6d` (working tree clean at start). One new closure commit is
+created on top; that commit is not amended.
+
+## 2. P35A-01 status — **CLOSED (implementation claim)**
+
+Transport idempotency moved off the snapshot into an append-only `DecisionIdempotencyReceipt` table.
+Every key under which the operation returned success is durably consumed; several keys alias one
+snapshot. The alias-reuse exploit (`K1+D1+A`, `K2+D1+A` succeed, then `K2+D2+B`) is now rejected
+(I5/I6/I10, real Postgres).
+
+## 3. Receipt schema
+
+`DecisionIdempotencyReceipt { id uuid, operationScope, idempotencyKey, requestHash, decisionSnapshotId
+→ FK DecisionSnapshot, createdAt }`, `UNIQUE(operationScope, idempotencyKey)`,
+`INDEX(decisionSnapshotId)`, `@@map("decision_idempotency_receipt")`. `operationScope` is a fixed
+trusted constant (`DECISION_PERSIST_V1`), never request-controlled. The snapshot's own
+`idempotencyKey` unique column was dropped; `businessDecisionKey` stays unique (one snapshot per
+domain decision).
+
+## 4. Receipt idempotency semantics
+
+First key → create snapshot + initial receipt. Exact retry (same key, same `requestHash`) → return the
+historical snapshot, engine NOT called. Same key + different request → `IdempotencyConflictError`. New
+key + existing business + same request → durable alias receipt + return existing. New key + existing
+business + different request → `BusinessDecisionConflictError`, key not consumed.
+
+## 5. Retry-before-recompute behavior
+
+`decideAndPersist` resolves an exact-retry receipt (and returns the verified historical snapshot)
+BEFORE calling `decide`, the corpus provider, or the build provider (§8/§38). A completed operation
+stays valid across engine/corpus/deployment changes (proven by I11).
+
+## 6. Alias durability
+
+Aliased keys are persisted as append-only receipts; both keys stay permanently consumed (I4/I9), and a
+later different-request reuse of either is rejected (I5/I6/I10).
+
+## 7. Concurrency semantics
+
+Race correctness rests on DB unique constraints + transactions, reconciled on `P2002`: identical
+concurrent writes → one snapshot + one receipt (I8); concurrent different keys / same business / same
+request → one snapshot + two receipts (I9); concurrent same key / different request → one succeeds, one
+`IdempotencyConflictError`, one receipt.
+
+## 8. P35A-02 status — **CLOSED**
+
+The public barrels no longer expose any write surface. Normal application code cannot reach the raw
+Prisma client, the repository write API, the snapshot draft constructor, or the provenance providers —
+enforced by ESLint + boundary self-tests.
+
+## 9. Public write / read boundaries
+
+`src/db/index.ts` exports **nothing**. `src/services/index.ts` exports the sanctioned surface:
+`decideAndPersist` (write), `loadDecisionSnapshot` / `replayDecisionSnapshot` (verified reads), the
+request/deps types, and the typed errors. `src/persistence/index.ts` exports only read-safe helpers
+(canonicalize/hash, frozen schemas, `verifySnapshotIntegrity` / `verifyHistoricalSnapshot` /
+`verifySnapshotCoherence` / `replayWithCurrentEngine` / `parseDecisionSnapshot`), version constants,
+types, and errors — NOT `buildDecisionSnapshotDraft`, the store impl, or the providers. ESLint block
+`FORBIDDEN_WRITE_INTERNALS` forbids `src/app|analytics|sourcemon|lib` from importing `@/db*`,
+`@prisma/client`, `@/persistence/{snapshot,provenance,build-meta}`; boundary tests prove a rejection
+from `src/app`/`src/lib` and acceptance from `src/services`.
+
+## 10. Metadata derivation / coherence
+
+All query columns (`merchantId`, `selectedScopeId`, `decisionStatus`, `evaluatedAt`,
+`intendedTransactionAt`) are DERIVED from the parsed output (`deriveQueryMetadata`), never
+caller-authored; provenance columns come from trusted providers. On read, `verifySnapshotCoherence`
+re-derives and compares (instant columns compared as INSTANTS, since timestamptz round-trips as UTC
+while the JSON keeps its original offset). A contradiction → `SnapshotCoherenceError`.
+
+## 11. P35A-03 status — **CLOSED**
+
+## 12. Parse-once semantics
+
+The service rejects a non-plain request up front (`assertCanonicalizable`), then parses ONCE
+(`engineInputV1Schema.parse`) and uses ONLY the parsed value for decide/hash/persist; the caller
+object is never used again. The output is likewise parsed (`engineOutputV1Schema.parse`) before
+metadata/hash/persist.
+
+## 13. Canonical serializer hardening
+
+`canonicalize` now rejects non-plain prototypes (Date, Map/Set, class instances, prototype-`toJSON`)
+and sparse arrays, in addition to non-finite/bigint/function/symbol. `assertCanonicalizable` reuses it
+as the write-boundary guard. Object-key sorting, array-order significance, null handling, deterministic
+escaping, and the independent literal SHA-256 vectors are preserved.
+
+## 14. Prototype / sparse-array results
+
+Unit: Date/Map/Set/class/prototype-`toJSON`/sparse rejected; null-prototype plain object accepted.
+Real Postgres (§46): a prototype-`toJSON` request and a Date-bearing request both fail BEFORE
+insertion with `snapshot count = 0` AND `receipt count = 0`.
+
+## 15. P35A-04 status — **CLOSED**
+
+## 16. v1 version dispatch
+
+`parseDecisionSnapshot` dispatches on `snapshotSchemaVersion` (only v1 known; unknown/absent →
+`UnsupportedSnapshotVersionError`). Within v1, all four version fields (snapshot/input/output/engine
+contract) are exact `z.literal`s — `engineContractVersion` is no longer a free string. Version matrix
+tested at both draft-creation and historical-load.
+
+## 17. Locally-frozen enum / instant semantics
+
+`src/persistence/tokens-v1.ts` holds frozen local copies of every persisted enum token set (guarded by
+`satisfies` against the live union for compile-time drift detection); `src/persistence/instant-v1.ts`
+owns the strict instant grammar + epoch parser. The v1 schema sources enums/instants from these, never
+from live `@/corpus` runtime arrays. A source-boundary test (`frozen-schema.test.ts`) asserts no value
+import of the live domain arrays/validators.
+
+## 18. P35A-05 status — **CLOSED**
+
+## 19. Trusted build provenance
+
+`gitSha` (required) is resolved from a trusted `BuildMetadataProvider` and validated as a real Git
+object id (40-hex SHA-1 or 64-hex SHA-256); placeholders (`dev`/`unknown`/empty) →
+`BuildProvenanceError`. The production request type carries NO `gitSha`/`buildId`. An exact retry
+returns the ORIGINAL build provenance without resolving the current build (I11).
+
+## 20. Trusted corpus provenance
+
+`corpusV1ProvenanceProvider` verifies every supplied static rule/scope is an EXACT member of Corpus v1
+(canonical-hash equality; subsets allowed, operational state not checked). Unknown/mutated rule/scope
+→ `CorpusProvenanceError`. The request type carries NO `corpusVersion`. Synthetic-rule suites inject
+`fixedCorpusProvenanceProvider` (trusted construction, not a request field).
+
+## 21. New migration
+
+`prisma/migrations/20260831130000_m3_5a_closure_idempotency_receipts/migration.sql` — drops the
+obsolete snapshot idempotency column/index, creates the receipt table + unique/index/FK, and adds its
+append-only triggers. The base migration is untouched; the chain applies from a clean DB via
+`prisma migrate deploy` (proven).
+
+## 22. DB immutability for snapshots + receipts
+
+Both tables reject UPDATE / DELETE / TRUNCATE via `BEFORE` triggers that `RAISE EXCEPTION`
+(`restrict_violation`). Proven against real Postgres for both tables (§50). `pnpm db:migrate:check`
+now guards both tables' triggers offline.
+
+## 23. Real PostgreSQL results — **EXECUTED, 18/18 PASS**
+
+Ephemeral PostgreSQL 18.4 (initdb → migrate deploy of the full chain → suite → teardown): migration
+chain, I1–I11 idempotency/alias/exploit matrix, concurrency (I8/I9/I10 + same-key/different-request),
+both tables' immutability, adversarial prototype/Date rejection with zero rows, and two-table
+transaction atomicity.
+
+## 24. Transaction tests
+
+`createDecision` writes snapshot + initial receipt in one `$transaction` (atomic §16/§51). A forced
+mid-transaction failure leaves zero snapshot AND zero receipt rows (proven).
+
+## 25. Public export audit
+
+- `src/db/index.ts`: `export {}` (no surface).
+- `src/services/index.ts`: `decideAndPersist`, `loadDecisionSnapshot`, `replayDecisionSnapshot`,
+  `DecideAndPersistRequest`/`DecideAndPersistDeps` types, `DecisionSnapshotDto`/`ReplayComparison`
+  types, and typed persistence errors. **Only** write path = `decideAndPersist`.
+- `src/persistence/index.ts`: canonicalize/`assertCanonicalizable`/hash, version constants, frozen
+  schemas + `parseDecisionSnapshot`, read-side verify/replay + `verifySnapshotCoherence`,
+  `DecisionSnapshotDraft`/`BuildMetadata` types, and errors. No draft constructor, store impl, or
+  providers.
+
+## 26. RT08 status — **CLOSED FOR DECISION PERSISTENCE** (implementation claim).
+
+## 27. RT09 status — **CLOSED FOR DECISION PERSISTENCE** (implementation claim). Durable receipts + business uniqueness proven under concurrency.
+
+## 28. RT13 status — **CLOSED** (implementation claim). Domain rows are the sole source of truth; no analytics implemented.
+
+## 29. P35A-06 status — **DEFERRED (MEDIUM) — BEFORE WAVE 0**
+
+The real PostgreSQL suite WAS rerun this closure (18/18). CI still does not execute the Postgres
+integration suite (offline CI has no Postgres service), so P35A-06 is not claimed closed;
+`pnpm test:integration` runs locally against an ephemeral cluster.
+
+## 30. Standard / deferred register
+
+Deferred (unchanged): P35A-06 (CI Postgres, before Wave 0); RTM3-08 (source-proof, before Wave 0);
+RTM3-09 (before another ticket fixed-price rule); RTM3-12 (before predicted-savings/M7); RT10
+(VerifiedValue); RT11 (PurchaseOccasion/RIVSR); RT12 (contamination); RT14+ (later milestones). No
+M3.5B / Wave 0 work performed.
+
+## 31. Exact gates (all exit 0)
+
+`pnpm lint`, `pnpm typecheck`, `pnpm test` (351), `pnpm corpus:validate`, `pnpm build`,
+`pnpm db:validate`, `pnpm format:check`, `pnpm db:migrate:check`; and `pnpm test:integration` (real
+PostgreSQL, 18/18).
+
+## 32. Files changed
+
+**New:** `src/persistence/{tokens-v1,instant-v1,provenance}.ts`,
+`src/persistence/{provenance,frozen-schema}.test.ts`,
+`prisma/migrations/20260831130000_m3_5a_closure_idempotency_receipts/migration.sql`.
+**Modified:** `prisma/schema.prisma` (receipt model; dropped snapshot idempotencyKey),
+`src/persistence/{schema,snapshot,canonical,build-meta,integrity,errors,index}.ts`,
+`src/db/{decision-snapshot-repository,index}.ts`, `src/services/{decide-and-persist,index}.ts`,
+`src/persistence/__fixtures__/decision-fixture.ts`, `eslint.config.mjs`, `src/lib/boundary.test.ts`,
+`scripts/migrate-check.ts`, and the persistence/service/integration test files.
+**Unchanged:** `src/engine`, `src/corpus`.
+
+## 33. Commit SHA
+
+One local M3.5A closure commit (no push, no amend of the accepted SHA). The SHA is emitted by
+`git rev-parse HEAD` after the commit and reported in the delivery summary.
+
+## 34. Final git status
+
+Additive persistence/closure changes only; `git diff <base>..HEAD -- src/engine src/corpus/data` is
+empty. Committed as one closure commit.
+
+## 35. Exact next action
+
+**STOP.** Independent code RECHECK by **Codex Sol** focused on P35A-01…05 and any new CRITICAL/HIGH
+introduced by the closure. Do not begin M3.5B or Wave 0.

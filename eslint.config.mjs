@@ -75,6 +75,28 @@ const FORBIDDEN_FOR_PURE_LAYER = [
   },
 ];
 
+/**
+ * The internal persistence WRITE surface (P35A-02 §14/§15): the raw Prisma client, the decision
+ * repository write API, the snapshot draft constructor, and the trusted provenance providers. Normal
+ * application layers MUST NOT import these — the ONLY sanctioned write path is `decideAndPersist` in
+ * src/services. The sanctioned service + infrastructure (scripts, tests, fixtures) are exempt by not
+ * being matched by this rule's file globs.
+ */
+const FORBIDDEN_WRITE_INTERNALS = [
+  {
+    group: ['@prisma/client', '@prisma/*', '@/db', '@/db/*', '@/db/**'],
+    message:
+      'Normal application code MUST NOT touch the raw Prisma client or db repository. Persist via ' +
+      'decideAndPersist(); read via loadDecisionSnapshot()/replayDecisionSnapshot() (src/services).',
+  },
+  {
+    group: ['@/persistence/snapshot', '@/persistence/provenance', '@/persistence/build-meta'],
+    message:
+      'Normal application code MUST NOT import the snapshot draft constructor or provenance ' +
+      'providers. Use the sanctioned service (src/services) instead.',
+  },
+];
+
 export default tseslint.config(
   {
     ignores: [
@@ -100,6 +122,19 @@ export default tseslint.config(
         { name: '__filename', message: 'engine/corpus MUST be location-independent.' },
         { name: 'fetch', message: 'engine/corpus MUST be I/O-free (no network).' },
       ],
+    },
+  },
+  {
+    // Non-sanctioned application layers may not bypass the write boundary (P35A-02). The sanctioned
+    // service (src/services), the internal db layer (src/db), scripts and tests are NOT matched here.
+    files: [
+      'src/app/**/*.{ts,tsx}',
+      'src/analytics/**/*.{ts,tsx}',
+      'src/sourcemon/**/*.{ts,tsx}',
+      'src/lib/**/*.{ts,tsx}',
+    ],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: FORBIDDEN_WRITE_INTERNALS }],
     },
   },
   {

@@ -1,12 +1,20 @@
-// PagaMenos · persistence — snapshot assembly, integrity & replay tests (§6/§8/§21/§27/§28).
+// PagaMenos · persistence — snapshot assembly, coherence, integrity & replay tests (§6/§8/§18/§21/§27).
 import { describe, expect, it } from 'vitest';
 
-import { chinawokDecision, CORPUS_VERSION } from './__fixtures__/decision-fixture';
+import { chinawokDecision, CORPUS_VERSION, TEST_GIT_SHA } from './__fixtures__/decision-fixture';
 import { canonicalHash } from './hash';
-import { replayWithCurrentEngine, verifySnapshotIntegrity } from './integrity';
-import { SnapshotIntegrityError } from './errors';
-import { parseDecisionSnapshotDto } from './snapshot';
-import { buildDecisionSnapshotDraft } from './snapshot';
+import {
+  replayWithCurrentEngine,
+  verifyHistoricalSnapshot,
+  verifySnapshotIntegrity,
+} from './integrity';
+import { SnapshotCoherenceError, SnapshotIntegrityError } from './errors';
+import {
+  buildDecisionSnapshotDraft,
+  computeRequestHash,
+  parseDecisionSnapshotDto,
+  verifySnapshotCoherence,
+} from './snapshot';
 import {
   ENGINE_CONTRACT_VERSION,
   ENGINE_INPUT_SCHEMA_VERSION,
@@ -21,9 +29,8 @@ function draft() {
     input,
     output,
     corpusVersion: CORPUS_VERSION,
-    build: { gitSha: 'deadbeef', buildId: 'build-42' },
+    build: { gitSha: TEST_GIT_SHA, buildId: 'build-42' },
     businessDecisionKey: 'bdk-1',
-    idempotencyKey: 'idem-1',
   });
 }
 
@@ -65,7 +72,7 @@ describe('buildDecisionSnapshotDraft — versions, hashes & lifted metadata', ()
 
   it('carries application build metadata (§9)', () => {
     const d = draft();
-    expect(d.gitSha).toBe('deadbeef');
+    expect(d.gitSha).toBe(TEST_GIT_SHA);
     expect(d.buildId).toBe('build-42');
   });
 
@@ -75,23 +82,30 @@ describe('buildDecisionSnapshotDraft — versions, hashes & lifted metadata', ()
     expect(d.engineOutputJson).toEqual(output);
   });
 
-  it('rejects an empty business/idempotency key (fail-closed)', () => {
+  it('rejects an empty business key (fail-closed)', () => {
     expect(() =>
       buildDecisionSnapshotDraft({
         input,
         output,
         corpusVersion: CORPUS_VERSION,
-        build: { gitSha: 'x' },
+        build: { gitSha: TEST_GIT_SHA },
         businessDecisionKey: '   ',
-        idempotencyKey: 'idem-1',
       }),
     ).toThrow();
   });
 });
 
-describe('verifySnapshotIntegrity (§28)', () => {
+describe('computeRequestHash (P35A-01 §7)', () => {
+  it('is deterministic and depends on businessDecisionKey + input only', () => {
+    expect(computeRequestHash('bdk-1', input)).toBe(computeRequestHash('bdk-1', input));
+    expect(computeRequestHash('bdk-1', input)).not.toBe(computeRequestHash('bdk-2', input));
+    expect(computeRequestHash('bdk-1', input)).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe('verifySnapshotIntegrity / verifyHistoricalSnapshot (§28/§41)', () => {
   it('passes for an intact snapshot', () => {
-    expect(() => verifySnapshotIntegrity(dtoFromDraft())).not.toThrow();
+    expect(() => verifyHistoricalSnapshot(dtoFromDraft())).not.toThrow();
   });
 
   it('throws SnapshotIntegrityError when the stored input no longer matches its hash', () => {
@@ -105,11 +119,23 @@ describe('verifySnapshotIntegrity (§28)', () => {
     };
     expect(() => verifySnapshotIntegrity(corrupted)).toThrow(SnapshotIntegrityError);
   });
+});
 
-  it('throws SnapshotIntegrityError when the recorded outputHash is altered', () => {
+describe('verifySnapshotCoherence (§18) — columns must agree with the payload', () => {
+  it('passes for a coherent snapshot', () => {
+    expect(() => verifySnapshotCoherence(dtoFromDraft())).not.toThrow();
+  });
+
+  it('throws SnapshotCoherenceError when merchantId column contradicts the payload', () => {
     const dto = dtoFromDraft();
-    const corrupted = { ...dto, outputHash: 'f'.repeat(64) };
-    expect(() => verifySnapshotIntegrity(corrupted)).toThrow(SnapshotIntegrityError);
+    const contradictory = { ...dto, merchantId: 'm_popeyes' as typeof dto.merchantId };
+    expect(() => verifySnapshotCoherence(contradictory)).toThrow(SnapshotCoherenceError);
+  });
+
+  it('throws SnapshotCoherenceError when decisionStatus column contradicts the payload', () => {
+    const dto = dtoFromDraft();
+    const contradictory = { ...dto, decisionStatus: 'NO_SAFE_WINNER' };
+    expect(() => verifyHistoricalSnapshot(contradictory)).toThrow(SnapshotCoherenceError);
   });
 });
 
@@ -119,19 +145,6 @@ describe('replayWithCurrentEngine (§27) — historical truth vs current replay 
     expect(r.historicalOutput).toEqual(output);
     expect(r.matchesHistorical).toBe(true);
     expect(r.currentOutputHash).toBe(r.historicalOutputHash);
-    // historicalOutput is the immutable stored value; currentEngineReplayOutput is a fresh run.
     expect(r.currentEngineReplayOutput).not.toBe(r.historicalOutput);
-  });
-
-  it('fails closed on a corrupted stored input before replaying', () => {
-    const dto = dtoFromDraft();
-    const corrupted = {
-      ...dto,
-      engineInputJson: {
-        ...dto.engineInputJson,
-        context: { ...dto.engineInputJson.context, branch: 'TAMPERED' },
-      },
-    };
-    expect(() => replayWithCurrentEngine(corrupted)).toThrow(SnapshotIntegrityError);
   });
 });

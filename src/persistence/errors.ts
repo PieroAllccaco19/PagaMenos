@@ -24,16 +24,13 @@ export class PersistenceError extends Error {
 export class IdempotencyConflictError extends PersistenceError {
   constructor(
     public readonly idempotencyKey: string,
-    public readonly existingInputHash: string,
-    public readonly existingOutputHash: string,
-    public readonly attemptedInputHash: string,
-    public readonly attemptedOutputHash: string,
+    public readonly existingRequestHash: string,
+    public readonly attemptedRequestHash: string,
   ) {
     super(
       'IDEMPOTENCY_CONFLICT',
-      `idempotencyKey '${idempotencyKey}' already persisted a different decision ` +
-        `(stored ${existingInputHash.slice(0, 12)}/${existingOutputHash.slice(0, 12)}, ` +
-        `attempted ${attemptedInputHash.slice(0, 12)}/${attemptedOutputHash.slice(0, 12)})`,
+      `idempotencyKey '${idempotencyKey}' was already consumed by a different request ` +
+        `(stored request ${existingRequestHash.slice(0, 12)}, attempted ${attemptedRequestHash.slice(0, 12)})`,
     );
     this.name = 'IdempotencyConflictError';
   }
@@ -47,16 +44,13 @@ export class IdempotencyConflictError extends PersistenceError {
 export class BusinessDecisionConflictError extends PersistenceError {
   constructor(
     public readonly businessDecisionKey: string,
-    public readonly existingInputHash: string,
-    public readonly existingOutputHash: string,
-    public readonly attemptedInputHash: string,
-    public readonly attemptedOutputHash: string,
+    public readonly existingRequestHash: string,
+    public readonly attemptedRequestHash: string,
   ) {
     super(
       'BUSINESS_DECISION_CONFLICT',
       `businessDecisionKey '${businessDecisionKey}' already identifies a different historical ` +
-        `decision (stored ${existingInputHash.slice(0, 12)}/${existingOutputHash.slice(0, 12)}, ` +
-        `attempted ${attemptedInputHash.slice(0, 12)}/${attemptedOutputHash.slice(0, 12)})`,
+        `decision (stored request ${existingRequestHash.slice(0, 12)}, attempted ${attemptedRequestHash.slice(0, 12)})`,
     );
     this.name = 'BusinessDecisionConflictError';
   }
@@ -80,6 +74,64 @@ export class SnapshotIntegrityError extends PersistenceError {
         `recomputed ${actual.slice(0, 16)}`,
     );
     this.name = 'SnapshotIntegrityError';
+  }
+}
+
+/**
+ * A stored snapshot's queryable metadata contradicts its historical payload (e.g. `merchantId`,
+ * `decisionStatus`, or an instant column disagrees with the parsed input/output). A read path MUST
+ * surface this rather than returning a self-contradictory record (§18/§41).
+ */
+export class SnapshotCoherenceError extends PersistenceError {
+  constructor(
+    public readonly field: string,
+    public readonly columnValue: unknown,
+    public readonly payloadValue: unknown,
+    public readonly snapshotId?: string,
+  ) {
+    super(
+      'SNAPSHOT_COHERENCE',
+      `snapshot ${snapshotId ?? '(unsaved)'} column '${field}' (${JSON.stringify(columnValue)}) ` +
+        `contradicts the historical payload (${JSON.stringify(payloadValue)})`,
+    );
+    this.name = 'SnapshotCoherenceError';
+  }
+}
+
+/**
+ * A persisted record carried an unknown/absent `snapshotSchemaVersion` — it cannot be decoded by any
+ * known historical parser and must NOT fall into current parsing (P35A-04 §28).
+ */
+export class UnsupportedSnapshotVersionError extends PersistenceError {
+  constructor(public readonly version: unknown) {
+    super(
+      'UNSUPPORTED_SNAPSHOT_VERSION',
+      `no historical parser for snapshotSchemaVersion ${JSON.stringify(version)}`,
+    );
+    this.name = 'UnsupportedSnapshotVersionError';
+  }
+}
+
+/**
+ * The static rules/scopes supplied for a NEW decision could not be verified as exact members of the
+ * claimed authoritative corpus version — arbitrary/mutated rules may not be labelled Corpus-v1
+ * (P35A-05 §35/§36).
+ */
+export class CorpusProvenanceError extends PersistenceError {
+  constructor(message: string) {
+    super('CORPUS_PROVENANCE', message);
+    this.name = 'CorpusProvenanceError';
+  }
+}
+
+/**
+ * Trusted build identity (git sha) could not be resolved/validated at the persistence boundary for a
+ * NEW decision (P35A-05 §34). Never persist a placeholder ("unknown"/"dev"/"") as factual provenance.
+ */
+export class BuildProvenanceError extends PersistenceError {
+  constructor(message: string) {
+    super('BUILD_PROVENANCE', message);
+    this.name = 'BuildProvenanceError';
   }
 }
 

@@ -9,11 +9,25 @@
 // record must record which application build persisted it — so an unresolved gitSha fails closed
 // rather than storing an empty/placeholder value. `buildId` is optional (only if the environment
 // supplies one).
-import { PersistenceInvariantError } from './errors';
+import { BuildProvenanceError } from './errors';
 
 export interface BuildMetadata {
   gitSha: string;
   buildId?: string | undefined;
+}
+
+/** A real Git object id: 40-hex (SHA-1) or 64-hex (SHA-256). Placeholders like "dev" are rejected. */
+const GIT_SHA_RE = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
+/** Validate a resolved git sha as a real Git object id (P35A-05 §34); throws otherwise. */
+export function assertValidGitSha(gitSha: string): string {
+  if (!GIT_SHA_RE.test(gitSha)) {
+    throw new BuildProvenanceError(
+      `git sha '${gitSha}' is not a valid Git object id (40-hex SHA-1 or 64-hex SHA-256); ` +
+        `refusing to persist placeholder build provenance`,
+    );
+  }
+  return gitSha;
 }
 
 /** Environment variables consulted for the commit SHA, in priority order. */
@@ -46,16 +60,17 @@ export function resolveBuildMetadata(
   override: Partial<BuildMetadata> = {},
   source: Record<string, string | undefined> = process.env,
 ): BuildMetadata {
-  const gitSha =
+  const rawGitSha =
     (typeof override.gitSha === 'string' && override.gitSha.trim().length > 0
       ? override.gitSha.trim()
       : undefined) ?? firstNonEmpty(source, GIT_SHA_KEYS);
-  if (!gitSha) {
-    throw new PersistenceInvariantError(
+  if (!rawGitSha) {
+    throw new BuildProvenanceError(
       `cannot resolve gitSha for the persistence boundary; set one of ${GIT_SHA_KEYS.join(', ')} ` +
         `or pass an explicit gitSha`,
     );
   }
+  const gitSha = assertValidGitSha(rawGitSha.toLowerCase());
   const buildId =
     (typeof override.buildId === 'string' && override.buildId.trim().length > 0
       ? override.buildId.trim()

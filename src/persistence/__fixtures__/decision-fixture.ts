@@ -7,11 +7,20 @@
 import { CORPUS_V1 } from '@/corpus';
 import { decide, type DecideInput, type EngineEvaluation } from '@/engine';
 import { exactItemsOf, frozenRule, frozenScope, opState, toInput } from '@/engine/golden/harness';
+import { fixedBuildMetadataProvider, type BuildMetadataProvider } from '@/persistence/provenance';
 
 const TUE = '2026-09-01T12:00:00-05:00';
 
 /** The corpus label persisted alongside a decision made over Corpus v1. */
 export const CORPUS_VERSION = CORPUS_V1.corpusId;
+
+/** A valid 40-hex (SHA-1) test build id — passes the trusted-build format guard. */
+export const TEST_GIT_SHA = '0123456789abcdef0123456789abcdef01234567';
+
+/** Trusted build-metadata provider for tests (a trusted dependency, never a request field). */
+export function testBuildProvider(): BuildMetadataProvider {
+  return fixedBuildMetadataProvider({ gitSha: TEST_GIT_SHA, buildId: 'itest' });
+}
 
 /** FIX01 Chinawok: Plin fixed bundle 1590 beats Sip 1690 (BEST_CONFIRMED). */
 export function chinawokInput(): DecideInput {

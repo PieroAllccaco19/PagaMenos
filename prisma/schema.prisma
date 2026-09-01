@@ -1,13 +1,16 @@
 // PagaMenos — Prisma schema.
 //
-// M3.5A introduces the FIRST domain model: `DecisionSnapshot`, the durable, immutable, idempotent
-// persistence boundary for completed pure-engine decisions. Migrations are explicit and
-// version-controlled — no ORM auto-sync (`prisma db push`) and no startup auto-migrate.
+// M3.5A introduces the durable, immutable, idempotent persistence boundary for completed pure-engine
+// decisions: `DecisionSnapshot` (one immutable row per domain decision) and
+// `DecisionIdempotencyReceipt` (append-only durable receipts that alias one-or-more transport
+// idempotency keys to a single snapshot). Migrations are explicit and version-controlled — no ORM
+// auto-sync (`prisma db push`) and no startup auto-migrate.
 //
-// Immutability is enforced at the DATABASE level (append-only): BEFORE UPDATE / BEFORE DELETE
-// triggers RAISE EXCEPTION. Those triggers are not expressible in the Prisma schema language, so
-// they live in the migration SQL (prisma/migrations/*/migration.sql) and are guarded by the offline
-// `pnpm db:migrate:check` gate. Nothing here may be relied upon as the sole immutability guarantee.
+// Immutability is enforced at the DATABASE level (append-only) for BOTH tables: BEFORE UPDATE /
+// BEFORE DELETE / BEFORE TRUNCATE triggers RAISE EXCEPTION. Those triggers are not expressible in the
+// Prisma schema language, so they live in the migration SQL (prisma/migrations/*/migration.sql) and
+// are guarded by the offline `pnpm db:migrate:check` gate. Nothing here may be relied upon as the
+// sole immutability guarantee.
 //
 // Later study-domain models (Participant, PurchaseOccasion, VerifiedValue, …) are deliberately NOT
 // created yet — they belong to M3.5B, designed together so their scientific invariants stay coherent.
@@ -35,12 +38,11 @@ model DecisionSnapshot {
   /// DB-assigned identity (gen_random_uuid()); the application never supplies it.
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
 
-  /// Domain-level completed-decision occurrence key (§11). UNIQUE. Distinct from idempotencyKey.
+  /// Domain-level completed-decision occurrence key (§11). UNIQUE — one snapshot per domain decision.
   /// M3.5B binds how a future PurchaseIntent constructs this; M3.5A only enforces its uniqueness.
+  /// Transport idempotency keys are NOT stored here; they live in DecisionIdempotencyReceipt so that
+  /// several successful keys can durably alias one snapshot (P35A-01).
   businessDecisionKey String @unique
-
-  /// Transport/request idempotency key (§10). UNIQUE. Exact retries resolve to the same row.
-  idempotencyKey String @unique
 
   /// Versioning (§5/§7) — pins how to read this record forever.
   snapshotSchemaVersion     String
@@ -75,10 +77,46 @@ model DecisionSnapshot {
   /// Insertion instant (§13 — createdAt only; no updatedAt).
   createdAt DateTime @default(now()) @db.Timestamptz(6)
 
+  /// Durable idempotency receipts aliasing transport keys to this snapshot (P35A-01).
+  receipts DecisionIdempotencyReceipt[]
+
   @@index([merchantId])
   @@index([corpusVersion])
   @@index([decisionStatus])
   @@index([evaluatedAt])
   @@index([intendedTransactionAt])
   @@map("decision_snapshot")
+}
+
+/// An append-only durable receipt that a transport idempotency key successfully resolved to a
+/// specific historical DecisionSnapshot (P35A-01). Several receipts may point to ONE snapshot (an
+/// alias created when a different key carries the same request). Every key under which the operation
+/// returned success stays permanently consumed — a consumed key can never be reused for a different
+/// request. `requestHash` fingerprints the effective request `{businessDecisionKey, validated input}`
+/// (never the engine output, git sha, or build id, §7), so a retry after a deployment still resolves.
+///
+/// Immutable at the DATABASE level (append-only): UPDATE / DELETE / TRUNCATE are rejected by triggers
+/// (see migration SQL). `operationScope` is trusted system input (a fixed operation identity), never a
+/// request-controlled value (§4).
+model DecisionIdempotencyReceipt {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  /// Trusted operation identity scoping the key namespace (e.g. DECISION_PERSIST_V1). Not caller data.
+  operationScope String
+
+  /// Transport/request idempotency key (§10). Unique within its operationScope.
+  idempotencyKey String
+
+  /// Deterministic fingerprint of the effective request (businessDecisionKey + validated input, §7).
+  requestHash String
+
+  /// The historical snapshot this key resolved to.
+  decisionSnapshotId String           @db.Uuid
+  snapshot           DecisionSnapshot @relation(fields: [decisionSnapshotId], references: [id])
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([operationScope, idempotencyKey])
+  @@index([decisionSnapshotId])
+  @@map("decision_idempotency_receipt")
 }

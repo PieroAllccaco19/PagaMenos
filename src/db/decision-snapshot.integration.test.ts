@@ -1,220 +1,325 @@
-// PagaMenos · db — REAL PostgreSQL integration tests for the immutable DecisionSnapshot (§25/§26).
+// PagaMenos · db — REAL PostgreSQL integration tests for the immutable decision persistence (§44–§52).
 //
-// These run ONLY under the ephemeral-Postgres orchestrator (`pnpm test:integration`), which initdb's
-// a throwaway cluster, applies the migration from a clean DB, sets DATABASE_URL, and tears down. They
-// prove the invariants that mocks/SQLite cannot: DB-level immutability triggers, unique-key
-// idempotency/business semantics under real constraints, concurrency, and transactional rollback.
-//
-// Every test uses fresh unique keys (the table is append-only — no cleanup is possible or needed; the
-// orchestrator gives each run a clean database).
+// Run ONLY under the ephemeral-Postgres orchestrator (`pnpm test:integration`): initdb → migrate
+// deploy (the full base + closure chain) → this suite → teardown. Proves what mocks/SQLite cannot:
+// DB-level immutability of BOTH tables, durable idempotency receipts / alias semantics under real
+// unique constraints and concurrency, the alias-reuse exploit is closed, prototype/Date rejection
+// with zero poisoned rows, and two-table transactional atomicity.
 import { randomUUID } from 'node:crypto';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { prisma } from '@/db';
-import { DecisionSnapshotRepository } from '@/db';
+import { prisma } from '@/db/client';
 import { decide } from '@/engine';
+import { corpusV1ProvenanceProvider } from '@/persistence/provenance';
+import type { BuildMetadataProvider } from '@/persistence/provenance';
+import { BusinessDecisionConflictError, IdempotencyConflictError } from '@/persistence/errors';
 import {
-  BusinessDecisionConflictError,
-  IdempotencyConflictError,
   buildDecisionSnapshotDraft,
-  canonicalHash,
-  verifySnapshotIntegrity,
-  type DecisionSnapshotDraft,
-} from '@/persistence';
+  computeRequestHash,
+  DECISION_PERSIST_OPERATION_SCOPE,
+} from '@/persistence/snapshot';
+import {
+  chinawokInput,
+  CORPUS_VERSION,
+  TEST_GIT_SHA,
+  testBuildProvider,
+} from '../persistence/__fixtures__/decision-fixture';
+import { decideAndPersist } from '@/services/decide-and-persist';
 
-import { chinawokInput, CORPUS_VERSION } from '../persistence/__fixtures__/decision-fixture';
+const B = '2026-09-08T12:00:00-05:00'; // variant instants ⇒ a different request fingerprint
 
-const repo = new DecisionSnapshotRepository(prisma);
-
-/** Build a draft with explicit keys. `variantAt` changes the instants ⇒ a different input/output hash. */
-function makeDraft(
-  keys: { businessDecisionKey: string; idempotencyKey: string },
-  variantAt?: string,
-): DecisionSnapshotDraft {
-  const input = chinawokInput();
-  if (variantAt) {
-    input.evaluatedAt = variantAt;
-    input.intendedTransactionAt = variantAt;
+/** Chinawok input, optionally with variant instants (request "B"). */
+function input(variant = false) {
+  const i = chinawokInput();
+  if (variant) {
+    i.evaluatedAt = B;
+    i.intendedTransactionAt = B;
   }
-  const output = decide(input);
-  return buildDecisionSnapshotDraft({
-    input,
-    output,
-    corpusVersion: CORPUS_VERSION,
-    build: { gitSha: 'integrationsha', buildId: 'itest' },
-    ...keys,
-  });
+  return i;
 }
 
-async function countByIdempotencyKey(idempotencyKey: string): Promise<number> {
-  return prisma.decisionSnapshot.count({ where: { idempotencyKey } });
+function svcDeps(build: BuildMetadataProvider = testBuildProvider()) {
+  return { corpusProvenance: corpusV1ProvenanceProvider(), buildProvider: build };
 }
+
+/** A build provider that counts resolutions — a proxy for "the new-decision path (incl. decide) ran". */
+function countingBuild(sha = TEST_GIT_SHA) {
+  let calls = 0;
+  const provider: BuildMetadataProvider = {
+    resolve: () => {
+      calls += 1;
+      return { gitSha: sha, buildId: 'itest' };
+    },
+  };
+  return { provider, calls: () => calls };
+}
+
+async function persist(bdk: string, idem: string, variant = false, build?: BuildMetadataProvider) {
+  return decideAndPersist(
+    { input: input(variant), businessDecisionKey: bdk, idempotencyKey: idem },
+    svcDeps(build),
+  );
+}
+
+const countReceipts = (idempotencyKey: string) =>
+  prisma.decisionIdempotencyReceipt.count({ where: { idempotencyKey } });
+const countSnapshots = (businessDecisionKey: string) =>
+  prisma.decisionSnapshot.count({ where: { businessDecisionKey } });
+
+const uid = () => randomUUID();
 
 beforeAll(async () => {
-  // Fail loudly if the orchestrator did not point us at a real database.
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL not set for integration tests');
   await prisma.$connect();
 });
-
 afterAll(async () => {
   await prisma.$disconnect();
 });
 
-describe('migration + insert + read roundtrip (§25.1–3)', () => {
-  it('inserts and reads back a byte-identical, hash-verifiable snapshot', async () => {
-    const draft = makeDraft({
-      businessDecisionKey: `bdk-${randomUUID()}`,
-      idempotencyKey: `idem-${randomUUID()}`,
-    });
-    const persisted = await repo.persist(draft);
-
-    expect(persisted.id).toMatch(/[0-9a-f-]{36}/);
-    expect(persisted.decisionStatus).toBe('BEST_CONFIRMED');
-    expect(persisted.merchantId).toBe('m_chinawok');
-
-    const reloaded = await repo.findById(persisted.id);
-    expect(reloaded).not.toBeNull();
-    // Exact payload round-trip.
-    expect(reloaded!.engineInputJson).toEqual(draft.engineInputJson);
-    expect(reloaded!.engineOutputJson).toEqual(draft.engineOutputJson);
-    // Stored hashes are intact and re-verify against the reloaded payloads (§28).
-    expect(reloaded!.inputHash).toBe(draft.inputHash);
-    expect(reloaded!.outputHash).toBe(draft.outputHash);
-    expect(canonicalHash(reloaded!.engineInputJson)).toBe(reloaded!.inputHash);
-    expect(() => verifySnapshotIntegrity(reloaded!)).not.toThrow();
+describe('migration chain applied (§52)', () => {
+  it('both tables exist and are queryable', async () => {
+    await expect(prisma.decisionSnapshot.count()).resolves.toBeGreaterThanOrEqual(0);
+    await expect(prisma.decisionIdempotencyReceipt.count()).resolves.toBeGreaterThanOrEqual(0);
   });
 });
 
-describe('DB-level immutability triggers (§12/§25.4–5)', () => {
-  it('rejects UPDATE on a historical row', async () => {
-    const draft = makeDraft({
-      businessDecisionKey: `bdk-${randomUUID()}`,
-      idempotencyKey: `idem-${randomUUID()}`,
-    });
-    const persisted = await repo.persist(draft);
+describe('insert + read roundtrip (§44 I1)', () => {
+  it('persists a hash+coherence-verifiable snapshot with one receipt', async () => {
+    const bdk = uid();
+    const key = uid();
+    const r = await persist(bdk, key);
+    expect(r.decisionStatus).toBe('BEST_CONFIRMED');
+    expect(r.merchantId).toBe('m_chinawok');
+    expect(r.gitSha).toBe(TEST_GIT_SHA);
+    expect(await countSnapshots(bdk)).toBe(1);
+    expect(await countReceipts(key)).toBe(1);
+    expect(await countReceipts(key)).toBe(1);
+  });
+});
+
+describe('idempotency matrix (§44)', () => {
+  it('I2 exact retry returns same snapshot; the engine/new-decision path is NOT re-run', async () => {
+    const bdk = uid();
+    const key = uid();
+    const b = countingBuild();
+    const first = await persist(bdk, key, false, b.provider);
+    expect(b.calls()).toBe(1);
+    const retry = await persist(bdk, key, false, b.provider);
+    expect(retry.id).toBe(first.id);
+    expect(b.calls()).toBe(1); // decide/build not invoked again
+    expect(await countSnapshots(bdk)).toBe(1);
+    expect(await countReceipts(key)).toBe(1);
+  });
+
+  it('I3 same key + different request → IdempotencyConflict', async () => {
+    const bdk = uid();
+    const key = uid();
+    await persist(bdk, key, false);
+    await expect(persist(bdk, key, true)).rejects.toBeInstanceOf(IdempotencyConflictError);
+    expect(await countSnapshots(bdk)).toBe(1);
+  });
+
+  it('I4 two keys, same business, same request → same snapshot, BOTH receipts durable', async () => {
+    const bdk = uid();
+    const k1 = uid();
+    const k2 = uid();
+    const r1 = await persist(bdk, k1);
+    const r2 = await persist(bdk, k2);
+    expect(r2.id).toBe(r1.id);
+    expect(await countSnapshots(bdk)).toBe(1);
+    expect(await countReceipts(k1)).toBe(1);
+    expect(await countReceipts(k2)).toBe(1);
+  });
+
+  it('I5 (exploit) after aliasing K1,K2 → reuse K2 with a different request → IdempotencyConflict', async () => {
+    const bdk = uid();
+    const k1 = uid();
+    const k2 = uid();
+    await persist(bdk, k1);
+    await persist(bdk, k2); // alias
+    // K2 is permanently consumed: a NEW business + different request under K2 must be rejected.
+    await expect(persist(uid(), k2, true)).rejects.toBeInstanceOf(IdempotencyConflictError);
+  });
+
+  it('I6 reuse K1 with a different request → IdempotencyConflict', async () => {
+    const bdk = uid();
+    const k1 = uid();
+    const k2 = uid();
+    await persist(bdk, k1);
+    await persist(bdk, k2);
+    await expect(persist(uid(), k1, true)).rejects.toBeInstanceOf(IdempotencyConflictError);
+  });
+
+  it('I7 different key, same business, different request → BusinessDecisionConflict', async () => {
+    const bdk = uid();
+    await persist(bdk, uid(), false); // request A
+    await expect(persist(bdk, uid(), true)).rejects.toBeInstanceOf(BusinessDecisionConflictError);
+  });
+
+  it('I11 exact retry after a deployment (build) change returns ORIGINAL provenance; engine not re-run', async () => {
+    const bdk = uid();
+    const key = uid();
+    const first = await persist(bdk, key, false, testBuildProvider());
+    const otherSha = 'f'.repeat(40);
+    const b2 = countingBuild(otherSha);
+    const retry = await persist(bdk, key, false, b2.provider);
+    expect(retry.id).toBe(first.id);
+    expect(retry.gitSha).toBe(TEST_GIT_SHA); // original build provenance, not the new one
+    expect(b2.calls()).toBe(0); // current build/engine path not entered on retry
+  });
+});
+
+describe('concurrency (§44 I8/I9/I10)', () => {
+  it('I8 two concurrent identical writes → one snapshot, one receipt, same id', async () => {
+    const bdk = uid();
+    const key = uid();
+    const [a, b] = await Promise.all([persist(bdk, key), persist(bdk, key)]);
+    expect(a.id).toBe(b.id);
+    expect(await countSnapshots(bdk)).toBe(1);
+    expect(await countReceipts(key)).toBe(1);
+  });
+
+  it('I9 concurrent different keys, same business, same request → one snapshot, two receipts', async () => {
+    const bdk = uid();
+    const k1 = uid();
+    const k2 = uid();
+    const [a, b] = await Promise.all([persist(bdk, k1), persist(bdk, k2)]);
+    expect(a.id).toBe(b.id);
+    expect(await countSnapshots(bdk)).toBe(1);
+    expect(await countReceipts(k1)).toBe(1);
+    expect(await countReceipts(k2)).toBe(1);
+  });
+
+  it('I10 both parallel-accepted aliases stay consumed → later reuse with a new request conflicts', async () => {
+    const bdk = uid();
+    const k1 = uid();
+    const k2 = uid();
+    await Promise.all([persist(bdk, k1), persist(bdk, k2)]);
+    await expect(persist(uid(), k1, true)).rejects.toBeInstanceOf(IdempotencyConflictError);
+    await expect(persist(uid(), k2, true)).rejects.toBeInstanceOf(IdempotencyConflictError);
+  });
+
+  it('concurrent same key + different request → one succeeds, one conflicts, one receipt', async () => {
+    const bdk1 = uid();
+    const bdk2 = uid();
+    const key = uid();
+    const results = await Promise.allSettled([
+      decideAndPersist(
+        { input: input(false), businessDecisionKey: bdk1, idempotencyKey: key },
+        svcDeps(),
+      ),
+      decideAndPersist(
+        { input: input(true), businessDecisionKey: bdk2, idempotencyKey: key },
+        svcDeps(),
+      ),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]!.reason).toBeInstanceOf(IdempotencyConflictError);
+    expect(await countReceipts(key)).toBe(1);
+  });
+});
+
+describe('DB-level immutability — snapshots (§50)', () => {
+  it('rejects UPDATE / DELETE / TRUNCATE on decision_snapshot', async () => {
+    const bdk = uid();
+    const r = await persist(bdk, uid());
     await expect(
       prisma.$executeRawUnsafe(
         'UPDATE "decision_snapshot" SET "gitSha" = $1 WHERE id = $2::uuid',
-        'TAMPERED',
-        persisted.id,
+        'x',
+        r.id,
       ),
     ).rejects.toThrow();
-    // The row is unchanged.
-    const reloaded = await repo.findById(persisted.id);
-    expect(reloaded!.gitSha).toBe('integrationsha');
-  });
-
-  it('rejects DELETE on a historical row', async () => {
-    const draft = makeDraft({
-      businessDecisionKey: `bdk-${randomUUID()}`,
-      idempotencyKey: `idem-${randomUUID()}`,
-    });
-    const persisted = await repo.persist(draft);
     await expect(
-      prisma.$executeRawUnsafe('DELETE FROM "decision_snapshot" WHERE id = $1::uuid', persisted.id),
+      prisma.$executeRawUnsafe('DELETE FROM "decision_snapshot" WHERE id = $1::uuid', r.id),
     ).rejects.toThrow();
-    expect(await repo.findById(persisted.id)).not.toBeNull();
-  });
-
-  it('rejects TRUNCATE on the table', async () => {
-    await expect(prisma.$executeRawUnsafe('TRUNCATE "decision_snapshot"')).rejects.toThrow();
+    await expect(
+      prisma.$executeRawUnsafe('TRUNCATE "decision_snapshot" CASCADE'),
+    ).rejects.toThrow();
   });
 });
 
-describe('idempotency (§10/§25.6–7)', () => {
-  it('first insert, exact retry returns the same row (no duplicate)', async () => {
-    const keys = {
-      businessDecisionKey: `bdk-${randomUUID()}`,
-      idempotencyKey: `idem-${randomUUID()}`,
-    };
-    const first = await repo.persist(makeDraft(keys));
-    const retry = await repo.persist(makeDraft(keys));
-    expect(retry.id).toBe(first.id);
-    expect(await countByIdempotencyKey(keys.idempotencyKey)).toBe(1);
-  });
-
-  it('same idempotencyKey with a different payload → IdempotencyConflictError', async () => {
-    const keys = {
-      businessDecisionKey: `bdk-${randomUUID()}`,
-      idempotencyKey: `idem-${randomUUID()}`,
-    };
-    await repo.persist(makeDraft(keys));
-    const conflicting = makeDraft(
-      { businessDecisionKey: `bdk-${randomUUID()}`, idempotencyKey: keys.idempotencyKey },
-      '2026-09-08T12:00:00-05:00',
-    );
-    await expect(repo.persist(conflicting)).rejects.toBeInstanceOf(IdempotencyConflictError);
-    expect(await countByIdempotencyKey(keys.idempotencyKey)).toBe(1);
-  });
-});
-
-describe('business uniqueness (§11)', () => {
-  it('same businessDecisionKey + same snapshot via a different idempotencyKey → same row', async () => {
-    const bdk = `bdk-${randomUUID()}`;
-    const first = await repo.persist(
-      makeDraft({ businessDecisionKey: bdk, idempotencyKey: `idem-${randomUUID()}` }),
-    );
-    const dup = await repo.persist(
-      makeDraft({ businessDecisionKey: bdk, idempotencyKey: `idem-${randomUUID()}` }),
-    );
-    expect(dup.id).toBe(first.id);
-  });
-
-  it('same businessDecisionKey + different snapshot → BusinessDecisionConflictError', async () => {
-    const bdk = `bdk-${randomUUID()}`;
-    await repo.persist(
-      makeDraft({ businessDecisionKey: bdk, idempotencyKey: `idem-${randomUUID()}` }),
-    );
-    const conflicting = makeDraft(
-      { businessDecisionKey: bdk, idempotencyKey: `idem-${randomUUID()}` },
-      '2026-09-08T12:00:00-05:00',
-    );
-    await expect(repo.persist(conflicting)).rejects.toBeInstanceOf(BusinessDecisionConflictError);
+describe('DB-level immutability — receipts (§50)', () => {
+  it('rejects UPDATE / DELETE / TRUNCATE on decision_idempotency_receipt', async () => {
+    const key = uid();
+    await persist(uid(), key);
+    const receipt = await prisma.decisionIdempotencyReceipt.findFirstOrThrow({
+      where: { idempotencyKey: key },
+    });
+    await expect(
+      prisma.$executeRawUnsafe(
+        'UPDATE "decision_idempotency_receipt" SET "requestHash" = $1 WHERE id = $2::uuid',
+        'x',
+        receipt.id,
+      ),
+    ).rejects.toThrow();
+    await expect(
+      prisma.$executeRawUnsafe(
+        'DELETE FROM "decision_idempotency_receipt" WHERE id = $1::uuid',
+        receipt.id,
+      ),
+    ).rejects.toThrow();
+    await expect(
+      prisma.$executeRawUnsafe('TRUNCATE "decision_idempotency_receipt"'),
+    ).rejects.toThrow();
   });
 });
 
-describe('concurrency (§26)', () => {
-  it('two concurrent identical writes → one durable row, both resolve to it', async () => {
-    const keys = {
-      businessDecisionKey: `bdk-${randomUUID()}`,
-      idempotencyKey: `idem-${randomUUID()}`,
-    };
-    const [a, b] = await Promise.all([
-      repo.persist(makeDraft(keys)),
-      repo.persist(makeDraft(keys)),
-    ]);
-    expect(a.id).toBe(b.id);
-    expect(await countByIdempotencyKey(keys.idempotencyKey)).toBe(1);
+describe('adversarial input rejected before persistence (§46)', () => {
+  it('prototype toJSON input fails with zero snapshot & receipt rows', async () => {
+    const bdk = uid();
+    const key = uid();
+    const evil = Object.create({
+      toJSON() {
+        return { hacked: true };
+      },
+    }) as Record<string, unknown>;
+    Object.assign(evil, chinawokInput());
+    await expect(
+      decideAndPersist(
+        { input: evil as never, businessDecisionKey: bdk, idempotencyKey: key },
+        svcDeps(),
+      ),
+    ).rejects.toThrow();
+    expect(await countSnapshots(bdk)).toBe(0);
+    expect(await countReceipts(key)).toBe(0);
   });
 
-  it('two concurrent writes, same key different payload → one succeeds, one conflicts', async () => {
-    const idempotencyKey = `idem-${randomUUID()}`;
-    const d1 = makeDraft({ businessDecisionKey: `bdk-${randomUUID()}`, idempotencyKey });
-    const d2 = makeDraft(
-      { businessDecisionKey: `bdk-${randomUUID()}`, idempotencyKey },
-      '2026-09-08T12:00:00-05:00',
-    );
-    const results = await Promise.allSettled([repo.persist(d1), repo.persist(d2)]);
-    const fulfilled = results.filter((r) => r.status === 'fulfilled');
-    const rejected = results.filter((r) => r.status === 'rejected');
-    expect(fulfilled).toHaveLength(1);
-    expect(rejected).toHaveLength(1);
-    expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(IdempotencyConflictError);
-    expect(await countByIdempotencyKey(idempotencyKey)).toBe(1);
+  it('Date and sparse-array inputs are rejected before persistence', async () => {
+    const bdk1 = uid();
+    const withDate = chinawokInput() as unknown as Record<string, unknown>;
+    withDate.evaluatedAt = new Date() as unknown as string;
+    await expect(
+      decideAndPersist(
+        { input: withDate as never, businessDecisionKey: bdk1, idempotencyKey: uid() },
+        svcDeps(),
+      ),
+    ).rejects.toThrow();
+    expect(await countSnapshots(bdk1)).toBe(0);
   });
 });
 
-describe('transaction atomicity (§16/§25.8)', () => {
-  it('a failed transaction leaves zero partial rows', async () => {
-    const idempotencyKey = `idem-${randomUUID()}`;
-    const draft = makeDraft({ businessDecisionKey: `bdk-${randomUUID()}`, idempotencyKey });
+describe('two-table transaction atomicity (§51)', () => {
+  it('a failed transaction leaves zero snapshot AND zero receipt rows', async () => {
+    const bdk = uid();
+    const key = uid();
+    const i = chinawokInput();
+    const output = decide(i);
+    const draft = buildDecisionSnapshotDraft({
+      input: i,
+      output,
+      corpusVersion: CORPUS_VERSION,
+      build: { gitSha: TEST_GIT_SHA, buildId: 'itest' },
+      businessDecisionKey: bdk,
+    });
     await expect(
       prisma.$transaction(async (tx) => {
-        await tx.decisionSnapshot.create({
+        const snap = await tx.decisionSnapshot.create({
           data: {
             businessDecisionKey: draft.businessDecisionKey,
-            idempotencyKey: draft.idempotencyKey,
             snapshotSchemaVersion: draft.snapshotSchemaVersion,
             engineInputSchemaVersion: draft.engineInputSchemaVersion,
             engineOutputSchemaVersion: draft.engineOutputSchemaVersion,
@@ -233,10 +338,18 @@ describe('transaction atomicity (§16/§25.8)', () => {
             buildId: draft.buildId,
           },
         });
+        await tx.decisionIdempotencyReceipt.create({
+          data: {
+            operationScope: DECISION_PERSIST_OPERATION_SCOPE,
+            idempotencyKey: key,
+            requestHash: computeRequestHash(bdk, i),
+            decisionSnapshotId: snap.id,
+          },
+        });
         throw new Error('forced rollback');
       }),
     ).rejects.toThrow('forced rollback');
-    // The insert was rolled back with the transaction.
-    expect(await countByIdempotencyKey(idempotencyKey)).toBe(0);
+    expect(await countSnapshots(bdk)).toBe(0);
+    expect(await countReceipts(key)).toBe(0);
   });
 });

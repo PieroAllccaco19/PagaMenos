@@ -23,6 +23,12 @@ const IMPORT_PRISMA_AND_FS = "import '@prisma/client';\nimport 'node:fs';\nexpor
 const IMPORT_PERSISTENCE =
   "import { canonicalHash } from '@/persistence';\nexport const x = canonicalHash;\n";
 const IMPORT_CRYPTO = "import { createHash } from 'node:crypto';\nexport const x = createHash;\n";
+const IMPORT_REPO =
+  "import { decisionSnapshotRepository } from '@/db/decision-snapshot-repository';\nexport const x = decisionSnapshotRepository;\n";
+const IMPORT_DRAFT =
+  "import { buildDecisionSnapshotDraft } from '@/persistence/snapshot';\nexport const x = buildDecisionSnapshotDraft;\n";
+const IMPORT_PRISMA =
+  "import { PrismaClient } from '@prisma/client';\nexport const x = PrismaClient;\n";
 
 describe('module-boundary enforcement (engine/corpus purity)', () => {
   it('rejects a prohibited @/db import from src/engine', async () => {
@@ -52,6 +58,28 @@ describe('module-boundary enforcement (engine/corpus purity)', () => {
 
   it('allows @/persistence + node:crypto from src/services (non-pure layer)', async () => {
     const ids = await ruleIdsFor('src/services/__probe__.ts', IMPORT_PERSISTENCE + IMPORT_CRYPTO);
+    expect(ids).not.toContain('no-restricted-imports');
+  });
+});
+
+describe('sanctioned write-boundary enforcement (P35A-02)', () => {
+  it('rejects the db repository write API from normal application code (src/app)', async () => {
+    const ids = await ruleIdsFor('src/app/__probe__.ts', IMPORT_REPO);
+    expect(ids).toContain('no-restricted-imports');
+  });
+
+  it('rejects the snapshot draft constructor from normal application code (src/app)', async () => {
+    const ids = await ruleIdsFor('src/app/__probe__.ts', IMPORT_DRAFT);
+    expect(ids).toContain('no-restricted-imports');
+  });
+
+  it('rejects the raw Prisma client from normal application code (src/lib)', async () => {
+    const ids = await ruleIdsFor('src/lib/__probe__.ts', IMPORT_PRISMA);
+    expect(ids).toContain('no-restricted-imports');
+  });
+
+  it('ALLOWS the same write imports from the sanctioned service (src/services)', async () => {
+    const ids = await ruleIdsFor('src/services/__probe__.ts', IMPORT_REPO + IMPORT_DRAFT);
     expect(ids).not.toContain('no-restricted-imports');
   });
 });
