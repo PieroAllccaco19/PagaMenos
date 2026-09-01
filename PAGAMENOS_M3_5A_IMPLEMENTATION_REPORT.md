@@ -480,3 +480,168 @@ empty. Committed as one closure commit.
 
 **STOP.** Independent code RECHECK by **Codex Sol** focused on P35A-01…05 and any new CRITICAL/HIGH
 introduced by the closure. Do not begin M3.5B or Wave 0.
+
+
+---
+
+# M3.5A SECOND RED-TEAM CLOSURE
+
+Independent Codex Sol recheck of `8535925ceda9d9aa10a7f5ff86f97e0481dda0c0` returned **B — ONE
+SPECIFIC PATCH**: P35A-03 and P35A-04 CLOSED (unchanged here); P35A-01, P35A-02, P35A-05 OPEN. This
+bounded second closure addresses those three. No new CRITICAL/HIGH was introduced. Independent
+acceptance is NOT claimed; the next step is a Codex Sol recheck.
+
+## Starting SHA
+
+`8535925ceda9d9aa10a7f5ff86f97e0481dda0c0` (working tree clean at start). One new closure commit on
+top; not amended.
+
+## Files changed
+
+**New:** `src/db/staged-upgrade.integration.test.ts`.
+**Modified:** `prisma/migrations/20260831130000_m3_5a_closure_idempotency_receipts/migration.sql`
+(unreleased-migration correction), `src/persistence/{provenance,snapshot}.ts`,
+`src/services/decide-and-persist.ts`, `src/db/decision-snapshot-repository.ts`,
+`src/db/decision-snapshot.integration.test.ts`, `src/persistence/__fixtures__/decision-fixture.ts`,
+`eslint.config.mjs`, `src/lib/boundary.test.ts`, `scripts/{migrate-check,pg-integration}.ts`, and the
+persistence/service test files. **Unchanged:** `src/engine`, `src/corpus`.
+
+## P35A-01 — final status: **CLOSED (implementation claim)**
+
+### Corrected migration sequence
+
+The unreleased closure migration is corrected IN PLACE (documented as a pre-acceptance/pre-deployment
+correction; the accepted commit is not amended). Because a later migration cannot reconstruct an
+already-dropped key, the file itself had to change. New order, inside one explicit `BEGIN; … COMMIT;`
+transaction: (1) create the receipt table; (2) indexes/unique/FK; (3) **backfill EVERY existing
+`decision_snapshot.idempotencyKey` into a receipt** (`operationScope='DECISION_PERSIST_V1'`,
+`requestHash = snapshot.inputHash`, `decisionSnapshotId = snapshot.id`, `createdAt` preserved); (4)
+receipt append-only triggers; (5) ONLY THEN drop the obsolete unique index + column. The DROP can
+never commit independently of the backfill.
+
+### Staged existing-data upgrade result — **REAL PostgreSQL, PASS**
+
+`src/db/staged-upgrade.integration.test.ts` reproduces the exact attack with genuine
+`prisma migrate deploy` staging (not db push) on a dedicated `pagamenos_upgrade` DB: deploy base only
+→ insert a valid pre-closure snapshot with `idempotencyKey = K_OLD` → deploy the closure. Asserts: the
+`K_OLD` receipt exists (`requestHash = H_OLD = snapshot.inputHash`, pointing to the old snapshot); the
+old `idempotencyKey` column is gone; and reusing `K_OLD` with a different request →
+`IdempotencyConflictError`. 3/3 green.
+
+### Receipt request-hash semantics (frozen, §5)
+
+`requestHash === DecisionSnapshot.inputHash === SHA-256(canonical validated DecideInput)`;
+`businessDecisionKey` is always compared separately. `computeRequestHash(input)` now takes the input
+only. This makes the backfill a deterministic column copy (no in-database canonical hashing).
+
+### Lazy retry/alias provider construction (§10/§11)
+
+Providers are no longer constructed at the top of `decideAndPersist`. `deps` now takes
+`corpusProvenanceFactory` / `buildProviderFactory`, invoked ONLY on the truly new-decision path.
+Proven offline (factory-call counters: exact retry ⇒ 0 constructions) and in real Postgres (I2: build
+factory + resolve each called once then unchanged on retry; I11: after a build/deployment change, the
+retry returns the ORIGINAL provenance with the new factory constructed 0 times and resolved 0 times).
+
+## P35A-02 — final status: **CLOSED (implementation claim)**
+
+### Final boundary (exact-file allowlist, §13)
+
+The write internals (raw Prisma client, `@/db/*` repository, `@/persistence/{snapshot,provenance,
+build-meta}`) are now forbidden to `src/app|analytics|sourcemon|lib` AND to ALL of `src/services/**`,
+then RE-ALLOWED for exactly ONE file: `src/services/decide-and-persist.ts` (which also hosts
+load/replay). Patterns block BOTH alias (`@/db/...`) and relative-traversal (`../db/...`,
+`../persistence/...`) specifiers (§14). Tests/fixtures are exempt as infrastructure.
+
+### Arbitrary-service alias/relative import results
+
+Boundary self-tests prove: `src/app` and `src/lib` probes importing the repository/draft/provider/raw
+Prisma are rejected; an ARBITRARY `src/services/evil-service.ts` probe is rejected for BOTH alias and
+relative imports of the repository and draft constructor; and ONLY
+`src/services/decide-and-persist.ts` is allowed to import them.
+
+### Forged-pair surface
+
+There is no public exported service that accepts a caller-supplied `EngineEvaluation` or an
+independent input/output pair. The sanctioned path establishes causality by construction
+(`parsedInput → decide(parsedInput) → parsedOutput → persist`), and the draft constructor / repository
+are unreachable from arbitrary application or service code — so the forged Input-A/Output-B persistence
+Codex demonstrated has no mechanically-permitted path.
+
+## P35A-05 — final status: **CLOSED (implementation claim)**
+
+### Candidate-set completeness algorithm (§18–§29)
+
+The production `corpusV1ProvenanceProvider.verify(input)` now checks AUTHENTICITY (every supplied
+rule/scope is an exact Corpus-v1 member by canonical hash) AND COMPLETENESS. Required scopes: with
+`selectedScopeId`, exactly the selected scope (must be a Corpus-v1 scope for the merchant and present,
+§21); otherwise every Corpus-v1 scope for the runtime merchant whose frozen `PurchaseSignature` is
+RELEVANT to the context (MATCH or MISSING — a faithful, engine-free reuse of canonical
+PurchaseSignature identity via `canonicalItemsEqual`, §22/§24), and every relevant scope must be
+present. For each required scope, the COMPLETE set of currently-active Corpus-v1 rules belonging to it
+must be present — exact `ruleId@version` set equality, order-invariant (§29). Only the frozen ACTIVE
+corpus is used (§25); dynamic operational state is never consulted (§26). The pure engine is untouched
+(§23).
+
+### Chinawok exploit result
+
+`sc_cw_chijaukay_alopobre` requires `{CW-PLIN-01, CW-SIP-01}`. A SIP-only input fails completeness
+before `decide` — offline and in real Postgres with **zero snapshot and zero receipt rows**, and the
+idempotency key is NOT consumed (a corrected complete request reuses it successfully). The full input
+still yields `BEST_CONFIRMED CW-PLIN-01`.
+
+### Second completeness control
+
+`sc_pop_6pcs_family_potato` requires `{POP-BCP-01, POP-SIP-02}`. A POP-SIP-02-only input fails
+completeness with zero rows (real Postgres).
+
+### Provenance-failure row-count result
+
+Real-Postgres proof: a membership OR completeness failure adds **0** `decision_snapshot` and **0**
+`decision_idempotency_receipt` rows; the key stays reusable (§33).
+
+## PostgreSQL integration results — **EXECUTED, 23/23 PASS**
+
+Ephemeral PostgreSQL 18.4, two phases in one cluster: staged-upgrade DB (3) + main suite DB (20) =
+23. Main suite covers I1–I11, concurrency (I8/I9/I10 + same-key/different-request), both tables'
+immutability, Chinawok + Popeyes completeness zero-row proofs, prototype/Date rejection with zero
+rows, and two-table transaction atomicity. Migration chain (base + corrected closure) applies clean
+via `prisma migrate deploy`.
+
+## Offline gate results — all exit 0
+
+`pnpm lint`, `pnpm typecheck`, `pnpm test` (**358**), `pnpm corpus:validate`, `pnpm build`,
+`pnpm db:validate`, `pnpm format:check`, `pnpm db:migrate:check` (now also guards backfill-before-drop
++ explicit transaction).
+
+## P35A-06 — **MEDIUM, DEFERRED BEFORE WAVE 0**
+
+The real PostgreSQL suite WAS executed this closure (23/23). CI still has no Postgres service, so
+P35A-06 is not claimed closed.
+
+## P35A-03 / P35A-04 — **CLOSED, unchanged**
+
+Standing regressions remain green (prototype/Date/class/sparse rejection; exact v1 versions; local v1
+tokens; local v1 instant parser).
+
+## RT status (implementation claims pending Codex Sol)
+
+RT08 CLOSED FOR DECISION PERSISTENCE; RT09 CLOSED FOR DECISION PERSISTENCE; RT13 CLOSED.
+
+## Engine / corpus fact audit
+
+`git diff 8535925…HEAD -- src/engine src/corpus/data` is empty. No economic-engine or factual-corpus
+change.
+
+## Commit SHA
+
+One local second-closure commit (no push, no amend of `8535925…`). SHA reported in the delivery
+summary.
+
+## Final git status
+
+Additive closure changes plus the corrected unreleased migration; engine/corpus untouched.
+
+## Exact next action
+
+**STOP.** Independent code RECHECK by **Codex Sol** focused on P35A-01/02/05. Do not begin M3.5B or
+Wave 0.

@@ -54,10 +54,17 @@ export interface DecideAndPersistRequest {
 export interface DecideAndPersistDeps {
   /** Persistence store (defaults to the shared repository). Injected in tests. */
   repository?: DecisionPersistenceStore;
-  /** Trusted corpus-provenance provider (defaults to Corpus-v1 membership verification). */
-  corpusProvenance?: CorpusProvenanceProvider;
-  /** Trusted build-metadata provider (defaults to the environment provider). */
-  buildProvider?: BuildMetadataProvider;
+  /**
+   * FACTORY for the trusted corpus-provenance provider (§10/§11). It is invoked ONLY on the truly
+   * NEW-decision path — never for an exact retry or a business alias — so a completed operation never
+   * loads/hashes the current corpus. Defaults to `corpusV1ProvenanceProvider`.
+   */
+  corpusProvenanceFactory?: () => CorpusProvenanceProvider;
+  /**
+   * FACTORY for the trusted build-metadata provider (§10/§11). Invoked ONLY on the new-decision path.
+   * Defaults to `envBuildMetadataProvider`.
+   */
+  buildProviderFactory?: () => BuildMetadataProvider;
 }
 
 function requireNonEmpty(value: string, label: string): string {
@@ -76,8 +83,10 @@ export async function decideAndPersist(
   deps: DecideAndPersistDeps = {},
 ): Promise<DecisionSnapshotDto> {
   const repository = deps.repository ?? decisionSnapshotRepository;
-  const corpusProvenance = deps.corpusProvenance ?? corpusV1ProvenanceProvider();
-  const buildProvider = deps.buildProvider ?? envBuildMetadataProvider();
+  // NOTE: providers are NOT constructed here — only lazily on the new-decision path (§10/§11), so an
+  // exact retry / business alias never loads the current corpus or resolves the current build.
+  const corpusProvenanceFactory = deps.corpusProvenanceFactory ?? corpusV1ProvenanceProvider;
+  const buildProviderFactory = deps.buildProviderFactory ?? envBuildMetadataProvider;
 
   const businessDecisionKey = requireNonEmpty(request.businessDecisionKey, 'businessDecisionKey');
   const idempotencyKey = requireNonEmpty(request.idempotencyKey, 'idempotencyKey');
@@ -87,7 +96,8 @@ export async function decideAndPersist(
   //    ONCE — every later step uses `parsedInput`, never the caller's object (§21).
   assertCanonicalizable(request.input);
   const parsedInput = engineInputV1Schema.parse(request.input) as unknown as DecideInput;
-  const requestHash = computeRequestHash(businessDecisionKey, parsedInput);
+  // requestHash === inputHash (frozen, §5); businessDecisionKey is always checked separately.
+  const requestHash = computeRequestHash(parsedInput);
 
   // 2. Exact-retry: a durable receipt resolves the operation without deciding/corpus/build (§8/§38).
   const receipt = await repository.findReceipt(operationScope, idempotencyKey);
@@ -112,10 +122,8 @@ export async function decideAndPersist(
   const existing = await repository.findSnapshotByBusinessKey(businessDecisionKey);
   if (existing) {
     verifyHistoricalSnapshot(existing);
-    const existingRequestHash = computeRequestHash(
-      existing.businessDecisionKey,
-      existing.engineInputJson,
-    );
+    // requestHash === inputHash (frozen, §5); the verified snapshot's stored inputHash is its request.
+    const existingRequestHash = existing.inputHash;
     if (existingRequestHash === requestHash) {
       return repository.attachAliasReceipt({
         operationScope,
@@ -127,15 +135,20 @@ export async function decideAndPersist(
     throw new BusinessDecisionConflictError(businessDecisionKey, existingRequestHash, requestHash);
   }
 
-  // 4. New decision: decide ONCE, validate the output, resolve TRUSTED provenance, persist atomically.
+  // 4. New decision: construct TRUSTED providers lazily (§11), verify authenticity + candidate-set
+  //    completeness, decide ONCE, validate the output, then persist atomically.
+  const corpusVersion = corpusProvenanceFactory().verify({
+    rules: parsedInput.rules,
+    scopes: parsedInput.scopes,
+    context: parsedInput.context,
+    ...(parsedInput.selectedScopeId !== undefined
+      ? { selectedScopeId: parsedInput.selectedScopeId }
+      : {}),
+  });
+  const build = buildProviderFactory().resolve();
   const parsedOutput = engineOutputV1Schema.parse(
     decide(parsedInput),
   ) as unknown as EngineEvaluation;
-  const corpusVersion = corpusProvenance.verify({
-    rules: parsedInput.rules,
-    scopes: parsedInput.scopes,
-  });
-  const build = buildProvider.resolve();
   const draft = buildDecisionSnapshotDraft({
     input: parsedInput,
     output: parsedOutput,

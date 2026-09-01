@@ -7,7 +7,13 @@
 import { CORPUS_V1 } from '@/corpus';
 import { decide, type DecideInput, type EngineEvaluation } from '@/engine';
 import { exactItemsOf, frozenRule, frozenScope, opState, toInput } from '@/engine/golden/harness';
-import { fixedBuildMetadataProvider, type BuildMetadataProvider } from '@/persistence/provenance';
+import {
+  corpusV1ProvenanceProvider,
+  fixedBuildMetadataProvider,
+  fixedCorpusProvenanceProvider,
+  type BuildMetadataProvider,
+  type CorpusProvenanceProvider,
+} from '@/persistence/provenance';
 
 const TUE = '2026-09-01T12:00:00-05:00';
 
@@ -20,6 +26,28 @@ export const TEST_GIT_SHA = '0123456789abcdef0123456789abcdef01234567';
 /** Trusted build-metadata provider for tests (a trusted dependency, never a request field). */
 export function testBuildProvider(): BuildMetadataProvider {
   return fixedBuildMetadataProvider({ gitSha: TEST_GIT_SHA, buildId: 'itest' });
+}
+
+/** Trusted deps that exercise the REAL Corpus-v1 provenance (authenticity + completeness). */
+export function realCorpusDeps(): {
+  corpusProvenanceFactory: () => CorpusProvenanceProvider;
+  buildProviderFactory: () => BuildMetadataProvider;
+} {
+  return {
+    corpusProvenanceFactory: () => corpusV1ProvenanceProvider(),
+    buildProviderFactory: () => testBuildProvider(),
+  };
+}
+
+/** Trusted deps with a fixed (non-verifying) corpus label — for synthetic-rule suites only (§37). */
+export function fixedCorpusDeps(label = CORPUS_VERSION): {
+  corpusProvenanceFactory: () => CorpusProvenanceProvider;
+  buildProviderFactory: () => BuildMetadataProvider;
+} {
+  return {
+    corpusProvenanceFactory: () => fixedCorpusProvenanceProvider(label),
+    buildProviderFactory: () => testBuildProvider(),
+  };
 }
 
 /** FIX01 Chinawok: Plin fixed bundle 1590 beats Sip 1690 (BEST_CONFIRMED). */

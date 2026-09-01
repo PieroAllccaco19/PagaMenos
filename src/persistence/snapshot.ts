@@ -130,13 +130,18 @@ export function deriveQueryMetadata(output: EngineEvaluation): {
 }
 
 /**
- * The deterministic REQUEST fingerprint (P35A-01 §7): a canonical hash of the effective request —
- * `{businessDecisionKey, input}` — and NOTHING else. It excludes the engine output, git sha, buildId,
- * and every deployment detail, so a retry after a deployment/engine change still resolves to the same
- * completed operation. The idempotency key is NOT part of its own payload hash.
+ * The deterministic REQUEST fingerprint (P35A-01 §5/§7). FROZEN semantics:
+ *
+ *   requestHash === DecisionSnapshot.inputHash === SHA-256(canonical validated DecideInput)
+ *
+ * and the associated `businessDecisionKey` is ALWAYS compared separately. The fingerprint excludes the
+ * engine output, git sha, buildId, corpus version, and the idempotency key — so a retry after an
+ * engine/corpus/deployment change still resolves to the same completed operation. This equivalence is
+ * what makes the migration backfill deterministic from persisted columns (`receipt.requestHash =
+ * snapshot.inputHash`) with no in-database canonical hashing.
  */
-export function computeRequestHash(businessDecisionKey: string, input: DecideInput): string {
-  return canonicalHash({ businessDecisionKey, input });
+export function computeRequestHash(input: DecideInput): string {
+  return canonicalHash(input);
 }
 
 /**

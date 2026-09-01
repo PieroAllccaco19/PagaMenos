@@ -76,24 +76,42 @@ const FORBIDDEN_FOR_PURE_LAYER = [
 ];
 
 /**
- * The internal persistence WRITE surface (P35A-02 §14/§15): the raw Prisma client, the decision
- * repository write API, the snapshot draft constructor, and the trusted provenance providers. Normal
- * application layers MUST NOT import these — the ONLY sanctioned write path is `decideAndPersist` in
- * src/services. The sanctioned service + infrastructure (scripts, tests, fixtures) are exempt by not
- * being matched by this rule's file globs.
+ * The internal persistence WRITE/READ-RAW surface (P35A-02 §12–§17): the raw Prisma client, the
+ * decision repository, the snapshot draft constructor, and the trusted provenance/build providers.
+ * The ONLY sanctioned access is the decision-persistence implementation file
+ * (`src/services/decide-and-persist.ts`); EVERYTHING else — normal app layers AND arbitrary other
+ * `src/services/**` files — is blocked. Patterns catch BOTH alias (`@/db/...`, `@/persistence/...`)
+ * AND relative-traversal (`../db/...`, `../../persistence/...`) specifiers (§14). Tests/fixtures are
+ * exempted separately (they are infrastructure, not production application code).
  */
 const FORBIDDEN_WRITE_INTERNALS = [
   {
-    group: ['@prisma/client', '@prisma/*', '@/db', '@/db/*', '@/db/**'],
+    group: [
+      '@prisma/client',
+      '@prisma/*',
+      '@/db',
+      '@/db/*',
+      '@/db/**',
+      '**/db/decision-snapshot-repository',
+      '**/db/client',
+      '**/db/index',
+    ],
     message:
-      'Normal application code MUST NOT touch the raw Prisma client or db repository. Persist via ' +
-      'decideAndPersist(); read via loadDecisionSnapshot()/replayDecisionSnapshot() (src/services).',
+      'Only src/services/decide-and-persist.ts may touch the raw Prisma client or db repository. ' +
+      'Persist via decideAndPersist(); read via loadDecisionSnapshot()/replayDecisionSnapshot().',
   },
   {
-    group: ['@/persistence/snapshot', '@/persistence/provenance', '@/persistence/build-meta'],
+    group: [
+      '@/persistence/snapshot',
+      '@/persistence/provenance',
+      '@/persistence/build-meta',
+      '**/persistence/snapshot',
+      '**/persistence/provenance',
+      '**/persistence/build-meta',
+    ],
     message:
-      'Normal application code MUST NOT import the snapshot draft constructor or provenance ' +
-      'providers. Use the sanctioned service (src/services) instead.',
+      'Only src/services/decide-and-persist.ts may import the snapshot draft constructor, the store ' +
+      'implementation, or the provenance/build providers. Use the sanctioned service instead.',
   },
 ];
 
@@ -125,8 +143,7 @@ export default tseslint.config(
     },
   },
   {
-    // Non-sanctioned application layers may not bypass the write boundary (P35A-02). The sanctioned
-    // service (src/services), the internal db layer (src/db), scripts and tests are NOT matched here.
+    // Non-sanctioned application layers may not bypass the write boundary (P35A-02).
     files: [
       'src/app/**/*.{ts,tsx}',
       'src/analytics/**/*.{ts,tsx}',
@@ -138,10 +155,29 @@ export default tseslint.config(
     },
   },
   {
-    // Test + tooling files may use Node builtins and looser typing.
-    files: ['**/*.test.ts', 'vitest.config.ts'],
+    // P35A-02 §13: ARBITRARY services are ALSO blocked from the raw write internals — an arbitrary
+    // service must not be able to import the repository/draft/providers and persist forged history.
+    files: ['src/services/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: FORBIDDEN_WRITE_INTERNALS }],
+    },
+  },
+  {
+    // The ONLY sanctioned decision-persistence implementation file may reach the raw write internals.
+    // load/replay live in this same file and use repository READ methods, so this one exemption
+    // covers the entire sanctioned surface (§13/§17).
+    files: ['src/services/decide-and-persist.ts'],
+    rules: {
+      'no-restricted-imports': 'off',
+    },
+  },
+  {
+    // Test + tooling files may use Node builtins, looser typing, and the internal modules
+    // (infrastructure, not production application code).
+    files: ['**/*.test.ts', 'vitest.config.ts', 'vitest.integration.config.ts'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
+      'no-restricted-imports': 'off',
     },
   },
 );

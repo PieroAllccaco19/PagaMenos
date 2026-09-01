@@ -10,10 +10,21 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { prisma } from '@/db/client';
-import { decide } from '@/engine';
+import { decide, type DecideInput } from '@/engine';
+import {
+  exactItemsOf,
+  frozenRule,
+  frozenScope,
+  opState,
+  PORTFOLIO_ALL,
+} from '@/engine/golden/harness';
 import { corpusV1ProvenanceProvider } from '@/persistence/provenance';
 import type { BuildMetadataProvider } from '@/persistence/provenance';
-import { BusinessDecisionConflictError, IdempotencyConflictError } from '@/persistence/errors';
+import {
+  BusinessDecisionConflictError,
+  CorpusProvenanceError,
+  IdempotencyConflictError,
+} from '@/persistence/errors';
 import {
   buildDecisionSnapshotDraft,
   computeRequestHash,
@@ -39,26 +50,38 @@ function input(variant = false) {
   return i;
 }
 
-function svcDeps(build: BuildMetadataProvider = testBuildProvider()) {
-  return { corpusProvenance: corpusV1ProvenanceProvider(), buildProvider: build };
-}
-
-/** A build provider that counts resolutions — a proxy for "the new-decision path (incl. decide) ran". */
-function countingBuild(sha = TEST_GIT_SHA) {
-  let calls = 0;
-  const provider: BuildMetadataProvider = {
-    resolve: () => {
-      calls += 1;
-      return { gitSha: sha, buildId: 'itest' };
-    },
+function svcDeps(buildFactory: () => BuildMetadataProvider = () => testBuildProvider()) {
+  return {
+    corpusProvenanceFactory: () => corpusV1ProvenanceProvider(),
+    buildProviderFactory: buildFactory,
   };
-  return { provider, calls: () => calls };
 }
 
-async function persist(bdk: string, idem: string, variant = false, build?: BuildMetadataProvider) {
+/** A build-provider FACTORY that counts BOTH construction and resolution (§11 proxy for new-decision). */
+function countingBuild(sha = TEST_GIT_SHA) {
+  let factoryCalls = 0;
+  let resolveCalls = 0;
+  const factory = (): BuildMetadataProvider => {
+    factoryCalls += 1;
+    return {
+      resolve: () => {
+        resolveCalls += 1;
+        return { gitSha: sha, buildId: 'itest' };
+      },
+    };
+  };
+  return { factory, factoryCalls: () => factoryCalls, resolveCalls: () => resolveCalls };
+}
+
+async function persist(
+  bdk: string,
+  idem: string,
+  variant = false,
+  buildFactory?: () => BuildMetadataProvider,
+) {
   return decideAndPersist(
     { input: input(variant), businessDecisionKey: bdk, idempotencyKey: idem },
-    svcDeps(build),
+    svcDeps(buildFactory),
   );
 }
 
@@ -99,15 +122,17 @@ describe('insert + read roundtrip (§44 I1)', () => {
 });
 
 describe('idempotency matrix (§44)', () => {
-  it('I2 exact retry returns same snapshot; the engine/new-decision path is NOT re-run', async () => {
+  it('I2 exact retry returns same snapshot; the new-decision path is NOT re-run (§11)', async () => {
     const bdk = uid();
     const key = uid();
     const b = countingBuild();
-    const first = await persist(bdk, key, false, b.provider);
-    expect(b.calls()).toBe(1);
-    const retry = await persist(bdk, key, false, b.provider);
+    const first = await persist(bdk, key, false, b.factory);
+    expect(b.factoryCalls()).toBe(1);
+    expect(b.resolveCalls()).toBe(1);
+    const retry = await persist(bdk, key, false, b.factory);
     expect(retry.id).toBe(first.id);
-    expect(b.calls()).toBe(1); // decide/build not invoked again
+    expect(b.factoryCalls()).toBe(1); // provider not constructed again
+    expect(b.resolveCalls()).toBe(1); // build not resolved again
     expect(await countSnapshots(bdk)).toBe(1);
     expect(await countReceipts(key)).toBe(1);
   });
@@ -160,13 +185,14 @@ describe('idempotency matrix (§44)', () => {
   it('I11 exact retry after a deployment (build) change returns ORIGINAL provenance; engine not re-run', async () => {
     const bdk = uid();
     const key = uid();
-    const first = await persist(bdk, key, false, testBuildProvider());
+    const first = await persist(bdk, key, false, () => testBuildProvider());
     const otherSha = 'f'.repeat(40);
     const b2 = countingBuild(otherSha);
-    const retry = await persist(bdk, key, false, b2.provider);
+    const retry = await persist(bdk, key, false, b2.factory);
     expect(retry.id).toBe(first.id);
     expect(retry.gitSha).toBe(TEST_GIT_SHA); // original build provenance, not the new one
-    expect(b2.calls()).toBe(0); // current build/engine path not entered on retry
+    expect(b2.factoryCalls()).toBe(0); // current build provider not constructed on retry
+    expect(b2.resolveCalls()).toBe(0); // current build not resolved on retry
   });
 });
 
@@ -219,6 +245,53 @@ describe('concurrency (§44 I8/I9/I10)', () => {
     expect(rejected).toHaveLength(1);
     expect(rejected[0]!.reason).toBeInstanceOf(IdempotencyConflictError);
     expect(await countReceipts(key)).toBe(1);
+  });
+});
+
+describe('Corpus-v1 candidate-set completeness (§27/§28/§33)', () => {
+  it('Chinawok SIP-only (missing CW-PLIN-01) → zero snapshot & zero receipt rows', async () => {
+    const bdk = uid();
+    const key = uid();
+    const incomplete = chinawokInput();
+    incomplete.rules = incomplete.rules.filter((r) => r.ruleId !== 'CW-PLIN-01');
+    incomplete.operationalStates = incomplete.operationalStates.filter(
+      (o) => o.ruleId !== 'CW-PLIN-01',
+    );
+    await expect(
+      decideAndPersist(
+        { input: incomplete, businessDecisionKey: bdk, idempotencyKey: key },
+        svcDeps(),
+      ),
+    ).rejects.toBeInstanceOf(CorpusProvenanceError);
+    expect(await countSnapshots(bdk)).toBe(0);
+    expect(await countReceipts(key)).toBe(0);
+    // The key was NOT consumed — a corrected complete request may reuse it.
+    const fixed = await persist(uid(), key);
+    expect(fixed.merchantId).toBe('m_chinawok');
+    expect(await countReceipts(key)).toBe(1);
+  });
+
+  it('SECOND CONTROL — Popeyes 6pcs missing POP-BCP-01 → zero rows', async () => {
+    const scope = frozenScope('sc_pop_6pcs_family_potato');
+    const incomplete: DecideInput = {
+      rules: [frozenRule('POP-SIP-02')],
+      operationalStates: [opState('POP-SIP-02')],
+      scopes: [scope],
+      portfolio: PORTFOLIO_ALL,
+      context: { merchantId: 'm_popeyes', exactItems: exactItemsOf(scope) },
+      evaluatedAt: '2026-09-01T12:00:00-05:00',
+      intendedTransactionAt: '2026-09-01T12:00:00-05:00',
+    };
+    const bdk = uid();
+    const key = uid();
+    await expect(
+      decideAndPersist(
+        { input: incomplete, businessDecisionKey: bdk, idempotencyKey: key },
+        svcDeps(),
+      ),
+    ).rejects.toBeInstanceOf(CorpusProvenanceError);
+    expect(await countSnapshots(bdk)).toBe(0);
+    expect(await countReceipts(key)).toBe(0);
   });
 });
 
@@ -342,7 +415,7 @@ describe('two-table transaction atomicity (§51)', () => {
           data: {
             operationScope: DECISION_PERSIST_OPERATION_SCOPE,
             idempotencyKey: key,
-            requestHash: computeRequestHash(bdk, i),
+            requestHash: computeRequestHash(i),
             decisionSnapshotId: snap.id,
           },
         });

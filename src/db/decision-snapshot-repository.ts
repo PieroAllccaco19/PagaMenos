@@ -18,7 +18,6 @@ import {
   PersistenceInvariantError,
 } from '@/persistence/errors';
 import {
-  computeRequestHash,
   parseDecisionSnapshotDto,
   type AttachAliasArgs,
   type CreateDecisionArgs,
@@ -178,10 +177,8 @@ export class DecisionSnapshotRepository implements DecisionPersistenceStore {
     // 2. Business decision: an existing snapshot for this business key is the historical truth.
     const existing = await this.findSnapshotByBusinessKey(draft.businessDecisionKey);
     if (existing) {
-      const existingRequestHash = computeRequestHash(
-        existing.businessDecisionKey,
-        existing.engineInputJson,
-      );
+      // requestHash === inputHash (frozen, §5), so the stored column IS the historical request hash.
+      const existingRequestHash = existing.inputHash;
       if (existingRequestHash === requestHash) {
         // Same historical decision reached via a new/racing key ⇒ durably alias, then return it.
         return this.attachAliasReceipt({

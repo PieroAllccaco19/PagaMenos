@@ -95,11 +95,12 @@ describe('buildDecisionSnapshotDraft — versions, hashes & lifted metadata', ()
   });
 });
 
-describe('computeRequestHash (P35A-01 §7)', () => {
-  it('is deterministic and depends on businessDecisionKey + input only', () => {
-    expect(computeRequestHash('bdk-1', input)).toBe(computeRequestHash('bdk-1', input));
-    expect(computeRequestHash('bdk-1', input)).not.toBe(computeRequestHash('bdk-2', input));
-    expect(computeRequestHash('bdk-1', input)).toMatch(/^[0-9a-f]{64}$/);
+describe('computeRequestHash (P35A-01 §5): equals the snapshot inputHash', () => {
+  it('is the canonical hash of the input and equals draft.inputHash', () => {
+    expect(computeRequestHash(input)).toBe(computeRequestHash(input));
+    expect(computeRequestHash(input)).toMatch(/^[0-9a-f]{64}$/);
+    expect(computeRequestHash(input)).toBe(canonicalHash(input));
+    expect(computeRequestHash(input)).toBe(draft().inputHash);
   });
 });
 

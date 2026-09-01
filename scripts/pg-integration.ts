@@ -105,29 +105,35 @@ async function main(): Promise<number> {
     );
     started = true;
 
-    // 3. Create the test database.
-    runPg(
-      pgExe('createdb'),
-      ['-h', '127.0.0.1', '-p', String(port), '-U', 'postgres', 'pagamenos_test'],
-      {
-        label: 'createdb',
-      },
+    // 3. Create BOTH databases: the main suite DB and a separate staged-upgrade DB.
+    const conn = (db: string) => `postgresql://postgres@127.0.0.1:${port}/${db}?schema=public`;
+    for (const db of ['pagamenos_test', 'pagamenos_upgrade']) {
+      runPg(pgExe('createdb'), ['-h', '127.0.0.1', '-p', String(port), '-U', 'postgres', db], {
+        label: `createdb ${db}`,
+      });
+    }
+
+    // 4a. STAGED-UPGRADE PHASE (P35A-01 §8): the test drives its own base→insert→closure
+    //     `prisma migrate deploy` staging against an EMPTY pagamenos_upgrade database.
+    const stagedEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      DATABASE_URL: conn('pagamenos_upgrade'),
+    };
+    const staged = runTool(
+      'npx vitest run -c vitest.integration.config.ts src/db/staged-upgrade.integration.test.ts',
+      { env: stagedEnv, label: 'vitest staged-upgrade', allowFail: true },
     );
 
-    const databaseUrl = `postgresql://postgres@127.0.0.1:${port}/pagamenos_test?schema=public`;
-    const env: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: databaseUrl };
+    // 4b. MAIN PHASE: apply the full migration chain from a CLEAN database (explicit deploy; §24/§52),
+    //     then run the main integration suite.
+    const mainEnv: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: conn('pagamenos_test') };
+    runTool('npx prisma migrate deploy', { env: mainEnv, label: 'prisma migrate deploy (main)' });
+    const main = runTool(
+      'npx vitest run -c vitest.integration.config.ts src/db/decision-snapshot.integration.test.ts',
+      { env: mainEnv, label: 'vitest integration (main)', allowFail: true },
+    );
 
-    // 4. Apply the migration from a CLEAN database (explicit deploy; §24). Proves §25.1.
-    runTool('npx prisma migrate deploy', { env, label: 'prisma migrate deploy' });
-
-    // 5. Run the integration suite against the ephemeral database.
-    const test = runTool('npx vitest run -c vitest.integration.config.ts', {
-      env,
-      label: 'vitest integration',
-      allowFail: true,
-    });
-
-    return test.ok ? 0 : 1;
+    return staged.ok && main.ok ? 0 : 1;
   } finally {
     if (started) {
       runPg(pgExe('pg_ctl'), ['-D', dataDir, '-m', 'immediate', 'stop'], {

@@ -27,8 +27,15 @@ const IMPORT_REPO =
   "import { decisionSnapshotRepository } from '@/db/decision-snapshot-repository';\nexport const x = decisionSnapshotRepository;\n";
 const IMPORT_DRAFT =
   "import { buildDecisionSnapshotDraft } from '@/persistence/snapshot';\nexport const x = buildDecisionSnapshotDraft;\n";
+const IMPORT_PROVENANCE =
+  "import { corpusV1ProvenanceProvider } from '@/persistence/provenance';\nexport const x = corpusV1ProvenanceProvider;\n";
 const IMPORT_PRISMA =
   "import { PrismaClient } from '@prisma/client';\nexport const x = PrismaClient;\n";
+// Relative-traversal variants (P35A-02 §14) — must be caught just like the alias forms.
+const IMPORT_REPO_REL =
+  "import { decisionSnapshotRepository } from '../db/decision-snapshot-repository';\nexport const x = decisionSnapshotRepository;\n";
+const IMPORT_DRAFT_REL =
+  "import { buildDecisionSnapshotDraft } from '../persistence/snapshot';\nexport const x = buildDecisionSnapshotDraft;\n";
 
 describe('module-boundary enforcement (engine/corpus purity)', () => {
   it('rejects a prohibited @/db import from src/engine', async () => {
@@ -39,11 +46,6 @@ describe('module-boundary enforcement (engine/corpus purity)', () => {
   it('rejects a Prisma + node:fs import from src/corpus', async () => {
     const ids = await ruleIdsFor('src/corpus/__probe__.ts', IMPORT_PRISMA_AND_FS);
     expect(ids).toContain('no-restricted-imports');
-  });
-
-  it('allows the same @/db import from src/services (non-pure layer)', async () => {
-    const ids = await ruleIdsFor('src/services/__probe__.ts', IMPORT_DB);
-    expect(ids).not.toContain('no-restricted-imports');
   });
 
   it('rejects a prohibited @/persistence import from src/engine (§29)', async () => {
@@ -62,24 +64,44 @@ describe('module-boundary enforcement (engine/corpus purity)', () => {
   });
 });
 
-describe('sanctioned write-boundary enforcement (P35A-02)', () => {
-  it('rejects the db repository write API from normal application code (src/app)', async () => {
-    const ids = await ruleIdsFor('src/app/__probe__.ts', IMPORT_REPO);
-    expect(ids).toContain('no-restricted-imports');
+describe('sanctioned write-boundary enforcement (P35A-02 §13/§15)', () => {
+  it('rejects the db repository / draft constructor from normal application code (src/app)', async () => {
+    expect(await ruleIdsFor('src/app/__probe__.ts', IMPORT_REPO)).toContain(
+      'no-restricted-imports',
+    );
+    expect(await ruleIdsFor('src/app/__probe__.ts', IMPORT_DRAFT)).toContain(
+      'no-restricted-imports',
+    );
   });
 
-  it('rejects the snapshot draft constructor from normal application code (src/app)', async () => {
-    const ids = await ruleIdsFor('src/app/__probe__.ts', IMPORT_DRAFT);
-    expect(ids).toContain('no-restricted-imports');
+  it('rejects the raw Prisma client / provenance provider from src/lib', async () => {
+    expect(await ruleIdsFor('src/lib/__probe__.ts', IMPORT_PRISMA)).toContain(
+      'no-restricted-imports',
+    );
+    expect(await ruleIdsFor('src/lib/__probe__.ts', IMPORT_PROVENANCE)).toContain(
+      'no-restricted-imports',
+    );
   });
 
-  it('rejects the raw Prisma client from normal application code (src/lib)', async () => {
-    const ids = await ruleIdsFor('src/lib/__probe__.ts', IMPORT_PRISMA);
-    expect(ids).toContain('no-restricted-imports');
+  it('rejects write internals from an ARBITRARY service (alias imports)', async () => {
+    const evil = 'src/services/evil-service.ts';
+    expect(await ruleIdsFor(evil, IMPORT_REPO)).toContain('no-restricted-imports');
+    expect(await ruleIdsFor(evil, IMPORT_DRAFT)).toContain('no-restricted-imports');
+    expect(await ruleIdsFor(evil, IMPORT_PROVENANCE)).toContain('no-restricted-imports');
+    expect(await ruleIdsFor(evil, IMPORT_PRISMA)).toContain('no-restricted-imports');
   });
 
-  it('ALLOWS the same write imports from the sanctioned service (src/services)', async () => {
-    const ids = await ruleIdsFor('src/services/__probe__.ts', IMPORT_REPO + IMPORT_DRAFT);
+  it('rejects write internals from an ARBITRARY service via RELATIVE imports (§14)', async () => {
+    const evil = 'src/services/evil-service.ts';
+    expect(await ruleIdsFor(evil, IMPORT_REPO_REL)).toContain('no-restricted-imports');
+    expect(await ruleIdsFor(evil, IMPORT_DRAFT_REL)).toContain('no-restricted-imports');
+  });
+
+  it('ALLOWS write internals ONLY from the sanctioned decision-persistence file', async () => {
+    const ids = await ruleIdsFor(
+      'src/services/decide-and-persist.ts',
+      IMPORT_REPO + IMPORT_DRAFT + IMPORT_PROVENANCE,
+    );
     expect(ids).not.toContain('no-restricted-imports');
   });
 });
