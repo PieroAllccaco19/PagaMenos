@@ -2,9 +2,9 @@
 
 **Milestone:** M3.5B-A1 — Protocol / Experiment / Assignment / Consent Authority.
 **Authoritative design:** `PAGAMENOS_M3_5B_A1_EFFECTIVE_SPEC_V2_1.md` (the ONLY normative source; V1/V2/R.x superseded).
-**Status:** implementation candidate — **REVIEW CANDIDATE ONLY**. Not accepted; awaits re-review by the same independent Codex Sol A1 gate.
+**Status:** **ACCEPTED** by the independent Codex Sol A1 gate (`A — M3.5B-A1 IMPLEMENTATION ACCEPTED`). **Accepted implementation SHA: `99f2d61bc45839d6f9506abee5fae641bfcd8b2e`.** Sol raised one LOW, non-blocking documentation finding — **A1-DOC-01** (stale candidate inventory in this report) — which this revision corrects; the accepted implementation SHA is unchanged (this is a documentation-only child commit).
 
-**Audit history:** the first candidate `a0ef79a5092492b27c657a66fb39b8b515a93073` **FAILED** the Sol code gate (`B — M3.5B-A1 IMPLEMENTATION REQUIRES PATCH`) on six independently demonstrated implementation defects. This report has been corrected — several claims in the original version were wrong (see §Q) and are superseded here. The six defects are closed by additive repair commit(s) on top of `a0ef79a…`; `a0ef79a…` is preserved as rejected audit evidence.
+**Audit history:** the first candidate `a0ef79a5092492b27c657a66fb39b8b515a93073` **FAILED** the Sol code gate (`B — M3.5B-A1 IMPLEMENTATION REQUIRES PATCH`) on six independently demonstrated implementation defects (§Q). Those defects were closed by an additive repair commit `99f2d61…` — the independently **accepted** implementation SHA. `a0ef79a…` is preserved as rejected audit evidence; the first candidate did NOT pass.
 
 This is additive over the accepted M3.5A persistence baseline. Every DB-behavior claim below was verified against real PostgreSQL 18.4 (ephemeral cluster via `scripts/pg-integration.ts`), not mocks.
 
@@ -39,13 +39,16 @@ Additional hardening requested by the gate: participant key/version coherence ch
 - **Implementation isolation:** a separate Git **worktree** at `C:/Users/piero/pagamenos-a1` on a fresh branch **`m3.5b-a1-implementation`** based EXACTLY on `64cf864…`. The user's original working tree (`master` @ `1ded28d`, plus the three untracked spec files) was left untouched — no `git reset --hard`, `git clean`, or `git checkout -- .` was run against it.
 - **Unrelated work preserved:** confirmed. `master` still points at `1ded28d`; the untracked `PAGAMENOS_M3_5B_A1_EFFECTIVE_SPEC*.md` files in the original tree are unmodified. V2.1 was copied (not moved/edited) into the worktree for reference.
 
-## B. Files changed (35 files; +5145 / −5; the 5 deletions are line replacements in the four modified infra files — engine/corpus are byte-unchanged, see §L SCI-24)
+## B. Files changed — final accepted candidate `99f2d61…` (39 files; +6085 / −5 vs baseline `64cf864…`, Sol-verified)
 
-**Added — pure domain (`src/study/`):** `errors.ts`, `versions.ts`, `protocol-definition.ts`, `consent-state.ts`, `schema.ts`, `request-hash.ts`, `recruitment.ts`, `participant-context.ts`, `index.ts` (+ tests: `consent-state.test.ts`, `protocol-definition.test.ts`, `request-hash.test.ts`, `schema.test.ts`).
-**Added — raw repositories (`src/db/`, internal):** `study-support.ts`, `study-protocol-repository.ts`, `study-experiment-repository.ts`, `study-participant-repository.ts`, `study-assignment-repository.ts`, `study-consent-repository.ts` (+ `study-authority.integration.test.ts`).
-**Added — sanctioned services (`src/services/`):** `study-protocol-admin.ts`, `study-experiment-admin.ts`, `study-recruitment.ts`, `study-assignment-admin.ts`, `study-consent.ts`, `study-analysis.ts`, `study-admin.ts`.
-**Added — migration:** `prisma/migrations/20260901120000_m3_5b_a1_study_authority/migration.sql`.
-**Modified:** `prisma/schema.prisma` (additive: +286/−0), `eslint.config.mjs` (study-admin boundary + sanctioned-impl exemptions), `src/lib/module-capability.test.ts` (operation-specific study ownership), `src/services/index.ts` (participant/read surface), `scripts/migrate-check.ts` (A1 guard/CHECK assertions), `scripts/pg-integration.ts` (run A1 integration suite).
+The five deletions are line replacements in the modified infra files; `src/engine` and `src/corpus` are byte-unchanged (§L SCI-24). This inventory is the FINAL accepted set (includes the A1-CODE-01/02 closure-patch files); the mid-review candidate `a0ef79a…` had 35 files (+5145/−5) before the patch added the durable-recruitment and trusted-session files below.
+
+**Added — pure domain (`src/study/`):** `errors.ts`, `versions.ts`, `protocol-definition.ts`, `consent-state.ts`, `schema.ts`, `request-hash.ts`, `recruitment.ts` (resolver **contract** only — the non-durable in-memory resolver was removed in the patch), `participant-context.ts` (WeakSet-registry authority, A1-CODE-01), `index.ts` (+ tests: `consent-state.test.ts`, `protocol-definition.test.ts`, `request-hash.test.ts`, `schema.test.ts`, `participant-context.test.ts`).
+**Added — raw repositories (`src/db/`, internal):** `study-support.ts`, `study-protocol-repository.ts`, `study-experiment-repository.ts`, `study-participant-repository.ts`, `study-assignment-repository.ts`, `study-consent-repository.ts`, **`study-recruitment-repository.ts`** (durable recruitment identity, A1-CODE-02) (+ `study-authority.integration.test.ts`).
+**Added — sanctioned services (`src/services/`):** `study-protocol-admin.ts`, `study-experiment-admin.ts`, `study-recruitment.ts` (now hosts the durable `DurableRecruitmentResolver` + `linkRecruitmentCredential`), `study-assignment-admin.ts`, `study-consent.ts`, `study-analysis.ts`, **`study-participant-session.ts`** (trusted context adapter, A1-CODE-01), `study-admin.ts` (trusted barrel; re-exports the session adapter + provisioning).
+**Added — migration:** `prisma/migrations/20260901120000_m3_5b_a1_study_authority/migration.sql` (includes the two durable recruitment tables + the two coherence CHECKs added in the patch).
+**Added — docs:** `PAGAMENOS_M3_5B_A1_IMPLEMENTATION.md` (this report), `PAGAMENOS_M3_5B_A1_EFFECTIVE_SPEC_V2_1.md` (spec copied into the worktree for reference; normative contents unchanged).
+**Modified:** `prisma/schema.prisma` (additive), `eslint.config.mjs` (study-admin + participant-context/session boundary + sanctioned-impl exemptions), `src/lib/module-capability.test.ts` (operation-specific study ownership incl. participant-context/session), `src/services/index.ts` (participant/read surface; `mint…` removed), `scripts/migrate-check.ts` (A1 guard/CHECK assertions, 13 append-only tables + both new CHECKs), `scripts/pg-integration.ts` (run A1 integration suite).
 
 ## C. Data model (exact — `prisma/schema.prisma`, additive only)
 
@@ -63,6 +66,10 @@ Enums: `AnalysisProtocolLifecycle{DRAFT,FROZEN}`, `StudyConsentAction{GRANTED,WI
 | `StudyParticipantRegistrationReceipt` | `UNIQUE(operationScope, idempotencyKey)` | `requestHash` | `participantId` |
 | `ExperimentAssignmentReceipt` | `UNIQUE(operationScope, idempotencyKey)` | `requestHash` | `assignmentId` |
 | `StudyConsentCommandReceipt` | `UNIQUE(operationScope, idempotencyKey)` | `requestHash`, `resultKind` | `consentEventId` |
+| `RecruitmentSubjectIdentity` (`recruitment_subject_identity`) — *A1-internal trusted recruitment/identity infrastructure (not study truth, no PII), A1-CODE-02* | `subjectAnchor` UNIQUE; `recruitmentSubjectKey` UNIQUE | `recruitmentKeyVersion`, `createdAt` | — |
+| `RecruitmentCredentialLink` (`recruitment_credential_link`) — *A1-internal trusted recruitment/identity infrastructure (not study truth, no PII), A1-CODE-02* | `credential` UNIQUE | `subjectAnchor` (indexed), `createdAt` | — |
+
+The two `recruitment_*` models are **A1-internal recruitment-provisioning infrastructure** (the trusted recruitment/identity boundary, spec §5/§11/§13), NOT study-domain truth: they hold no PII and no raw email, only a pseudonymous subject anchor, the durably-issued stable key + version, and the rotating-credential → anchor binding. They exist so recruitment-subject identity is durable across credential rotation, key-version evolution, and process restart (A1-CODE-02). Both are append-only (DB triggers).
 
 **No lifted semantic scalar columns** on `AnalysisProtocol` (no `observationWindowWeeks`/`contaminationWindowHours`/etc.) — all protocol semantics live in verified `definitionJson` (spec §2). No `recruitmentPolicy`/`assignedProtocolId` on `Experiment` (spec §4). No `includedInDenominator` on assignment. Concrete strong-FK receipts only — no polymorphic target; `DecisionIdempotencyReceipt` is NOT reused (spec §9/§25).
 
@@ -72,10 +79,12 @@ Base DDL generated by `prisma migrate diff` (schema↔migrations verified drift-
 
 - **Freeze-guard** (`analysis_protocol_freeze_guard` + triggers `_update`, `_delete`; `analysis_protocol_no_truncate`): the ONLY permitted UPDATE is DRAFT→FROZEN with `frozenAt` NULL→timestamp and **every other column unchanged** (incl. JSONB equality); a FROZEN row rejects all UPDATE; DELETE and TRUNCATE rejected (spec §2.2).
 - **Experiment FROZEN-protocol guard** (`experiment_requires_frozen_protocol` + `experiment_frozen_protocol_guard`, BEFORE INSERT): a cross-table check that `frozenProtocolId` references a FROZEN protocol (spec §4).
-- **Append-only / immutability** (`study_forbid_mutation` + per-table `_no_update`/`_no_delete`/`_no_truncate`): `experiment` (immutable immediately), `study_participant`, `experiment_assignment`, `study_consent_event`, and all five receipt tables.
+- **Append-only / immutability** (`study_forbid_mutation` + per-table `_no_update`/`_no_delete`/`_no_truncate`): `experiment` (immutable immediately), `study_participant`, `experiment_assignment`, `study_consent_event`, all five receipt tables, and the two `recruitment_*` identity tables (13 append-only tables total).
 - **§8.11 single-table CHECK** `study_consent_event_action_provenance_ck`: `GRANTED ⇒ provenance NOT NULL AND assertedEffectiveAt IS NULL`; `WITHDRAWN ⇒ provenance NULL` (assertedEffectiveAt free).
+- **Protocol lifecycle CHECK** `analysis_protocol_lifecycle_frozenat_ck` (A1-CODE-03): `DRAFT ⇒ frozenAt NULL`; `FROZEN ⇒ frozenAt NOT NULL` — malformed lifecycle/frozenAt rows impossible at INSERT and beyond.
+- **Assignment anchor CHECK** `experiment_assignment_anchor_eq_ck` (A1-CODE-05): `observationStartAt = enrolledAt` enforced at the DB.
 - **Receipt operationScope CHECKs** (`*_scope_ck`): each receipt table restricted to its trusted constant(s).
-- All UNIQUE/FK/index constraints per §C. `ON DELETE RESTRICT` on every study FK.
+- All UNIQUE/FK/index constraints per §C. `ON DELETE RESTRICT` on every study FK. The A1 migration was corrected in place while unaccepted/undeployed (§30); `prisma migrate diff --exit-code` confirms zero drift at the accepted SHA.
 
 FKs, UNIQUEs, CHECKs, triggers enumerated in the migration file; guarded offline by `pnpm db:migrate:check` (extended for all A1 objects).
 
@@ -85,8 +94,10 @@ FKs, UNIQUEs, CHECKs, triggers enumerated in the migration file; guarded offline
 | :-- | :-- | :-- | :-- |
 | `registerAnalysisProtocolDraft`, `freezeAnalysisProtocol` | `study-protocol-admin.ts` | ProtocolAdministration | canonical build + digest; freeze = the one exact UPDATE; trusted `frozenAt` |
 | `createExperiment` | `study-experiment-admin.ts` | ExperimentAdministration | FROZEN pre-check + DB guard |
-| `registerStudyParticipant` | `study-recruitment.ts` | RecruitmentProvisioning | trusted resolver → stable key; hash uses stable key+version only |
+| `registerStudyParticipant` | `study-recruitment.ts` | RecruitmentProvisioning | DURABLE resolver → stable key; hash uses stable key+version only |
+| `linkRecruitmentCredential` | `study-recruitment.ts` | RecruitmentProvisioning | durably binds a rotating credential → subject anchor (A1-CODE-02); no silent reassignment |
 | `assignParticipant` | `study-assignment-admin.ts` | AssignmentAdministration | trusted `enrolledAt`; `observationStartAt = enrolledAt` |
+| `resolveTrustedParticipantContext` | `study-participant-session.ts` | trusted session adapter | the ONLY construction path for a `TrustedParticipantContext` (A1-CODE-01); off the public barrel |
 | `recordConsentGrant`, `recordConsentWithdrawal` | `study-consent.ts` | ParticipantConsent (trusted context) | schema-validate → own-assignment → hash → serialized append |
 | `loadFrozenProtocolForAnalysis` | `study-analysis.ts` | analysis (read) | fail-closed digest re-verification |
 
@@ -190,6 +201,6 @@ The prior report's "None material" was itself inaccurate (the Sol gate found six
 
 Corrections to earlier inaccurate report claims (superseded by §Q): TrustedParticipantContext is now runtime-unforgeable (was forgeable); the production recruitment resolver is now durable (was non-durable); freeze now verifies the digest before freezing (previously did not).
 
-## P. Final candidate SHA
+## P. Final SHA (accepted)
 
-See the commit created on branch `m3.5b-a1-implementation`; the exact final SHA is recorded in the delivery message accompanying this report. **This is a REVIEW CANDIDATE ONLY — not acceptance.** Only the independent Codex Sol A1 code-level gate can accept M3.5B-A1.
+Branch `m3.5b-a1-implementation`. Rejected first candidate: `a0ef79a5092492b27c657a66fb39b8b515a93073`. **Accepted implementation SHA: `99f2d61bc45839d6f9506abee5fae641bfcd8b2e`** (Codex Sol: `A — M3.5B-A1 IMPLEMENTATION ACCEPTED`). This revision of the report is a documentation-only child commit (A1-DOC-01); it does not change the accepted implementation SHA, and no source/schema/migration/test/config was modified.
