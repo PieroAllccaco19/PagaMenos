@@ -42,10 +42,10 @@ export {
 } from './study-consent';
 export { loadFrozenProtocolForAnalysis, type LoadFrozenProtocolRef } from './study-analysis';
 
-// The trusted participant context (nominal; minted by a trusted adapter) and the pure A1 helpers +
-// typed study errors that consumers need to interpret results/failures (no write capability).
+// The trusted participant context TYPE (erased) and the pure A1 helpers + typed study errors that
+// consumers need to interpret results/failures (no write capability). The context CREATION primitive
+// is intentionally NOT exported here — it lives behind the trusted session adapter (A1-CODE-01).
 export {
-  mintTrustedParticipantContext,
   deriveConsentAuthorizationIntervals,
   wasCollectionAuthorizedAtKnownTime,
   effectiveConsentState,

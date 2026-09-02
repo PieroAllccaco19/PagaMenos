@@ -16,7 +16,10 @@ export { createExperiment, type CreateExperimentRequest } from './study-experime
 
 export {
   registerStudyParticipant,
+  linkRecruitmentCredential,
+  DurableRecruitmentResolver,
   type RegisterStudyParticipantRequest,
+  type LinkRecruitmentCredentialRequest,
 } from './study-recruitment';
 
 export { assignParticipant, type AssignParticipantRequest } from './study-assignment-admin';
@@ -26,3 +29,11 @@ export {
   loadFrozenProtocolForAnalysis,
   type LoadFrozenProtocolRef,
 } from './study-analysis';
+
+// Trusted participant session adapter — the ONLY sanctioned construction path for a
+// TrustedParticipantContext (A1-CODE-01). Exposed on the trusted admin surface, never the public
+// participant barrel; a trusted server-side session/auth layer resolves the authenticated identity.
+export {
+  resolveTrustedParticipantContext,
+  type ResolveTrustedParticipantContextArgs,
+} from './study-participant-session';

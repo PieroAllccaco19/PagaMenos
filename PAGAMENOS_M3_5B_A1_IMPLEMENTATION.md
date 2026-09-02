@@ -2,9 +2,32 @@
 
 **Milestone:** M3.5B-A1 — Protocol / Experiment / Assignment / Consent Authority.
 **Authoritative design:** `PAGAMENOS_M3_5B_A1_EFFECTIVE_SPEC_V2_1.md` (the ONLY normative source; V1/V2/R.x superseded).
-**Status:** implementation candidate — **REVIEW CANDIDATE ONLY**. Not accepted; awaits the independent Codex Sol A1 gate.
+**Status:** implementation candidate — **REVIEW CANDIDATE ONLY**. Not accepted; awaits re-review by the same independent Codex Sol A1 gate.
 
-This is additive over the accepted M3.5A persistence baseline. Every claim below was verified against real PostgreSQL 18.4 (ephemeral cluster via `scripts/pg-integration.ts`), not mocks.
+**Audit history:** the first candidate `a0ef79a5092492b27c657a66fb39b8b515a93073` **FAILED** the Sol code gate (`B — M3.5B-A1 IMPLEMENTATION REQUIRES PATCH`) on six independently demonstrated implementation defects. This report has been corrected — several claims in the original version were wrong (see §Q) and are superseded here. The six defects are closed by additive repair commit(s) on top of `a0ef79a…`; `a0ef79a…` is preserved as rejected audit evidence.
+
+This is additive over the accepted M3.5A persistence baseline. Every DB-behavior claim below was verified against real PostgreSQL 18.4 (ephemeral cluster via `scripts/pg-integration.ts`), not mocks.
+
+---
+
+## Q. Patch closure after the Sol code gate (candidate `a0ef79a…` → repaired)
+
+The prior report's claims about `TrustedParticipantContext` unforgeability, production recruitment-resolver stability, "complete protocol freeze", and "no material deviations" were **inaccurate** and are corrected here. Closure matrix (all CLOSED):
+
+| Finding | Status | Fix (file) | Test(s) — real-PG where DB behavior matters |
+| :-- | :-- | :-- | :-- |
+| **A1-CODE-01** TrustedParticipantContext forgeable (CRITICAL) | **CLOSED** | Authority is now a MODULE-PRIVATE `WeakSet` registry: `isTrustedParticipantContext` tests registry membership, not shape/symbols; contexts are `Object.freeze`d; the creation primitive `createTrustedParticipantContext` is NOT on the `@/study` or public `@/services` barrel — it is reachable only via the trusted session adapter `resolveTrustedParticipantContext` (`src/services/study-participant-session.ts`), off-limits to app/arbitrary code (ESLint + AST test). `mintTrustedParticipantContext` was removed from every public export (`src/study/participant-context.ts`, `src/study/index.ts`, `src/services/index.ts`). | `src/study/participant-context.test.ts` (plain object / `as unknown as` / spread / clone / symbol-copy / JSON round-trip / prototype-inherit / mutation all rejected); `module-capability.test.ts` (app cannot import the creation submodule or the adapter, any spelling); integration "a non-trusted / forged / derived context object is rejected" — A's authority cannot append to B; zero B events/receipts (real PG). |
+| **A1-CODE-02** recruitment identity not durable (HIGH) | **CLOSED** | New DURABLE identity boundary: `recruitment_subject_identity` (subjectAnchor → issued key+version, authoritative forever) and `recruitment_credential_link` (credential → anchor, no silent reassignment), both append-only. New repo `src/db/study-recruitment-repository.ts`; production default resolver is now `DurableRecruitmentResolver` (`src/services/study-recruitment.ts`) which consults durable issuance BEFORE deriving; provisioning `linkRecruitmentCredential`. The non-durable `InMemoryRecruitmentResolver` was **removed**. | integration: rotated invite → same participant; identity survives a default key-version advance AND a fresh resolver instance (process-restart proxy); credential reassignment → conflict, re-link idempotent; concurrent rotated credentials → one durable subject → one participant (real PG). |
+| **A1-CODE-03** protocol lifecycle/frozenAt incoherence (HIGH) | **CLOSED** | Named DB CHECK `analysis_protocol_lifecycle_frozenat_ck` (DRAFT⇒frozenAt NULL, FROZEN⇒frozenAt NOT NULL) in the A1 migration. | integration "the lifecycle↔frozenAt CHECK makes malformed protocol rows impossible" — DRAFT+non-NULL and FROZEN+NULL both rejected by the **named** constraint (real PG). |
+| **A1-CODE-04** freeze can freeze a digest-invalid DRAFT (HIGH) | **CLOSED** | The repo freeze now, inside the SAME `FOR UPDATE`-locked transaction, re-parses the persisted `definitionJson` with the row's own version tags, recomputes the digest, and `verifyProtocolDefinition` fails closed (no transition, no receipt) on mismatch — no TOCTOU (`src/db/study-protocol-repository.ts`). | integration "a digest-invalid DRAFT CANNOT be frozen" → `StudyProtocolDigestMismatchError`, stays DRAFT, frozenAt NULL, 0 receipts, and cannot back an experiment (real PG). |
+| **A1-CODE-05** DB does not enforce observationStartAt == enrolledAt (MEDIUM) | **CLOSED** | Named DB CHECK `experiment_assignment_anchor_eq_ck` (`"observationStartAt" = "enrolledAt"`) in the A1 migration. | integration "the DB enforces observationStartAt == enrolledAt" — equal accepted, unequal rejected by the **named** constraint (real PG). |
+| **A1-CODE-06** different-key freeze retry does not reconcile (MEDIUM) | **CLOSED** | The repo freeze reconciles a different-key semantic retry against an already-FROZEN protocol to the existing successful freeze (durable K2 alias receipt, no second protocol, no mutation); a materially incompatible request conflicts. Freeze input gained an OPTIONAL `expectedDefinitionDigest` precondition (`src/study/schema.ts`, `src/services/study-protocol-admin.ts`) so a retry can never alias to a protocol whose digest differs from the caller's intent; `frozenAt` is never in the request identity. | integration "freeze different-key retry reconciles…" (same-key replay; different-key alias → 2 freeze receipts, 1 protocol; non-equivalent expected digest → `StudyDomainConflictError`, no new receipt); "concurrent different-key freezes → one transition, two receipts" (real PG). |
+
+Additional hardening requested by the gate: participant key/version coherence check on alias (`StudyDomainConflictError`, spec §14); a focused `participantCode`-collision test proving a code collision is retried and NEVER treated as same-subject reconciliation (§27, injectable code generator); the new DB regressions assert **named constraints** rather than generic throws (§28).
+
+**Regression after patch (all green):** `db:validate` ok; `db:migrate:check` ok (13 append-only tables + both new CHECKs + freeze-guard + experiment guard); `typecheck` / `lint` exit 0; `pnpm test` **429 passed** (25 files); `pnpm test:integration` **62 passed** (staged-upgrade 3 + study-authority 36 + decision-snapshot 23) against real PostgreSQL; `migrate diff --exit-code` = "No difference detected" (no drift). Engine/corpus byte-unchanged; accepted M3.5A migrations/tables untouched; no A2/B/C; production Protocol v1 unfrozen; no Wave 0.
+
+**Migration approach (§30):** the A1 migration is an UNACCEPTED, undeployed candidate migration, so it was corrected **in place** (the two new CHECKs, the two durable recruitment tables + their append-only triggers) — keeping a clean, deterministic baseline→candidate history (`prisma migrate diff` confirms zero drift). No accepted historical migration was touched.
 
 ---
 
@@ -73,7 +96,7 @@ Two layers: (1) **ESLint** coarse block (`eslint.config.mjs`) — app/participan
 
 - Each raw study repo importable ONLY by its owning service: protocol→`study-protocol-admin`(+`study-analysis` read), experiment→`study-experiment-admin`, participant→`study-recruitment`, assignment→`study-assignment-admin`, consent→`study-consent`.
 - Admin service modules importable ONLY by the `study-admin` barrel (read-only analysis load also by the public `@/services` barrel); non-literal dynamic imports stay fail-closed for study modules.
-- Participant consent operates through the nominally-branded `TrustedParticipantContext` (module-private symbol), and the consent service enforces own-assignment binding at runtime (spec §12).
+- Participant consent operates through a runtime-unforgeable `TrustedParticipantContext` — authority is a module-private `WeakSet` registry (A1-CODE-01), not a symbol/shape — constructed only by the trusted session adapter (`@/services/study-admin`), and the consent service enforces own-assignment binding at runtime (spec §12).
 
 Raw study repositories are unreachable from arbitrary production modules; `src/db/index.ts` still exports nothing.
 
@@ -98,11 +121,11 @@ Dedup is by the stable `recruitmentSubjectKey` (`UNIQUE` + Prisma P2002 reconcil
 | Command | Result |
 | :-- | :-- |
 | `pnpm db:validate` | schema valid |
-| `pnpm db:migrate:check` | OK — 3 migrations; append-only triggers for 11 tables; freeze-guard + experiment FROZEN guard + §8.11 CHECK + receipt scope CHECKs present |
+| `pnpm db:migrate:check` | OK — 3 migrations; append-only triggers for 13 tables; freeze-guard + experiment FROZEN guard + §8.11 CHECK + lifecycle/frozenAt CHECK + anchor-equality CHECK + receipt scope CHECKs present |
 | `pnpm typecheck` (`next typegen && tsc --noEmit`) | exit 0 |
 | `pnpm lint` (`eslint .`) | exit 0 |
-| `pnpm test` (offline vitest) | **419 passed** (24 files) — 371 accepted baseline + 48 new (consent-state 21, schema 7, protocol-definition 6, request-hash 7, module-capability +7 of 17) |
-| `pnpm test:integration` (real PostgreSQL 18.4, clean DB, `migrate deploy` of all 3 migrations) | **staged-upgrade 3 + study-authority 27 + decision-snapshot 23 = 53 passed** |
+| `pnpm test` (offline vitest, post-patch) | **429 passed** (25 files) — baseline + study domain + participant-context forgery (9) + extended capability ownership |
+| `pnpm test:integration` (real PostgreSQL 18.4, clean DB, `migrate deploy` of all 3 migrations, post-patch) | **staged-upgrade 3 + study-authority 36 + decision-snapshot 23 = 62 passed** |
 | `prisma migrate diff --exit-code` (migrations → schema) | "No difference detected" (no drift) |
 | Direct SQL adversarial probe (all 3 migrations, real PG) | every freeze-guard / immutability / §8.11 CHECK / uniqueness / receipt-scope case behaved as specified |
 
@@ -157,10 +180,15 @@ A2 (PurchaseIntent lifecycle, decision request/binding, `findExactHistoricalDeci
 
 ## O. Deviations from V2.1
 
-None material. Bounded implementation choices (all preserving observable invariants):
-1. **Serialization ordering (§8.10):** the exact transport-receipt replay lookup runs INSIDE the transaction immediately after acquiring the assignment row lock (rather than strictly before it). Schema validation still runs before any receipt lookup; this only strengthens race-safety. Permitted by §8.10 ("adapt exact ordering where database transaction mechanics require it, preserving all observable invariants").
-2. **`StudyProtocolAlreadyFrozenError`** added (not named in V2.1) for a new-key freeze against an already-FROZEN protocol; a same-key freeze still replays via receipt. This upholds the one-way lifecycle (§2.2) without inventing new scientific semantics.
-3. **Protocol/experiment domain aliasing:** a different transport key with identical material (same protocol content / same experiment binding) attaches an alias receipt to the existing row (the M3.5A pattern, §10); a materially different payload raises `StudyDomainConflictError`.
+The prior report's "None material" was itself inaccurate (the Sol gate found six defects). No deviation from V2.1 **semantics** remains, but the implementation makes these bounded, disclosed choices (all preserving observable invariants), and adds A1-internal infrastructure the spec explicitly permits:
+
+1. **Durable recruitment identity tables (spec §11 permits):** two A1-internal recruitment-provisioning tables (`recruitment_subject_identity`, `recruitment_credential_link`) were added to make subject identity durable (A1-CODE-02). They hold no PII / no study truth and are append-only. Spec §11 explicitly authorizes "an additional A1-internal table/model IF necessary" for this.
+2. **Optional freeze precondition:** `freezeAnalysisProtocol` gained an OPTIONAL `expectedDefinitionDigest` caller precondition (A1-CODE-06/§25) so a different-key retry cannot alias to a protocol whose digest differs from the caller's intent. `frozenAt` is never part of request identity.
+3. **Serialization ordering (§8.10):** the exact transport-receipt replay lookup runs INSIDE the transaction immediately after acquiring the assignment row lock (rather than strictly before it). Schema validation still runs before any receipt lookup; this only strengthens race-safety. Permitted by §8.10 ("adapt exact ordering where database transaction mechanics require it, preserving all observable invariants").
+4. **`StudyProtocolAlreadyFrozenError`** added (not named in V2.1) for the narrow case of an out-of-band FROZEN row (no sanctioned freeze receipt to reconcile against); a same-key freeze replays and a different-key equivalent freeze now reconciles (A1-CODE-06). This upholds the one-way lifecycle (§2.2) without inventing new scientific semantics.
+5. **Domain aliasing:** a different transport key with identical material (protocol content / experiment binding / recruitment subject key+version) attaches an alias receipt to the existing row (the M3.5A pattern, §10); a materially different payload — including an incompatible recruitment key/version (§14) — raises `StudyDomainConflictError`.
+
+Corrections to earlier inaccurate report claims (superseded by §Q): TrustedParticipantContext is now runtime-unforgeable (was forgeable); the production recruitment resolver is now durable (was non-durable); freeze now verifies the digest before freezing (previously did not).
 
 ## P. Final candidate SHA
 

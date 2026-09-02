@@ -25,8 +25,13 @@ export const registerProtocolInputSchema = z
   .strict();
 export type RegisterProtocolInput = z.infer<typeof registerProtocolInputSchema>;
 
-/** Protocol freeze material input (spec §19): the protocol identity only; frozenAt is trusted. */
-export const freezeProtocolInputSchema = z.object({ protocolId: nonEmpty }).strict();
+/** Protocol freeze material input (spec §19/§25): the protocol identity, plus an OPTIONAL expected
+ * definition digest precondition (A1-CODE-06). When present, the service asserts it matches the
+ * persisted digest before freezing/reconciling, so a different-key retry can never alias to a
+ * protocol whose digest differs from what the caller intended. `frozenAt` is always trusted. */
+export const freezeProtocolInputSchema = z
+  .object({ protocolId: nonEmpty, expectedDefinitionDigest: nonEmpty.optional() })
+  .strict();
 export type FreezeProtocolInput = z.infer<typeof freezeProtocolInputSchema>;
 
 /** Experiment creation material input (spec §4/§19). No `recruitmentPolicy` field exists. */

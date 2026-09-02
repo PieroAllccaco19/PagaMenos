@@ -17,6 +17,8 @@ import {
   StudyDomainConflictError,
   StudyInvariantError,
   StudyProtocolAlreadyFrozenError,
+  StudyProtocolDigestMismatchError,
+  verifyProtocolDefinition,
 } from '@/study';
 
 import { prisma as defaultPrisma } from './client';
@@ -242,13 +244,23 @@ export class AnalysisProtocolRepository implements ProtocolStore {
   async freeze(args: FreezeProtocolArgs): Promise<AnalysisProtocolDto> {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        // Serialize concurrent freezes of THIS protocol by locking its row first.
+        // Serialize concurrent freezes of THIS protocol by locking its row first, loading the FULL
+        // persisted state needed to re-verify the digest under the lock (A1-CODE-04, no TOCTOU).
         const locked = await tx.$queryRaw<
-          Array<{ id: string; lifecycleStatus: string }>
-        >(Prisma.sql`SELECT "id", "lifecycleStatus"::text AS "lifecycleStatus" FROM "analysis_protocol" WHERE "id" = ${args.protocolId}::uuid FOR UPDATE`);
+          Array<{
+            id: string;
+            lifecycleStatus: string;
+            protocolVersion: string;
+            definitionSchemaVersion: string;
+            canonicalizationVersion: string;
+            definitionJson: unknown;
+            definitionDigest: string;
+          }>
+        >(Prisma.sql`SELECT "id", "lifecycleStatus"::text AS "lifecycleStatus", "protocolVersion", "definitionSchemaVersion", "canonicalizationVersion", "definitionJson", "definitionDigest" FROM "analysis_protocol" WHERE "id" = ${args.protocolId}::uuid FOR UPDATE`);
         if (locked.length === 0) {
           throw new StudyInvariantError(`freeze references unknown protocol ${args.protocolId}`);
         }
+        const row = locked[0]!;
 
         // Exact transport replay for THIS freeze key.
         const receipt = await this.findFreezeReceipt(tx, args.idempotencyKey);
@@ -259,14 +271,50 @@ export class AnalysisProtocolRepository implements ProtocolStore {
             existingRequestHash: receipt.requestHash,
             attemptedRequestHash: args.requestHash,
           });
-          const dto = await this.loadInTx(tx, receipt.analysisProtocolId);
-          return dto;
+          return this.loadInTx(tx, receipt.analysisProtocolId);
         }
 
-        if (locked[0]!.lifecycleStatus === 'FROZEN') {
-          // Already frozen (by a different key) — one-way lifecycle, no re-freeze.
-          throw new StudyProtocolAlreadyFrozenError(args.protocolId);
+        if (row.lifecycleStatus === 'FROZEN') {
+          // A1-CODE-06: a different-key retry of a semantically-equivalent freeze reconciles to the
+          // existing successful freeze — durable K2 alias receipt, no second protocol, no mutation.
+          const existingFreeze = await tx.analysisProtocolCommandReceipt.findFirst({
+            where: {
+              analysisProtocolId: args.protocolId,
+              operationScope: PROTOCOL_FREEZE_OPERATION_SCOPE,
+            },
+          });
+          if (!existingFreeze) {
+            // Frozen without any sanctioned freeze receipt (e.g. a raw/out-of-band transition) — there
+            // is nothing to reconcile against; the one-way lifecycle forbids a re-freeze.
+            throw new StudyProtocolAlreadyFrozenError(args.protocolId);
+          }
+          // A materially different freeze request for the same protocol → conflict (never alias).
+          assertReceiptRequestHash({
+            operationScope: PROTOCOL_FREEZE_OPERATION_SCOPE,
+            idempotencyKey: args.idempotencyKey,
+            existingRequestHash: existingFreeze.requestHash,
+            attemptedRequestHash: args.requestHash,
+          });
+          await tx.analysisProtocolCommandReceipt.create({
+            data: {
+              operationScope: PROTOCOL_FREEZE_OPERATION_SCOPE,
+              idempotencyKey: args.idempotencyKey,
+              requestHash: args.requestHash,
+              analysisProtocolId: args.protocolId,
+            },
+          });
+          return this.loadInTx(tx, args.protocolId);
         }
+
+        // DRAFT: A1-CODE-04 — re-verify the persisted definition digest against the SAME locked row
+        // BEFORE the transition. A digest-invalid DRAFT can NEVER be frozen and NO receipt is written.
+        verifyProtocolDefinition({
+          definitionSchemaVersion: row.definitionSchemaVersion,
+          canonicalizationVersion: row.canonicalizationVersion,
+          definitionJson: row.definitionJson,
+          definitionDigest: row.definitionDigest,
+          protocolRef: args.protocolId,
+        });
 
         // The one permitted UPDATE: DRAFT→FROZEN, frozenAt NULL→trusted, nothing else.
         const updated = await tx.analysisProtocol.updateMany({
@@ -289,8 +337,10 @@ export class AnalysisProtocolRepository implements ProtocolStore {
         return this.loadInTx(tx, args.protocolId);
       });
     } catch (e) {
-      if (e instanceof StudyInvariantError || e instanceof StudyProtocolAlreadyFrozenError) throw e;
       if (
+        e instanceof StudyInvariantError ||
+        e instanceof StudyProtocolAlreadyFrozenError ||
+        e instanceof StudyProtocolDigestMismatchError ||
         e instanceof StudyDomainConflictError ||
         (e as { name?: string })?.name === 'StudyIdempotencyConflictError'
       ) {

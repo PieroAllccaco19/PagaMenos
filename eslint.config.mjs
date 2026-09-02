@@ -153,17 +153,30 @@ const FORBIDDEN_STUDY_ADMIN = [
       '@/services/study-experiment-admin',
       '@/services/study-recruitment',
       '@/services/study-assignment-admin',
+      '@/services/study-participant-session',
       '@/services/study-admin',
       '**/services/study-protocol-admin',
       '**/services/study-experiment-admin',
       '**/services/study-recruitment',
       '**/services/study-assignment-admin',
+      '**/services/study-participant-session',
       '**/services/study-admin',
     ],
     message:
-      'The trusted study-admin write capabilities (protocol/experiment/recruitment/assignment) are ' +
-      'off-limits to participant-facing/app code. Reach them only via @/services/study-admin from a ' +
-      'trusted admin entrypoint; participant-facing code uses the @/services barrel (consent/read).',
+      'The trusted study-admin write capabilities (protocol/experiment/recruitment/assignment) and ' +
+      'the trusted participant-session adapter are off-limits to participant-facing/app code. Reach ' +
+      'them only via @/services/study-admin from a trusted entrypoint; participant-facing code uses ' +
+      'the @/services barrel (consent/read).',
+  },
+  {
+    // A1-CODE-01: the participant-context CREATION primitive submodule. Ordinary code must never
+    // reach it (it would let a caller mint an authoritative context / choose participantId). Only the
+    // trusted session adapter and the study barrel (unrestricted src/study) may import it.
+    group: ['@/study/participant-context', '**/study/participant-context'],
+    message:
+      'The trusted participant-context creation primitive is off-limits. Participant-facing code uses ' +
+      'isTrustedParticipantContext / the TrustedParticipantContext type from @/study; contexts are ' +
+      'constructed only by the trusted session adapter (@/services/study-admin).',
   },
 ];
 
@@ -177,6 +190,7 @@ const SANCTIONED_STUDY_IMPL_FILES = [
   'src/services/study-assignment-admin.ts',
   'src/services/study-consent.ts',
   'src/services/study-analysis.ts',
+  'src/services/study-participant-session.ts',
   'src/services/study-admin.ts',
 ];
 

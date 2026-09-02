@@ -339,6 +339,7 @@ const STUDY_RAW_OWNERS: Record<string, string[]> = {
   'db/study-protocol-repository': ['services/study-protocol-admin.ts', 'services/study-analysis.ts'],
   'db/study-experiment-repository': ['services/study-experiment-admin.ts'],
   'db/study-participant-repository': ['services/study-recruitment.ts'],
+  'db/study-recruitment-repository': ['services/study-recruitment.ts'],
   'db/study-assignment-repository': ['services/study-assignment-admin.ts'],
   'db/study-consent-repository': ['services/study-consent.ts'],
 };
@@ -350,8 +351,15 @@ const STUDY_ADMIN_OWNERS: Record<string, string[]> = {
   'services/study-experiment-admin': ['services/study-admin.ts'],
   'services/study-recruitment': ['services/study-admin.ts'],
   'services/study-assignment-admin': ['services/study-admin.ts'],
+  'services/study-participant-session': ['services/study-admin.ts'],
   'services/study-analysis': ['services/study-admin.ts', 'services/index.ts'],
   'services/study-admin': [],
+};
+
+/** A1-CODE-01: the participant-context CREATION submodule. Only the pure barrel (which re-exports the
+ * checker/type, never the primitive) and the trusted session adapter may import it. */
+const STUDY_RESTRICTED_MODULES: Record<string, string[]> = {
+  'study/participant-context': ['study/index.ts', 'services/study-participant-session.ts'],
 };
 
 /** Study boundary violations for one file's source (literal specifiers only; non-literal handled by
@@ -377,6 +385,12 @@ function studyBoundaryViolations(code: string, fromSrcRel: string): string[] {
       if (isTest) continue;
       if (STUDY_ADMIN_OWNERS[mod]!.includes(fromSrcRel)) continue;
       out.push(`study-admin:${mod}`);
+      continue;
+    }
+    if (Object.prototype.hasOwnProperty.call(STUDY_RESTRICTED_MODULES, mod)) {
+      if (isTest) continue;
+      if (STUDY_RESTRICTED_MODULES[mod]!.includes(fromSrcRel)) continue;
+      out.push(`restricted:${mod}`);
     }
   }
   return out;
@@ -443,6 +457,33 @@ describe('M3.5B-A1 study capability ownership — arbitrary-module probes (§11/
     for (const code of attacks) {
       expect(studyBoundaryViolations(code, 'app/admin-page.ts'), code).not.toEqual([]);
     }
+  });
+
+  it('participant-facing/app code cannot import the participant-context creation primitive or the session adapter (A1-CODE-01)', () => {
+    const attacks = [
+      "import { createTrustedParticipantContext } from '@/study/participant-context';",
+      "import x from '@/study/participant-context.js';",
+      "const x = await import('../study/participant-context');",
+      "import { resolveTrustedParticipantContext } from '@/services/study-participant-session';",
+      "const x = await import('../services/study-participant-session');",
+    ];
+    for (const code of attacks) {
+      expect(studyBoundaryViolations(code, 'app/consent-page.ts'), code).not.toEqual([]);
+    }
+    // …but the trusted session adapter MAY import the creation primitive, and the admin barrel MAY
+    // aggregate the session adapter.
+    expect(
+      studyBoundaryViolations(
+        "import { createTrustedParticipantContext } from '@/study/participant-context';",
+        'services/study-participant-session.ts',
+      ),
+    ).toEqual([]);
+    expect(
+      studyBoundaryViolations(
+        "export { resolveTrustedParticipantContext } from './study-participant-session';",
+        'services/study-admin.ts',
+      ),
+    ).toEqual([]);
   });
 
   it('the study-admin barrel MAY aggregate the admin services (owner-allowed)', () => {

@@ -10,7 +10,11 @@ import { randomBytes } from 'node:crypto';
 
 import { type PrismaClient } from '@prisma/client';
 
-import { PARTICIPANT_REGISTER_OPERATION_SCOPE, StudyInvariantError } from '@/study';
+import {
+  PARTICIPANT_REGISTER_OPERATION_SCOPE,
+  StudyDomainConflictError,
+  StudyInvariantError,
+} from '@/study';
 
 import { prisma as defaultPrisma } from './client';
 import { assertReceiptRequestHash, isUniqueViolation, wrapStudyUnexpected } from './study-support';
@@ -58,7 +62,11 @@ function rowToDto(row: {
 }
 
 export class StudyParticipantRepository implements ParticipantStore {
-  constructor(private readonly prisma: PrismaClient = defaultPrisma) {}
+  constructor(
+    private readonly prisma: PrismaClient = defaultPrisma,
+    /** Injectable participant-code generator (spec §27 collision test). Defaults to a random code. */
+    private readonly codeGenerator: () => string = generateParticipantCode,
+  ) {}
 
   async findById(id: string): Promise<StudyParticipantDto | null> {
     const row = await this.prisma.studyParticipant.findUnique({ where: { id } });
@@ -89,7 +97,7 @@ export class StudyParticipantRepository implements ParticipantStore {
             data: {
               recruitmentSubjectKey: args.recruitmentSubjectKey,
               recruitmentKeyVersion: args.recruitmentKeyVersion,
-              participantCode: generateParticipantCode(),
+              participantCode: this.codeGenerator(),
             },
           });
           await tx.studyParticipantRegistrationReceipt.create({
@@ -133,6 +141,15 @@ export class StudyParticipantRepository implements ParticipantStore {
     // 2. Same subject via a different key ⇒ alias to the SAME participant (never a second participant).
     const existing = await this.findBySubjectKey(args.recruitmentSubjectKey);
     if (existing) {
+      // Coherence (spec §14): the same stable key MUST carry the same key version — never alias an
+      // incompatible key/version combination onto an existing participant.
+      if (existing.recruitmentKeyVersion !== args.recruitmentKeyVersion) {
+        throw new StudyDomainConflictError(
+          args.recruitmentSubjectKey,
+          existing.recruitmentKeyVersion,
+          args.recruitmentKeyVersion,
+        );
+      }
       return this.attachAlias(args, existing);
     }
     return null;

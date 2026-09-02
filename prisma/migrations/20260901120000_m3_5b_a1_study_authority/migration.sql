@@ -162,6 +162,29 @@ CREATE TABLE "study_consent_command_receipt" (
     CONSTRAINT "study_consent_command_receipt_pkey" PRIMARY KEY ("id")
 );
 
+-- Durable recruitment-subject identity issuance (A1-CODE-02): the trusted recruitment/identity
+-- boundary. No PII / no study truth. Append-only.
+-- CreateTable
+CREATE TABLE "recruitment_subject_identity" (
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "subjectAnchor" TEXT NOT NULL,
+    "recruitmentSubjectKey" TEXT NOT NULL,
+    "recruitmentKeyVersion" TEXT NOT NULL,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "recruitment_subject_identity_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "recruitment_credential_link" (
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "credential" TEXT NOT NULL,
+    "subjectAnchor" TEXT NOT NULL,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "recruitment_credential_link_pkey" PRIMARY KEY ("id")
+);
+
 -- ===================================================================================================
 -- 3. Indexes
 -- ===================================================================================================
@@ -229,6 +252,18 @@ CREATE INDEX "study_consent_command_receipt_consentEventId_idx" ON "study_consen
 -- CreateIndex
 CREATE UNIQUE INDEX "study_consent_command_receipt_operationScope_idempotencyKey_key" ON "study_consent_command_receipt"("operationScope", "idempotencyKey");
 
+-- CreateIndex
+CREATE UNIQUE INDEX "recruitment_subject_identity_subjectAnchor_key" ON "recruitment_subject_identity"("subjectAnchor");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "recruitment_subject_identity_recruitmentSubjectKey_key" ON "recruitment_subject_identity"("recruitmentSubjectKey");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "recruitment_credential_link_credential_key" ON "recruitment_credential_link"("credential");
+
+-- CreateIndex
+CREATE INDEX "recruitment_credential_link_subjectAnchor_idx" ON "recruitment_credential_link"("subjectAnchor");
+
 -- ===================================================================================================
 -- 4. Foreign keys
 -- ===================================================================================================
@@ -263,6 +298,20 @@ ALTER TABLE "study_consent_command_receipt" ADD CONSTRAINT "study_consent_comman
 -- ===================================================================================================
 -- 5. CHECK constraints (single-table, legal — spec §8.11, §9/§21)
 -- ===================================================================================================
+
+-- AnalysisProtocol lifecycle ↔ frozenAt coherence (A1-CODE-03). A DRAFT MUST have frozenAt NULL; a
+-- FROZEN row MUST have frozenAt set. Makes the malformed combinations (FROZEN+NULL, DRAFT+non-NULL)
+-- impossible at INSERT and for all persisted rows — not merely a service rule.
+ALTER TABLE "analysis_protocol" ADD CONSTRAINT "analysis_protocol_lifecycle_frozenat_ck" CHECK (
+    ("lifecycleStatus" = 'DRAFT' AND "frozenAt" IS NULL)
+    OR
+    ("lifecycleStatus" = 'FROZEN' AND "frozenAt" IS NOT NULL)
+);
+
+-- ExperimentAssignment anchor equality (A1-CODE-05): observationStartAt MUST equal enrolledAt at the
+-- DATABASE level (the service uses a single trusted instant for both; the DB forbids any divergence).
+ALTER TABLE "experiment_assignment" ADD CONSTRAINT "experiment_assignment_anchor_eq_ck"
+    CHECK ("observationStartAt" = "enrolledAt");
 
 -- Consent provenance ↔ action ↔ assertedEffectiveAt (spec §8.11). GRANTED carries all provenance and
 -- a NULL asserted effective instant; WITHDRAWN carries NULL provenance (assertedEffectiveAt free).
@@ -453,5 +502,21 @@ CREATE TRIGGER "study_consent_command_receipt_no_delete"
     BEFORE DELETE ON "study_consent_command_receipt" FOR EACH ROW EXECUTE FUNCTION "study_forbid_mutation"();
 CREATE TRIGGER "study_consent_command_receipt_no_truncate"
     BEFORE TRUNCATE ON "study_consent_command_receipt" FOR EACH STATEMENT EXECUTE FUNCTION "study_forbid_mutation"();
+
+-- Durable recruitment identity tables: append-only (A1-CODE-02). Identity issuance and credential
+-- bindings, once written, are authoritative and never mutated/deleted through ordinary operations.
+CREATE TRIGGER "recruitment_subject_identity_no_update"
+    BEFORE UPDATE ON "recruitment_subject_identity" FOR EACH ROW EXECUTE FUNCTION "study_forbid_mutation"();
+CREATE TRIGGER "recruitment_subject_identity_no_delete"
+    BEFORE DELETE ON "recruitment_subject_identity" FOR EACH ROW EXECUTE FUNCTION "study_forbid_mutation"();
+CREATE TRIGGER "recruitment_subject_identity_no_truncate"
+    BEFORE TRUNCATE ON "recruitment_subject_identity" FOR EACH STATEMENT EXECUTE FUNCTION "study_forbid_mutation"();
+
+CREATE TRIGGER "recruitment_credential_link_no_update"
+    BEFORE UPDATE ON "recruitment_credential_link" FOR EACH ROW EXECUTE FUNCTION "study_forbid_mutation"();
+CREATE TRIGGER "recruitment_credential_link_no_delete"
+    BEFORE DELETE ON "recruitment_credential_link" FOR EACH ROW EXECUTE FUNCTION "study_forbid_mutation"();
+CREATE TRIGGER "recruitment_credential_link_no_truncate"
+    BEFORE TRUNCATE ON "recruitment_credential_link" FOR EACH STATEMENT EXECUTE FUNCTION "study_forbid_mutation"();
 
 COMMIT;

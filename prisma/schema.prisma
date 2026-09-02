@@ -211,6 +211,43 @@ model Experiment {
   @@map("experiment")
 }
 
+/// DURABLE recruitment-subject identity issuance (spec §5/§10/§11; A1-CODE-02). Lives in the trusted
+/// recruitment/identity boundary, NOT study truth — no PII, no raw email. Once a subject anchor is
+/// issued a `(recruitmentSubjectKey, recruitmentKeyVersion)`, that pair is authoritative FOREVER: a
+/// later default key-version advance affects only anchors never issued before. Append-only.
+model RecruitmentSubjectIdentity {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  /// Trusted pseudonymous subject anchor (identity-boundary key; no PII).
+  subjectAnchor String @unique
+
+  /// The stable pseudonymous domain key issued for this subject, and its frozen normalization version.
+  recruitmentSubjectKey String @unique
+  recruitmentKeyVersion String
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("recruitment_subject_identity")
+}
+
+/// DURABLE credential → subject-anchor binding (spec §5/§13; A1-CODE-02). A rotating invitation/
+/// magic-link credential is bound once to a subject anchor; a credential already bound to one anchor
+/// may not silently become another (reassignment is a conflict). No PII study truth. Append-only.
+model RecruitmentCredentialLink {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  /// The rotating recruitment credential (invite/magic-link token; not study truth, not participant id).
+  credential String @unique
+
+  /// The durable subject anchor this credential belongs to.
+  subjectAnchor String
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([subjectAnchor])
+  @@map("recruitment_credential_link")
+}
+
 /// A study participant keyed by a STABLE, research-issued pseudonymous `recruitmentSubjectKey` (spec
 /// §5) — never a reissuable invitation/magic-link credential and never raw email. `participantCode`
 /// is an opaque public pseudonym generated AFTER dedup. Append-only (no UPDATE/DELETE/TRUNCATE).

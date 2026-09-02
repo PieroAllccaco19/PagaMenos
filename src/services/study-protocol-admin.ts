@@ -15,6 +15,7 @@ import {
   protocolFreezeRequestHash,
   protocolRegisterRequestHash,
   registerProtocolInputSchema,
+  StudyDomainConflictError,
   StudyInvariantError,
   type RegisterProtocolInput,
   type FreezeProtocolInput,
@@ -97,6 +98,19 @@ export async function freezeAnalysisProtocol(
   const current = await repository.findById(parsed.protocolId);
   if (!current) {
     throw new StudyInvariantError(`freeze references unknown protocol ${parsed.protocolId}`);
+  }
+  // A1-CODE-06/§25: an OPTIONAL caller precondition. If the caller asserts an expected digest, it must
+  // match the persisted state — otherwise the freeze the caller intends targets a materially different
+  // protocol state, and must NOT proceed (and NOT alias to this frozen protocol).
+  if (
+    parsed.expectedDefinitionDigest !== undefined &&
+    parsed.expectedDefinitionDigest !== current.definitionDigest
+  ) {
+    throw new StudyDomainConflictError(
+      current.protocolVersion,
+      current.definitionDigest,
+      parsed.expectedDefinitionDigest,
+    );
   }
   const requestHash = protocolFreezeRequestHash({
     protocolVersion: current.protocolVersion,

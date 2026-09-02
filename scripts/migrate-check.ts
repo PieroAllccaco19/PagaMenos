@@ -87,6 +87,16 @@ function main(): void {
       'study_consent_command_receipt_no_delete',
       'study_consent_command_receipt_no_truncate',
     ],
+    recruitment_subject_identity: [
+      'recruitment_subject_identity_no_update',
+      'recruitment_subject_identity_no_delete',
+      'recruitment_subject_identity_no_truncate',
+    ],
+    recruitment_credential_link: [
+      'recruitment_credential_link_no_update',
+      'recruitment_credential_link_no_delete',
+      'recruitment_credential_link_no_truncate',
+    ],
   };
   const seen = new Set<string>();
 
@@ -164,6 +174,8 @@ function main(): void {
     'experiment_requires_frozen_protocol', // FROZEN-protocol INSERT guard (§4)
     'experiment_frozen_protocol_guard',
     'study_consent_event_action_provenance_ck', // §8.11 single-table CHECK
+    'analysis_protocol_lifecycle_frozenat_ck', // A1-CODE-03 lifecycle↔frozenAt coherence
+    'experiment_assignment_anchor_eq_ck', // A1-CODE-05 observationStartAt == enrolledAt
     'analysis_protocol_command_receipt_scope_ck', // receipt operationScope CHECKs (§9)
     'experiment_create_receipt_scope_ck',
     'study_participant_registration_receipt_scope_ck',

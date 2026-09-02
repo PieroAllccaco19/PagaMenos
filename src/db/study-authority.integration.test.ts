@@ -9,19 +9,22 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { prisma } from '@/db/client';
+import { StudyParticipantRepository } from '@/db/study-participant-repository';
+import { StudyRecruitmentRepository } from '@/db/study-recruitment-repository';
 import {
   assignParticipant,
   createExperiment,
+  DurableRecruitmentResolver,
   freezeAnalysisProtocol,
+  linkRecruitmentCredential,
   loadFrozenProtocolForAnalysis,
   registerAnalysisProtocolDraft,
   registerStudyParticipant,
+  resolveTrustedParticipantContext,
 } from '@/services/study-admin';
 import { recordConsentGrant, recordConsentWithdrawal } from '@/services/study-consent';
 import {
   deriveConsentAuthorizationIntervals,
-  InMemoryRecruitmentResolver,
-  mintTrustedParticipantContext,
   RECRUITMENT_KEY_VERSION_V1,
   StudyAssignmentOwnershipError,
   StudyConsentInvalidTransitionError,
@@ -31,6 +34,7 @@ import {
   StudyProtocolAlreadyFrozenError,
   StudyProtocolDigestMismatchError,
   StudyProtocolNotFrozenError,
+  StudyRecruitmentResolutionError,
   StudyValidationError,
   type ConsentEventFact,
 } from '@/study';
@@ -77,7 +81,9 @@ async function consentFixture() {
     input: { experimentId: experiment.experiment.id, participantId: participant.participant.id },
     idempotencyKey: `asg-${uid()}`,
   });
-  const context = mintTrustedParticipantContext({ participantId: participant.participant.id });
+  const context = resolveTrustedParticipantContext({
+    authenticatedParticipantId: participant.participant.id,
+  });
   return {
     assignmentId: assignment.assignment.id,
     participantId: participant.participant.id,
@@ -137,7 +143,7 @@ describe('AnalysisProtocol — freeze lifecycle & fail-closed load (spec §2/§1
     ).rejects.toThrow();
   });
 
-  it('freeze is idempotent by key, and re-freezing a FROZEN protocol with a new key is rejected', async () => {
+  it('freeze is idempotent by key (same-key replay); an out-of-band FROZEN row has nothing to reconcile', async () => {
     const draft = await registerAnalysisProtocolDraft({
       input: { protocolVersion: `P-${uid()}`, definition: DEF },
       idempotencyKey: `reg-${uid()}`,
@@ -146,8 +152,17 @@ describe('AnalysisProtocol — freeze lifecycle & fail-closed load (spec §2/§1
     const a = await freezeAnalysisProtocol({ input: { protocolId: draft.protocol.id }, idempotencyKey: key });
     const b = await freezeAnalysisProtocol({ input: { protocolId: draft.protocol.id }, idempotencyKey: key });
     expect(b.protocol.id).toBe(a.protocol.id); // replay
+    // (Different-key equivalent retry now RECONCILES — see the A1-CODE-06 test.)
+
+    // A protocol frozen out-of-band (raw transition, no sanctioned freeze receipt) cannot be
+    // re-frozen through the service: there is no successful freeze to reconcile against.
+    const rawId = randomUUID();
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "analysis_protocol" ("id","protocolVersion","definitionSchemaVersion","canonicalizationVersion","definitionJson","definitionDigest","lifecycleStatus","frozenAt")
+       VALUES ('${rawId}','P-${uid()}','pagamenos.analysis-protocol-definition.v1','pagamenos.study.canonicalization.v1','${JSON.stringify(DEF)}'::jsonb,'${a.protocol.definitionDigest}','FROZEN', now())`,
+    );
     await expect(
-      freezeAnalysisProtocol({ input: { protocolId: draft.protocol.id }, idempotencyKey: `frz-${uid()}` }),
+      freezeAnalysisProtocol({ input: { protocolId: rawId }, idempotencyKey: `frz-${uid()}` }),
     ).rejects.toBeInstanceOf(StudyProtocolAlreadyFrozenError);
   });
 
@@ -184,6 +199,110 @@ describe('AnalysisProtocol — freeze lifecycle & fail-closed load (spec §2/§1
         idempotencyKey: `reg-${uid()}`,
       }),
     ).rejects.toBeInstanceOf(StudyDomainConflictError);
+  });
+
+  it('the lifecycle↔frozenAt CHECK makes malformed protocol rows impossible (A1-CODE-03)', async () => {
+    const base = (extra: string) =>
+      `INSERT INTO "analysis_protocol" ("protocolVersion","definitionSchemaVersion","canonicalizationVersion","definitionJson","definitionDigest",${extra}`;
+    // DRAFT + frozenAt NULL → allowed.
+    await expect(
+      prisma.$executeRawUnsafe(
+        base('"lifecycleStatus") VALUES ') +
+          `('P-${uid()}','ds','cz','{}'::jsonb,'d','DRAFT')`,
+      ),
+    ).resolves.toBeGreaterThanOrEqual(0);
+    // DRAFT + frozenAt NON-NULL → rejected by the named constraint.
+    await expect(
+      prisma.$executeRawUnsafe(
+        base('"lifecycleStatus","frozenAt") VALUES ') +
+          `('P-${uid()}','ds','cz','{}'::jsonb,'d','DRAFT', now())`,
+      ),
+    ).rejects.toThrow(/analysis_protocol_lifecycle_frozenat_ck/);
+    // FROZEN + frozenAt NULL → rejected by the named constraint.
+    await expect(
+      prisma.$executeRawUnsafe(
+        base('"lifecycleStatus") VALUES ') +
+          `('P-${uid()}','ds','cz','{}'::jsonb,'d','FROZEN')`,
+      ),
+    ).rejects.toThrow(/analysis_protocol_lifecycle_frozenat_ck/);
+  });
+
+  it('a digest-invalid DRAFT CANNOT be frozen (A1-CODE-04) — stays DRAFT, no receipt', async () => {
+    const id = randomUUID();
+    // Raw DRAFT whose stored digest does not match its definitionJson (frozenAt NULL for the §CODE-03 CK).
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "analysis_protocol" ("id","protocolVersion","definitionSchemaVersion","canonicalizationVersion","definitionJson","definitionDigest","lifecycleStatus")
+       VALUES ('${id}','P-${uid()}','pagamenos.analysis-protocol-definition.v1','pagamenos.study.canonicalization.v1','${JSON.stringify(DEF)}'::jsonb,'deadbeef','DRAFT')`,
+    );
+    await expect(
+      freezeAnalysisProtocol({ input: { protocolId: id }, idempotencyKey: `frz-${uid()}` }),
+    ).rejects.toBeInstanceOf(StudyProtocolDigestMismatchError);
+    const row = await prisma.analysisProtocol.findUnique({ where: { id } });
+    expect(row!.lifecycleStatus).toBe('DRAFT');
+    expect(row!.frozenAt).toBeNull();
+    expect(
+      await prisma.analysisProtocolCommandReceipt.count({ where: { analysisProtocolId: id } }),
+    ).toBe(0);
+    // And it cannot back a FROZEN experiment because it is not FROZEN.
+    await expect(
+      createExperiment({ input: { experimentCode: `E-${uid()}`, frozenProtocolId: id }, idempotencyKey: `exp-${uid()}` }),
+    ).rejects.toBeInstanceOf(StudyProtocolNotFrozenError);
+  });
+
+  it('freeze different-key retry reconciles to the existing successful freeze (A1-CODE-06)', async () => {
+    // Same-key replay.
+    const draft = await registerAnalysisProtocolDraft({
+      input: { protocolVersion: `P-${uid()}`, definition: DEF },
+      idempotencyKey: `reg-${uid()}`,
+    });
+    const k1 = `frz-${uid()}`;
+    const a = await freezeAnalysisProtocol({ input: { protocolId: draft.protocol.id }, idempotencyKey: k1 });
+    const replay = await freezeAnalysisProtocol({ input: { protocolId: draft.protocol.id }, idempotencyKey: k1 });
+    expect(replay.protocol.id).toBe(a.protocol.id);
+
+    // Different key, equivalent semantic retry (response-lost scenario) → historical FROZEN + K2 alias.
+    const k2 = `frz-${uid()}`;
+    const b = await freezeAnalysisProtocol({ input: { protocolId: draft.protocol.id }, idempotencyKey: k2 });
+    expect(b.protocol.id).toBe(a.protocol.id);
+    expect(b.protocol.lifecycleStatus).toBe('FROZEN');
+    expect(
+      await prisma.analysisProtocolCommandReceipt.count({
+        where: { analysisProtocolId: draft.protocol.id, operationScope: 'PROTOCOL_FREEZE_V1' },
+      }),
+    ).toBe(2); // K1 + K2 alias
+    // Still exactly one protocol row for that version.
+    expect(await prisma.analysisProtocol.count({ where: { protocolVersion: draft.protocol.protocolVersion } })).toBe(1);
+
+    // Non-equivalent K3: an incompatible expected digest → conflict, NO success receipt.
+    await expect(
+      freezeAnalysisProtocol({
+        input: { protocolId: draft.protocol.id, expectedDefinitionDigest: 'deadbeef' },
+        idempotencyKey: `frz-${uid()}`,
+      }),
+    ).rejects.toBeInstanceOf(StudyDomainConflictError);
+    expect(
+      await prisma.analysisProtocolCommandReceipt.count({
+        where: { analysisProtocolId: draft.protocol.id, operationScope: 'PROTOCOL_FREEZE_V1' },
+      }),
+    ).toBe(2); // unchanged — the non-equivalent retry created nothing
+  });
+
+  it('concurrent different-key freezes of one protocol → one transition, two matching receipts (A1-CODE-06)', async () => {
+    const draft = await registerAnalysisProtocolDraft({
+      input: { protocolVersion: `P-${uid()}`, definition: DEF },
+      idempotencyKey: `reg-${uid()}`,
+    });
+    const [a, b] = await Promise.all([
+      freezeAnalysisProtocol({ input: { protocolId: draft.protocol.id }, idempotencyKey: `frz-${uid()}` }),
+      freezeAnalysisProtocol({ input: { protocolId: draft.protocol.id }, idempotencyKey: `frz-${uid()}` }),
+    ]);
+    expect(a.protocol.id).toBe(b.protocol.id);
+    expect(a.protocol.lifecycleStatus).toBe('FROZEN');
+    expect(
+      await prisma.analysisProtocolCommandReceipt.count({
+        where: { analysisProtocolId: draft.protocol.id, operationScope: 'PROTOCOL_FREEZE_V1' },
+      }),
+    ).toBe(2);
   });
 });
 
@@ -234,23 +353,105 @@ describe('Experiment (spec §4/§17)', () => {
 
 // ===================================================================================================
 describe('StudyParticipant — stable identity & concurrency (spec §5/§17)', () => {
-  it('invite A → subject S → P; rotated invite B for the SAME subject → the SAME participant', async () => {
-    const resolver = new InMemoryRecruitmentResolver();
+  it('invite A → subject S → P; rotated invite B for the SAME subject → the SAME participant (durable)', async () => {
     const anchor = `subject-${uid()}`;
     const inviteA = `inviteA-${uid()}`;
     const inviteB = `inviteB-${uid()}`;
-    resolver.link(inviteA, anchor);
-    resolver.link(inviteB, anchor);
-    const p1 = await registerStudyParticipant(
-      { input: { recruitmentCredential: inviteA }, idempotencyKey: `par-${uid()}` },
-      { resolver },
-    );
-    const p2 = await registerStudyParticipant(
-      { input: { recruitmentCredential: inviteB }, idempotencyKey: `par-${uid()}` },
-      { resolver },
-    );
+    await linkRecruitmentCredential({ credential: inviteA, subjectAnchor: anchor });
+    await linkRecruitmentCredential({ credential: inviteB, subjectAnchor: anchor });
+    const p1 = await registerStudyParticipant({ input: { recruitmentCredential: inviteA }, idempotencyKey: `par-${uid()}` });
+    const p2 = await registerStudyParticipant({ input: { recruitmentCredential: inviteB }, idempotencyKey: `par-${uid()}` });
     expect(p2.participant.id).toBe(p1.participant.id);
     expect(p2.participant.recruitmentSubjectKey).toBe(p1.participant.recruitmentSubjectKey);
+  });
+
+  it('durable identity survives a default key-version advance AND a fresh resolver process (A1-CODE-02)', async () => {
+    const V2 = 'pagamenos.recruitment-subject-key.v2';
+    const anchorS = `subject-${uid()}`;
+    const credS = `inv-${uid()}`;
+    await linkRecruitmentCredential({ credential: credS, subjectAnchor: anchorS });
+
+    // Issue S under V1 via one resolver instance.
+    const resolverV1 = new DurableRecruitmentResolver(new StudyRecruitmentRepository(prisma), {
+      currentKeyVersion: RECRUITMENT_KEY_VERSION_V1,
+    });
+    const first = await resolverV1.resolveCredential(credS);
+    expect(first.recruitmentKeyVersion).toBe(RECRUITMENT_KEY_VERSION_V1);
+
+    // A brand-new resolver instance (simulating a restarted process; no in-memory state) with the
+    // default advanced to V2 STILL resolves S to its original V1 key/version.
+    const resolverV2 = new DurableRecruitmentResolver(new StudyRecruitmentRepository(prisma), {
+      currentKeyVersion: V2,
+    });
+    const again = await resolverV2.resolveCredential(credS);
+    expect(again.recruitmentSubjectKey).toBe(first.recruitmentSubjectKey);
+    expect(again.recruitmentKeyVersion).toBe(RECRUITMENT_KEY_VERSION_V1); // NOT V2
+
+    // A brand-new subject N after the advance gets V2.
+    const anchorN = `subject-${uid()}`;
+    const credN = `inv-${uid()}`;
+    await linkRecruitmentCredential({ credential: credN, subjectAnchor: anchorN });
+    const newSubject = await resolverV2.resolveCredential(credN);
+    expect(newSubject.recruitmentKeyVersion).toBe(V2);
+  });
+
+  it('a credential already bound to a subject cannot be silently reassigned (A1-CODE-02/§13)', async () => {
+    const cred = `inv-${uid()}`;
+    await linkRecruitmentCredential({ credential: cred, subjectAnchor: `subject-${uid()}` });
+    await linkRecruitmentCredential({ credential: cred, subjectAnchor: `subject-${uid()}` }).then(
+      () => {
+        throw new Error('expected reassignment conflict');
+      },
+      (e) => expect(e).toBeInstanceOf(StudyRecruitmentResolutionError),
+    );
+    // Re-linking the SAME credential to the SAME anchor is idempotent.
+    const anchor = `subject-${uid()}`;
+    const cred2 = `inv-${uid()}`;
+    await linkRecruitmentCredential({ credential: cred2, subjectAnchor: anchor });
+    await expect(
+      linkRecruitmentCredential({ credential: cred2, subjectAnchor: anchor }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('concurrent rotated credentials for the same subject → ONE durable subject → ONE participant', async () => {
+    const anchor = `subject-${uid()}`;
+    const credA = `inv-${uid()}`;
+    const credB = `inv-${uid()}`;
+    await linkRecruitmentCredential({ credential: credA, subjectAnchor: anchor });
+    await linkRecruitmentCredential({ credential: credB, subjectAnchor: anchor });
+    const [a, b] = await Promise.all([
+      registerStudyParticipant({ input: { recruitmentCredential: credA }, idempotencyKey: `par-${uid()}` }),
+      registerStudyParticipant({ input: { recruitmentCredential: credB }, idempotencyKey: `par-${uid()}` }),
+    ]);
+    expect(a.participant.id).toBe(b.participant.id);
+    expect(
+      await prisma.studyParticipant.count({
+        where: { recruitmentSubjectKey: a.participant.recruitmentSubjectKey },
+      }),
+    ).toBe(1);
+    expect(await prisma.recruitmentSubjectIdentity.count({ where: { subjectAnchor: anchor } })).toBe(1);
+  });
+
+  it('a participantCode collision is NOT treated as same-subject reconciliation (§27)', async () => {
+    const dupCode = `PART-DUP-${uid()}`;
+    const s1 = `sk-${uid()}`;
+    const s2 = `sk-${uid()}`;
+    // P1 gets the fixed code.
+    const p1 = await registerStudyParticipant(
+      { input: { recruitmentSubjectKey: s1, recruitmentKeyVersion: RECRUITMENT_KEY_VERSION_V1 }, idempotencyKey: `par-${uid()}` },
+      { repository: new StudyParticipantRepository(prisma, () => dupCode) },
+    );
+    // A DIFFERENT subject whose first code generation COLLIDES with P1's code, then a unique code.
+    let n = 0;
+    const uniqueCode = `PART-OK-${uid()}`;
+    const collideThenUnique = () => (n++ === 0 ? dupCode : uniqueCode);
+    const p2 = await registerStudyParticipant(
+      { input: { recruitmentSubjectKey: s2, recruitmentKeyVersion: RECRUITMENT_KEY_VERSION_V1 }, idempotencyKey: `par-${uid()}` },
+      { repository: new StudyParticipantRepository(prisma, collideThenUnique) },
+    );
+    expect(p2.participant.id).not.toBe(p1.participant.id); // never returned P1
+    expect(p2.participant.recruitmentSubjectKey).toBe(s2);
+    expect(p2.participant.participantCode).toBe(uniqueCode);
   });
 
   it('concurrent registrations (different keys, same subject) resolve to exactly ONE participant', async () => {
@@ -337,6 +538,27 @@ describe('ExperimentAssignment (spec §7/§17)', () => {
     await expect(
       prisma.$executeRawUnsafe(`DELETE FROM "experiment_assignment" WHERE "id"='${assignmentId}'`),
     ).rejects.toThrow();
+  });
+
+  it('the DB enforces observationStartAt == enrolledAt (A1-CODE-05)', async () => {
+    const proto = await freshFrozenProtocol();
+    const exp = await createExperiment({
+      input: { experimentCode: `E-${uid()}`, frozenProtocolId: proto.id },
+      idempotencyKey: `exp-${uid()}`,
+    });
+    const part = await registerStudyParticipant({
+      input: { recruitmentSubjectKey: `sk-${uid()}`, recruitmentKeyVersion: RECRUITMENT_KEY_VERSION_V1 },
+      idempotencyKey: `par-${uid()}`,
+    });
+    const ins = (start: string) =>
+      `INSERT INTO "experiment_assignment" ("experimentId","participantId","enrolledAt","observationStartAt")
+       VALUES ('${exp.experiment.id}','${part.participant.id}','2026-09-01T10:00:00Z', ${start})`;
+    // Equal anchors → accepted.
+    await expect(prisma.$executeRawUnsafe(ins(`'2026-09-01T10:00:00Z'`))).resolves.toBeGreaterThanOrEqual(0);
+    // Different anchors → rejected by the named constraint.
+    await expect(prisma.$executeRawUnsafe(ins(`'2026-09-02T10:00:00Z'`))).rejects.toThrow(
+      /experiment_assignment_anchor_eq_ck/,
+    );
   });
 });
 
@@ -489,16 +711,32 @@ describe('Consent — trusted own-assignment binding & DB CHECK (spec §8.11/§1
     ).rejects.toBeInstanceOf(StudyAssignmentOwnershipError);
   });
 
-  it('a non-trusted context object is rejected', async () => {
-    const { assignmentId } = await consentFixture();
-    await expect(
-      recordConsentGrant({
-        trustedParticipantContext: { participantId: 'forged' } as never,
-        assignmentId,
-        consentPayload: GRANT,
-        idempotencyKey: `cg-${uid()}`,
+  it('a non-trusted / forged / derived context object is rejected (A1-CODE-01)', async () => {
+    const a = await consentFixture();
+    const b = await consentFixture();
+    const forgeries: unknown[] = [
+      { participantId: b.participantId }, // plain lookalike
+      { ...a.context, participantId: b.participantId }, // spread of A's valid context, retargeted to B
+      Object.assign({}, a.context), // clone of A's context
+      JSON.parse(JSON.stringify(a.context)), // serialize/reconstruct
+    ];
+    for (const forged of forgeries) {
+      await expect(
+        recordConsentGrant({
+          trustedParticipantContext: forged as never,
+          assignmentId: b.assignmentId,
+          consentPayload: GRANT,
+          idempotencyKey: `cg-${uid()}`,
+        }),
+      ).rejects.toBeInstanceOf(StudyValidationError);
+    }
+    // Zero consent events/receipts were created on B's assignment by any forgery.
+    expect(await prisma.studyConsentEvent.count({ where: { assignmentId: b.assignmentId } })).toBe(0);
+    expect(
+      await prisma.studyConsentCommandReceipt.count({
+        where: { consentEvent: { assignmentId: b.assignmentId } },
       }),
-    ).rejects.toBeInstanceOf(StudyValidationError);
+    ).toBe(0);
   });
 
   it('the §8.11 CHECK rejects a GRANTED row with a non-null assertedEffectiveAt at the DB level', async () => {

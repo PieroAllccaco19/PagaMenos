@@ -90,14 +90,9 @@ export {
   type TrustedContext,
 } from './request-hash';
 
-export {
-  InMemoryRecruitmentResolver,
-  type RecruitmentResolver,
-  type ResolvedRecruitmentSubject,
-} from './recruitment';
+export { type RecruitmentResolver, type ResolvedRecruitmentSubject } from './recruitment';
 
-export {
-  mintTrustedParticipantContext,
-  isTrustedParticipantContext,
-  type TrustedParticipantContext,
-} from './participant-context';
+// The CREATION primitive is intentionally NOT re-exported here — it is reachable only from the trusted
+// session adapter (`services/study-participant-session.ts`) and tests (A1-CODE-01). Only the
+// runtime-unforgeable checker and the type are public.
+export { isTrustedParticipantContext, type TrustedParticipantContext } from './participant-context';
