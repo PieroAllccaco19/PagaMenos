@@ -81,9 +81,18 @@ describe('state machine (spec §8.3/§15)', () => {
     expect(evaluateGrant([granted(1, 10)], diff).kind).toBe('REJECT_UPDATE_NOT_SUPPORTED');
   });
   it('GRANTED + WITHDRAW → ALWAYS APPEND WITHDRAWN', () => {
-    expect(evaluateWithdraw([granted(1, 10)], null)).toEqual({ kind: 'APPEND', action: 'WITHDRAWN' });
-    expect(evaluateWithdraw([granted(1, 10)], t(5))).toEqual({ kind: 'APPEND', action: 'WITHDRAWN' }); // backdated
-    expect(evaluateWithdraw([granted(1, 10)], t(10))).toEqual({ kind: 'APPEND', action: 'WITHDRAWN' }); // same instant
+    expect(evaluateWithdraw([granted(1, 10)], null)).toEqual({
+      kind: 'APPEND',
+      action: 'WITHDRAWN',
+    });
+    expect(evaluateWithdraw([granted(1, 10)], t(5))).toEqual({
+      kind: 'APPEND',
+      action: 'WITHDRAWN',
+    }); // backdated
+    expect(evaluateWithdraw([granted(1, 10)], t(10))).toEqual({
+      kind: 'APPEND',
+      action: 'WITHDRAWN',
+    }); // same instant
   });
   it('WITHDRAWN + GRANT → REJECT (no re-consent)', () => {
     expect(evaluateGrant([granted(1, 10), withdrawn(2, 30, null)], PROV).kind).toBe(
@@ -136,23 +145,23 @@ describe('collection-time authorization vs retrospective usability (spec §8.8)'
   it('a later-RECORDED withdrawal cannot retroactively de-authorize a collection already made', () => {
     // As of collection time, the not-yet-recorded withdrawal is invisible → the collection at T25 WAS
     // authorized when it occurred (the withdrawal is only known from T50).
-    expect(wasCollectionAuthorizedAtKnownTime({ events, collectionAt: t(25), asOfKnowledgeAt: t(25) })).toBe(
-      true,
-    );
+    expect(
+      wasCollectionAuthorizedAtKnownTime({ events, collectionAt: t(25), asOfKnowledgeAt: t(25) }),
+    ).toBe(true);
     // A collection at T15 as of T15 (only the grant visible) is likewise authorized.
-    expect(wasCollectionAuthorizedAtKnownTime({ events, collectionAt: t(15), asOfKnowledgeAt: t(15) })).toBe(
-      true,
-    );
+    expect(
+      wasCollectionAuthorizedAtKnownTime({ events, collectionAt: t(15), asOfKnowledgeAt: t(15) }),
+    ).toBe(true);
   });
 
   it('once the backdated withdrawal is KNOWN, retrospective usability narrows to [T10, T20)', () => {
     // As of T60 (after the withdrawal is recorded), T15 is still usable but T25 is not.
-    expect(wasCollectionAuthorizedAtKnownTime({ events, collectionAt: t(15), asOfKnowledgeAt: t(60) })).toBe(
-      true,
-    );
-    expect(wasCollectionAuthorizedAtKnownTime({ events, collectionAt: t(25), asOfKnowledgeAt: t(60) })).toBe(
-      false,
-    );
+    expect(
+      wasCollectionAuthorizedAtKnownTime({ events, collectionAt: t(15), asOfKnowledgeAt: t(60) }),
+    ).toBe(true);
+    expect(
+      wasCollectionAuthorizedAtKnownTime({ events, collectionAt: t(25), asOfKnowledgeAt: t(60) }),
+    ).toBe(false);
     // The full retrospective interval algorithm agrees: authorization is [T10, T20).
     expect(deriveConsentAuthorizationIntervals(events)).toEqual([
       { kind: 'INTERVAL', startAt: t(10), endAt: t(20) },
@@ -165,7 +174,9 @@ describe('collection-time authorization vs retrospective usability (spec §8.8)'
 // --------------------------------------------------------------------------------------------------
 
 /** Build a valid A1 history by applying random commands through the pure state machine. */
-function buildValidHistory(commands: Array<{ kind: 'G' | 'W'; asserted: number | null }>): ConsentEventFact[] {
+function buildValidHistory(
+  commands: Array<{ kind: 'G' | 'W'; asserted: number | null }>,
+): ConsentEventFact[] {
   const events: ConsentEventFact[] = [];
   let seq = 0;
   let clock = 0;

@@ -60,7 +60,9 @@ export interface RecordConsentWithdrawalRequest {
 
 function requireTrustedContext(value: unknown): TrustedParticipantContext {
   if (!isTrustedParticipantContext(value)) {
-    throw new StudyValidationError('a trusted participant context is required for consent operations');
+    throw new StudyValidationError(
+      'a trusted participant context is required for consent operations',
+    );
   }
   return value;
 }
@@ -93,7 +95,11 @@ export async function recordConsentGrant(
 ): Promise<ConsentCommandResult> {
   const repository = deps.repository ?? studyConsentRepository;
   // 1. Schema validation FIRST — rejects a forbidden `assertedEffectiveAt` before any receipt lookup.
-  const payload = parseStudyInput(consentGrantPayloadSchema, request.consentPayload, 'consent grant payload');
+  const payload = parseStudyInput(
+    consentGrantPayloadSchema,
+    request.consentPayload,
+    'consent grant payload',
+  );
   // 2. Trusted own-assignment binding.
   const context = requireTrustedContext(request.trustedParticipantContext);
   await assertOwnAssignment(repository, context, request.assignmentId);
@@ -138,7 +144,9 @@ export async function recordConsentWithdrawal(
   await assertOwnAssignment(repository, context, request.assignmentId);
   // Normalize the asserted instant to canonical UTC so hash + equality + storage all agree (§8.6/§10).
   const assertedEffectiveAt =
-    payload.assertedEffectiveAt !== undefined ? new Date(payload.assertedEffectiveAt).toISOString() : null;
+    payload.assertedEffectiveAt !== undefined
+      ? new Date(payload.assertedEffectiveAt).toISOString()
+      : null;
   // 3. Material request hash (own assignment + assertedEffectiveAt if present + trusted identity).
   const hashContext: TrustedContext = { participantId: context.participantId };
   const requestHash = consentWithdrawRequestHash({

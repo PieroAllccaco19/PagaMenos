@@ -336,7 +336,10 @@ describe('non-literal dynamic-import closure (P35A-02 root defect §9/§10/§12)
 
 /** Raw study repository (src-relative, no ext) → the ONLY sanctioned service files that may import it. */
 const STUDY_RAW_OWNERS: Record<string, string[]> = {
-  'db/study-protocol-repository': ['services/study-protocol-admin.ts', 'services/study-analysis.ts'],
+  'db/study-protocol-repository': [
+    'services/study-protocol-admin.ts',
+    'services/study-analysis.ts',
+  ],
   'db/study-experiment-repository': ['services/study-experiment-admin.ts'],
   'db/study-participant-repository': ['services/study-recruitment.ts'],
   'db/study-recruitment-repository': ['services/study-recruitment.ts'],

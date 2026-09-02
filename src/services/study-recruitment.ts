@@ -68,13 +68,18 @@ export class DurableRecruitmentResolver implements RecruitmentResolver {
     return this.resolveDurableIdentity(subjectAnchor);
   }
 
-  resolveDirectKey(recruitmentSubjectKey: string, recruitmentKeyVersion: string): ResolvedRecruitmentSubject {
+  resolveDirectKey(
+    recruitmentSubjectKey: string,
+    recruitmentKeyVersion: string,
+  ): ResolvedRecruitmentSubject {
     if (recruitmentKeyVersion !== RECRUITMENT_KEY_VERSION_V1) {
       throw new UnsupportedStudyVersionError('recruitmentKeyVersion', recruitmentKeyVersion);
     }
     const key = recruitmentSubjectKey.trim();
     if (key.length === 0) {
-      throw new StudyRecruitmentResolutionError('recruitmentSubjectKey must be a non-empty stable key');
+      throw new StudyRecruitmentResolutionError(
+        'recruitmentSubjectKey must be a non-empty stable key',
+      );
     }
     return { recruitmentSubjectKey: key, recruitmentKeyVersion };
   }

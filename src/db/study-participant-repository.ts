@@ -172,7 +172,8 @@ export class StudyParticipantRepository implements ParticipantStore {
     } catch (e) {
       if (!isUniqueViolation(e)) throw wrapStudyUnexpected(e, 'attach participant alias');
       const receipt = await this.findReceipt(args.idempotencyKey);
-      if (!receipt) throw wrapStudyUnexpected(e, 'attach participant alias (missing after conflict)');
+      if (!receipt)
+        throw wrapStudyUnexpected(e, 'attach participant alias (missing after conflict)');
       assertReceiptRequestHash({
         operationScope: PARTICIPANT_REGISTER_OPERATION_SCOPE,
         idempotencyKey: args.idempotencyKey,

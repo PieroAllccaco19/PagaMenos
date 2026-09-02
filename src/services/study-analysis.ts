@@ -32,7 +32,8 @@ export async function loadFrozenProtocolForAnalysis(
       ? await repository.findById(ref.protocolId)
       : await repository.findByVersion(ref.protocolVersion);
   const refLabel = 'protocolId' in ref ? ref.protocolId : ref.protocolVersion;
-  if (!protocol) throw new StudyInvariantError(`analysis load references unknown protocol ${refLabel}`);
+  if (!protocol)
+    throw new StudyInvariantError(`analysis load references unknown protocol ${refLabel}`);
   if (protocol.lifecycleStatus !== 'FROZEN') throw new StudyProtocolNotFrozenError(refLabel);
   const definition = verifyProtocolDefinition({
     definitionSchemaVersion: protocol.definitionSchemaVersion,

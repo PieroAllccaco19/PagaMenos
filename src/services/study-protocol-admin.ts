@@ -4,10 +4,7 @@
 // the versioned canonicalization + digest (via `@/study`) and the trusted freeze timestamp; the raw
 // `study-protocol-repository` is reachable ONLY from here (write) and `study-analysis` (read) — the
 // module-capability AST test forbids any other importer. Participant-facing/app code cannot reach it.
-import {
-  analysisProtocolRepository,
-  type ProtocolStore,
-} from '@/db/study-protocol-repository';
+import { analysisProtocolRepository, type ProtocolStore } from '@/db/study-protocol-repository';
 import {
   buildProtocolDefinition,
   freezeProtocolInputSchema,

@@ -158,7 +158,8 @@ export class ExperimentAssignmentRepository implements AssignmentStore {
     } catch (e) {
       if (!isUniqueViolation(e)) throw wrapStudyUnexpected(e, 'attach assignment alias');
       const receipt = await this.findReceipt(args.idempotencyKey);
-      if (!receipt) throw wrapStudyUnexpected(e, 'attach assignment alias (missing after conflict)');
+      if (!receipt)
+        throw wrapStudyUnexpected(e, 'attach assignment alias (missing after conflict)');
       assertReceiptRequestHash({
         operationScope: ASSIGN_PARTICIPANT_OPERATION_SCOPE,
         idempotencyKey: args.idempotencyKey,

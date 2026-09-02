@@ -33,9 +33,14 @@ export class StudyRecruitmentRepository implements RecruitmentIdentityStore {
   constructor(private readonly prisma: PrismaClient = defaultPrisma) {}
 
   async findSubjectIdentityByAnchor(subjectAnchor: string): Promise<DurableSubjectIdentity | null> {
-    const row = await this.prisma.recruitmentSubjectIdentity.findUnique({ where: { subjectAnchor } });
+    const row = await this.prisma.recruitmentSubjectIdentity.findUnique({
+      where: { subjectAnchor },
+    });
     return row
-      ? { recruitmentSubjectKey: row.recruitmentSubjectKey, recruitmentKeyVersion: row.recruitmentKeyVersion }
+      ? {
+          recruitmentSubjectKey: row.recruitmentSubjectKey,
+          recruitmentKeyVersion: row.recruitmentKeyVersion,
+        }
       : null;
   }
 

@@ -228,7 +228,8 @@ export class AnalysisProtocolRepository implements ProtocolStore {
     } catch (e) {
       if (!isUniqueViolation(e)) throw wrapStudyUnexpected(e, 'attach protocol register alias');
       const receipt = await this.findRegisterReceipt(args.idempotencyKey);
-      if (!receipt) throw wrapStudyUnexpected(e, 'attach protocol register alias (missing after conflict)');
+      if (!receipt)
+        throw wrapStudyUnexpected(e, 'attach protocol register alias (missing after conflict)');
       assertReceiptRequestHash({
         operationScope: PROTOCOL_REGISTER_OPERATION_SCOPE,
         idempotencyKey: args.idempotencyKey,
@@ -236,7 +237,8 @@ export class AnalysisProtocolRepository implements ProtocolStore {
         attemptedRequestHash: args.requestHash,
       });
       const dto = await this.findById(receipt.analysisProtocolId);
-      if (!dto) throw new StudyInvariantError('protocol register alias resolved to missing protocol');
+      if (!dto)
+        throw new StudyInvariantError('protocol register alias resolved to missing protocol');
       return dto;
     }
   }
@@ -256,7 +258,9 @@ export class AnalysisProtocolRepository implements ProtocolStore {
             definitionJson: unknown;
             definitionDigest: string;
           }>
-        >(Prisma.sql`SELECT "id", "lifecycleStatus"::text AS "lifecycleStatus", "protocolVersion", "definitionSchemaVersion", "canonicalizationVersion", "definitionJson", "definitionDigest" FROM "analysis_protocol" WHERE "id" = ${args.protocolId}::uuid FOR UPDATE`);
+        >(
+          Prisma.sql`SELECT "id", "lifecycleStatus"::text AS "lifecycleStatus", "protocolVersion", "definitionSchemaVersion", "canonicalizationVersion", "definitionJson", "definitionDigest" FROM "analysis_protocol" WHERE "id" = ${args.protocolId}::uuid FOR UPDATE`,
+        );
         if (locked.length === 0) {
           throw new StudyInvariantError(`freeze references unknown protocol ${args.protocolId}`);
         }

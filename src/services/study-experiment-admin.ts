@@ -16,7 +16,9 @@ import {
   type TrustedContext,
 } from '@/study';
 
-const EXPERIMENT_ADMIN_CONTEXT: TrustedContext = { capability: 'ExperimentAdministrationCapability' };
+const EXPERIMENT_ADMIN_CONTEXT: TrustedContext = {
+  capability: 'ExperimentAdministrationCapability',
+};
 
 export interface ExperimentAdminDeps {
   repository?: ExperimentStore;

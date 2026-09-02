@@ -79,7 +79,8 @@ export class ExperimentRepository implements ExperimentStore {
       where: { id: protocolId },
       select: { lifecycleStatus: true },
     });
-    if (!proto) throw new StudyInvariantError(`experiment references unknown protocol ${protocolId}`);
+    if (!proto)
+      throw new StudyInvariantError(`experiment references unknown protocol ${protocolId}`);
     if (proto.lifecycleStatus !== 'FROZEN') throw new StudyProtocolNotFrozenError(protocolId);
   }
 
@@ -157,7 +158,8 @@ export class ExperimentRepository implements ExperimentStore {
     } catch (e) {
       if (!isUniqueViolation(e)) throw wrapStudyUnexpected(e, 'attach experiment alias');
       const receipt = await this.findReceipt(args.idempotencyKey);
-      if (!receipt) throw wrapStudyUnexpected(e, 'attach experiment alias (missing after conflict)');
+      if (!receipt)
+        throw wrapStudyUnexpected(e, 'attach experiment alias (missing after conflict)');
       assertReceiptRequestHash({
         operationScope: EXPERIMENT_CREATE_OPERATION_SCOPE,
         idempotencyKey: args.idempotencyKey,

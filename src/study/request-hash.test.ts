@@ -48,15 +48,23 @@ describe('GRANT hash (spec §10)', () => {
 describe('WITHDRAW hash (spec §10/§18)', () => {
   const base = { assignmentId: 'a1', assertedEffectiveAt: null as string | null, context: CTX };
   it('present vs absent assertedEffectiveAt is material', () => {
-    expect(consentWithdrawRequestHash({ ...base, assertedEffectiveAt: '2026-09-01T00:00:00.000Z' })).not.toBe(
-      consentWithdrawRequestHash(base),
-    );
+    expect(
+      consentWithdrawRequestHash({ ...base, assertedEffectiveAt: '2026-09-01T00:00:00.000Z' }),
+    ).not.toBe(consentWithdrawRequestHash(base));
   });
   it('different asserted instants differ; identical are stable', () => {
-    const a = consentWithdrawRequestHash({ ...base, assertedEffectiveAt: '2026-09-01T00:00:00.000Z' });
-    const b = consentWithdrawRequestHash({ ...base, assertedEffectiveAt: '2026-09-01T00:05:00.000Z' });
+    const a = consentWithdrawRequestHash({
+      ...base,
+      assertedEffectiveAt: '2026-09-01T00:00:00.000Z',
+    });
+    const b = consentWithdrawRequestHash({
+      ...base,
+      assertedEffectiveAt: '2026-09-01T00:05:00.000Z',
+    });
     expect(a).not.toBe(b);
-    expect(a).toBe(consentWithdrawRequestHash({ ...base, assertedEffectiveAt: '2026-09-01T00:00:00.000Z' }));
+    expect(a).toBe(
+      consentWithdrawRequestHash({ ...base, assertedEffectiveAt: '2026-09-01T00:00:00.000Z' }),
+    );
   });
 });
 

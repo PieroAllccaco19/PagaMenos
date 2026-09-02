@@ -16,7 +16,9 @@ import {
   type TrustedContext,
 } from '@/study';
 
-const ASSIGNMENT_ADMIN_CONTEXT: TrustedContext = { capability: 'AssignmentAdministrationCapability' };
+const ASSIGNMENT_ADMIN_CONTEXT: TrustedContext = {
+  capability: 'AssignmentAdministrationCapability',
+};
 
 export interface AssignmentAdminDeps {
   repository?: AssignmentStore;
@@ -33,11 +35,7 @@ export async function assignParticipant(
   deps: AssignmentAdminDeps = {},
 ): Promise<{ assignment: ExperimentAssignmentDto }> {
   const repository = deps.repository ?? experimentAssignmentRepository;
-  const parsed = parseStudyInput(
-    assignParticipantInputSchema,
-    request.input,
-    'assignment input',
-  );
+  const parsed = parseStudyInput(assignParticipantInputSchema, request.input, 'assignment input');
   const requestHash = assignParticipantRequestHash({
     experimentId: parsed.experimentId,
     participantId: parsed.participantId,

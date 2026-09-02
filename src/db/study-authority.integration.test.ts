@@ -74,7 +74,10 @@ async function consentFixture() {
     idempotencyKey: `exp-${uid()}`,
   });
   const participant = await registerStudyParticipant({
-    input: { recruitmentSubjectKey: `sk-${uid()}`, recruitmentKeyVersion: RECRUITMENT_KEY_VERSION_V1 },
+    input: {
+      recruitmentSubjectKey: `sk-${uid()}`,
+      recruitmentKeyVersion: RECRUITMENT_KEY_VERSION_V1,
+    },
     idempotencyKey: `par-${uid()}`,
   });
   const assignment = await assignParticipant({
@@ -149,8 +152,14 @@ describe('AnalysisProtocol — freeze lifecycle & fail-closed load (spec §2/§1
       idempotencyKey: `reg-${uid()}`,
     });
     const key = `frz-${uid()}`;
-    const a = await freezeAnalysisProtocol({ input: { protocolId: draft.protocol.id }, idempotencyKey: key });
-    const b = await freezeAnalysisProtocol({ input: { protocolId: draft.protocol.id }, idempotencyKey: key });
+    const a = await freezeAnalysisProtocol({
+      input: { protocolId: draft.protocol.id },
+      idempotencyKey: key,
+    });
+    const b = await freezeAnalysisProtocol({
+      input: { protocolId: draft.protocol.id },
+      idempotencyKey: key,
+    });
     expect(b.protocol.id).toBe(a.protocol.id); // replay
     // (Different-key equivalent retry now RECONCILES — see the A1-CODE-06 test.)
 
@@ -185,8 +194,14 @@ describe('AnalysisProtocol — freeze lifecycle & fail-closed load (spec §2/§1
   it('register idempotency: same key replays; different key + same content aliases; different content conflicts', async () => {
     const protocolVersion = `P-${uid()}`;
     const key = `reg-${uid()}`;
-    const a = await registerAnalysisProtocolDraft({ input: { protocolVersion, definition: DEF }, idempotencyKey: key });
-    const replay = await registerAnalysisProtocolDraft({ input: { protocolVersion, definition: DEF }, idempotencyKey: key });
+    const a = await registerAnalysisProtocolDraft({
+      input: { protocolVersion, definition: DEF },
+      idempotencyKey: key,
+    });
+    const replay = await registerAnalysisProtocolDraft({
+      input: { protocolVersion, definition: DEF },
+      idempotencyKey: key,
+    });
     expect(replay.protocol.id).toBe(a.protocol.id);
     const alias = await registerAnalysisProtocolDraft({
       input: { protocolVersion, definition: DEF },
@@ -207,8 +222,7 @@ describe('AnalysisProtocol — freeze lifecycle & fail-closed load (spec §2/§1
     // DRAFT + frozenAt NULL → allowed.
     await expect(
       prisma.$executeRawUnsafe(
-        base('"lifecycleStatus") VALUES ') +
-          `('P-${uid()}','ds','cz','{}'::jsonb,'d','DRAFT')`,
+        base('"lifecycleStatus") VALUES ') + `('P-${uid()}','ds','cz','{}'::jsonb,'d','DRAFT')`,
       ),
     ).resolves.toBeGreaterThanOrEqual(0);
     // DRAFT + frozenAt NON-NULL → rejected by the named constraint.
@@ -221,8 +235,7 @@ describe('AnalysisProtocol — freeze lifecycle & fail-closed load (spec §2/§1
     // FROZEN + frozenAt NULL → rejected by the named constraint.
     await expect(
       prisma.$executeRawUnsafe(
-        base('"lifecycleStatus") VALUES ') +
-          `('P-${uid()}','ds','cz','{}'::jsonb,'d','FROZEN')`,
+        base('"lifecycleStatus") VALUES ') + `('P-${uid()}','ds','cz','{}'::jsonb,'d','FROZEN')`,
       ),
     ).rejects.toThrow(/analysis_protocol_lifecycle_frozenat_ck/);
   });
@@ -245,7 +258,10 @@ describe('AnalysisProtocol — freeze lifecycle & fail-closed load (spec §2/§1
     ).toBe(0);
     // And it cannot back a FROZEN experiment because it is not FROZEN.
     await expect(
-      createExperiment({ input: { experimentCode: `E-${uid()}`, frozenProtocolId: id }, idempotencyKey: `exp-${uid()}` }),
+      createExperiment({
+        input: { experimentCode: `E-${uid()}`, frozenProtocolId: id },
+        idempotencyKey: `exp-${uid()}`,
+      }),
     ).rejects.toBeInstanceOf(StudyProtocolNotFrozenError);
   });
 
@@ -256,13 +272,22 @@ describe('AnalysisProtocol — freeze lifecycle & fail-closed load (spec §2/§1
       idempotencyKey: `reg-${uid()}`,
     });
     const k1 = `frz-${uid()}`;
-    const a = await freezeAnalysisProtocol({ input: { protocolId: draft.protocol.id }, idempotencyKey: k1 });
-    const replay = await freezeAnalysisProtocol({ input: { protocolId: draft.protocol.id }, idempotencyKey: k1 });
+    const a = await freezeAnalysisProtocol({
+      input: { protocolId: draft.protocol.id },
+      idempotencyKey: k1,
+    });
+    const replay = await freezeAnalysisProtocol({
+      input: { protocolId: draft.protocol.id },
+      idempotencyKey: k1,
+    });
     expect(replay.protocol.id).toBe(a.protocol.id);
 
     // Different key, equivalent semantic retry (response-lost scenario) → historical FROZEN + K2 alias.
     const k2 = `frz-${uid()}`;
-    const b = await freezeAnalysisProtocol({ input: { protocolId: draft.protocol.id }, idempotencyKey: k2 });
+    const b = await freezeAnalysisProtocol({
+      input: { protocolId: draft.protocol.id },
+      idempotencyKey: k2,
+    });
     expect(b.protocol.id).toBe(a.protocol.id);
     expect(b.protocol.lifecycleStatus).toBe('FROZEN');
     expect(
@@ -271,7 +296,11 @@ describe('AnalysisProtocol — freeze lifecycle & fail-closed load (spec §2/§1
       }),
     ).toBe(2); // K1 + K2 alias
     // Still exactly one protocol row for that version.
-    expect(await prisma.analysisProtocol.count({ where: { protocolVersion: draft.protocol.protocolVersion } })).toBe(1);
+    expect(
+      await prisma.analysisProtocol.count({
+        where: { protocolVersion: draft.protocol.protocolVersion },
+      }),
+    ).toBe(1);
 
     // Non-equivalent K3: an incompatible expected digest → conflict, NO success receipt.
     await expect(
@@ -293,8 +322,14 @@ describe('AnalysisProtocol — freeze lifecycle & fail-closed load (spec §2/§1
       idempotencyKey: `reg-${uid()}`,
     });
     const [a, b] = await Promise.all([
-      freezeAnalysisProtocol({ input: { protocolId: draft.protocol.id }, idempotencyKey: `frz-${uid()}` }),
-      freezeAnalysisProtocol({ input: { protocolId: draft.protocol.id }, idempotencyKey: `frz-${uid()}` }),
+      freezeAnalysisProtocol({
+        input: { protocolId: draft.protocol.id },
+        idempotencyKey: `frz-${uid()}`,
+      }),
+      freezeAnalysisProtocol({
+        input: { protocolId: draft.protocol.id },
+        idempotencyKey: `frz-${uid()}`,
+      }),
     ]);
     expect(a.protocol.id).toBe(b.protocol.id);
     expect(a.protocol.lifecycleStatus).toBe('FROZEN');
@@ -330,7 +365,11 @@ describe('Experiment (spec §4/§17)', () => {
     await expect(
       createExperiment({
         // recruitmentPolicy is not part of the schema (strict) — rejected at validation.
-        input: { experimentCode: `E-${uid()}`, frozenProtocolId: proto.id, recruitmentPolicy: 'x' } as never,
+        input: {
+          experimentCode: `E-${uid()}`,
+          frozenProtocolId: proto.id,
+          recruitmentPolicy: 'x',
+        } as never,
         idempotencyKey: `exp-${uid()}`,
       }),
     ).rejects.toBeInstanceOf(StudyValidationError);
@@ -343,7 +382,9 @@ describe('Experiment (spec §4/§17)', () => {
       idempotencyKey: `exp-${uid()}`,
     });
     await expect(
-      prisma.$executeRawUnsafe(`UPDATE "experiment" SET "experimentCode"='X' WHERE "id"='${exp.experiment.id}'`),
+      prisma.$executeRawUnsafe(
+        `UPDATE "experiment" SET "experimentCode"='X' WHERE "id"='${exp.experiment.id}'`,
+      ),
     ).rejects.toThrow();
     await expect(
       prisma.$executeRawUnsafe(`DELETE FROM "experiment" WHERE "id"='${exp.experiment.id}'`),
@@ -359,8 +400,14 @@ describe('StudyParticipant — stable identity & concurrency (spec §5/§17)', (
     const inviteB = `inviteB-${uid()}`;
     await linkRecruitmentCredential({ credential: inviteA, subjectAnchor: anchor });
     await linkRecruitmentCredential({ credential: inviteB, subjectAnchor: anchor });
-    const p1 = await registerStudyParticipant({ input: { recruitmentCredential: inviteA }, idempotencyKey: `par-${uid()}` });
-    const p2 = await registerStudyParticipant({ input: { recruitmentCredential: inviteB }, idempotencyKey: `par-${uid()}` });
+    const p1 = await registerStudyParticipant({
+      input: { recruitmentCredential: inviteA },
+      idempotencyKey: `par-${uid()}`,
+    });
+    const p2 = await registerStudyParticipant({
+      input: { recruitmentCredential: inviteB },
+      idempotencyKey: `par-${uid()}`,
+    });
     expect(p2.participant.id).toBe(p1.participant.id);
     expect(p2.participant.recruitmentSubjectKey).toBe(p1.participant.recruitmentSubjectKey);
   });
@@ -420,8 +467,14 @@ describe('StudyParticipant — stable identity & concurrency (spec §5/§17)', (
     await linkRecruitmentCredential({ credential: credA, subjectAnchor: anchor });
     await linkRecruitmentCredential({ credential: credB, subjectAnchor: anchor });
     const [a, b] = await Promise.all([
-      registerStudyParticipant({ input: { recruitmentCredential: credA }, idempotencyKey: `par-${uid()}` }),
-      registerStudyParticipant({ input: { recruitmentCredential: credB }, idempotencyKey: `par-${uid()}` }),
+      registerStudyParticipant({
+        input: { recruitmentCredential: credA },
+        idempotencyKey: `par-${uid()}`,
+      }),
+      registerStudyParticipant({
+        input: { recruitmentCredential: credB },
+        idempotencyKey: `par-${uid()}`,
+      }),
     ]);
     expect(a.participant.id).toBe(b.participant.id);
     expect(
@@ -429,7 +482,9 @@ describe('StudyParticipant — stable identity & concurrency (spec §5/§17)', (
         where: { recruitmentSubjectKey: a.participant.recruitmentSubjectKey },
       }),
     ).toBe(1);
-    expect(await prisma.recruitmentSubjectIdentity.count({ where: { subjectAnchor: anchor } })).toBe(1);
+    expect(
+      await prisma.recruitmentSubjectIdentity.count({ where: { subjectAnchor: anchor } }),
+    ).toBe(1);
   });
 
   it('a participantCode collision is NOT treated as same-subject reconciliation (§27)', async () => {
@@ -438,7 +493,10 @@ describe('StudyParticipant — stable identity & concurrency (spec §5/§17)', (
     const s2 = `sk-${uid()}`;
     // P1 gets the fixed code.
     const p1 = await registerStudyParticipant(
-      { input: { recruitmentSubjectKey: s1, recruitmentKeyVersion: RECRUITMENT_KEY_VERSION_V1 }, idempotencyKey: `par-${uid()}` },
+      {
+        input: { recruitmentSubjectKey: s1, recruitmentKeyVersion: RECRUITMENT_KEY_VERSION_V1 },
+        idempotencyKey: `par-${uid()}`,
+      },
       { repository: new StudyParticipantRepository(prisma, () => dupCode) },
     );
     // A DIFFERENT subject whose first code generation COLLIDES with P1's code, then a unique code.
@@ -446,7 +504,10 @@ describe('StudyParticipant — stable identity & concurrency (spec §5/§17)', (
     const uniqueCode = `PART-OK-${uid()}`;
     const collideThenUnique = () => (n++ === 0 ? dupCode : uniqueCode);
     const p2 = await registerStudyParticipant(
-      { input: { recruitmentSubjectKey: s2, recruitmentKeyVersion: RECRUITMENT_KEY_VERSION_V1 }, idempotencyKey: `par-${uid()}` },
+      {
+        input: { recruitmentSubjectKey: s2, recruitmentKeyVersion: RECRUITMENT_KEY_VERSION_V1 },
+        idempotencyKey: `par-${uid()}`,
+      },
       { repository: new StudyParticipantRepository(prisma, collideThenUnique) },
     );
     expect(p2.participant.id).not.toBe(p1.participant.id); // never returned P1
@@ -458,28 +519,42 @@ describe('StudyParticipant — stable identity & concurrency (spec §5/§17)', (
     const subjectKey = `sk-${uid()}`;
     const [a, b] = await Promise.all([
       registerStudyParticipant({
-        input: { recruitmentSubjectKey: subjectKey, recruitmentKeyVersion: RECRUITMENT_KEY_VERSION_V1 },
+        input: {
+          recruitmentSubjectKey: subjectKey,
+          recruitmentKeyVersion: RECRUITMENT_KEY_VERSION_V1,
+        },
         idempotencyKey: `par-${uid()}`,
       }),
       registerStudyParticipant({
-        input: { recruitmentSubjectKey: subjectKey, recruitmentKeyVersion: RECRUITMENT_KEY_VERSION_V1 },
+        input: {
+          recruitmentSubjectKey: subjectKey,
+          recruitmentKeyVersion: RECRUITMENT_KEY_VERSION_V1,
+        },
         idempotencyKey: `par-${uid()}`,
       }),
     ]);
     expect(a.participant.id).toBe(b.participant.id);
-    const count = await prisma.studyParticipant.count({ where: { recruitmentSubjectKey: subjectKey } });
+    const count = await prisma.studyParticipant.count({
+      where: { recruitmentSubjectKey: subjectKey },
+    });
     expect(count).toBe(1);
   });
 
   it('same transport key + a DIFFERENT subject → idempotency conflict', async () => {
     const key = `par-${uid()}`;
     await registerStudyParticipant({
-      input: { recruitmentSubjectKey: `sk-${uid()}`, recruitmentKeyVersion: RECRUITMENT_KEY_VERSION_V1 },
+      input: {
+        recruitmentSubjectKey: `sk-${uid()}`,
+        recruitmentKeyVersion: RECRUITMENT_KEY_VERSION_V1,
+      },
       idempotencyKey: key,
     });
     await expect(
       registerStudyParticipant({
-        input: { recruitmentSubjectKey: `sk-${uid()}`, recruitmentKeyVersion: RECRUITMENT_KEY_VERSION_V1 },
+        input: {
+          recruitmentSubjectKey: `sk-${uid()}`,
+          recruitmentKeyVersion: RECRUITMENT_KEY_VERSION_V1,
+        },
         idempotencyKey: key,
       }),
     ).rejects.toBeInstanceOf(StudyIdempotencyConflictError);
@@ -487,11 +562,16 @@ describe('StudyParticipant — stable identity & concurrency (spec §5/§17)', (
 
   it('is append-only at the DB level (UPDATE rejected)', async () => {
     const p = await registerStudyParticipant({
-      input: { recruitmentSubjectKey: `sk-${uid()}`, recruitmentKeyVersion: RECRUITMENT_KEY_VERSION_V1 },
+      input: {
+        recruitmentSubjectKey: `sk-${uid()}`,
+        recruitmentKeyVersion: RECRUITMENT_KEY_VERSION_V1,
+      },
       idempotencyKey: `par-${uid()}`,
     });
     await expect(
-      prisma.$executeRawUnsafe(`UPDATE "study_participant" SET "participantCode"='X' WHERE "id"='${p.participant.id}'`),
+      prisma.$executeRawUnsafe(
+        `UPDATE "study_participant" SET "participantCode"='X' WHERE "id"='${p.participant.id}'`,
+      ),
     ).rejects.toThrow();
   });
 });
@@ -505,7 +585,10 @@ describe('ExperimentAssignment (spec §7/§17)', () => {
       idempotencyKey: `exp-${uid()}`,
     });
     const part = await registerStudyParticipant({
-      input: { recruitmentSubjectKey: `sk-${uid()}`, recruitmentKeyVersion: RECRUITMENT_KEY_VERSION_V1 },
+      input: {
+        recruitmentSubjectKey: `sk-${uid()}`,
+        recruitmentKeyVersion: RECRUITMENT_KEY_VERSION_V1,
+      },
       idempotencyKey: `par-${uid()}`,
     });
     const a = await assignParticipant({
@@ -528,12 +611,18 @@ describe('ExperimentAssignment (spec §7/§17)', () => {
     const { assignmentId } = await consentFixture();
     await expect(
       assignParticipant({
-        input: { experimentId: 'x', participantId: 'y', enrolledAt: '2020-01-01T00:00:00Z' } as never,
+        input: {
+          experimentId: 'x',
+          participantId: 'y',
+          enrolledAt: '2020-01-01T00:00:00Z',
+        } as never,
         idempotencyKey: `asg-${uid()}`,
       }),
     ).rejects.toBeInstanceOf(StudyValidationError);
     await expect(
-      prisma.$executeRawUnsafe(`UPDATE "experiment_assignment" SET "enrolledAt"=now() WHERE "id"='${assignmentId}'`),
+      prisma.$executeRawUnsafe(
+        `UPDATE "experiment_assignment" SET "enrolledAt"=now() WHERE "id"='${assignmentId}'`,
+      ),
     ).rejects.toThrow();
     await expect(
       prisma.$executeRawUnsafe(`DELETE FROM "experiment_assignment" WHERE "id"='${assignmentId}'`),
@@ -547,14 +636,19 @@ describe('ExperimentAssignment (spec §7/§17)', () => {
       idempotencyKey: `exp-${uid()}`,
     });
     const part = await registerStudyParticipant({
-      input: { recruitmentSubjectKey: `sk-${uid()}`, recruitmentKeyVersion: RECRUITMENT_KEY_VERSION_V1 },
+      input: {
+        recruitmentSubjectKey: `sk-${uid()}`,
+        recruitmentKeyVersion: RECRUITMENT_KEY_VERSION_V1,
+      },
       idempotencyKey: `par-${uid()}`,
     });
     const ins = (start: string) =>
       `INSERT INTO "experiment_assignment" ("experimentId","participantId","enrolledAt","observationStartAt")
        VALUES ('${exp.experiment.id}','${part.participant.id}','2026-09-01T10:00:00Z', ${start})`;
     // Equal anchors → accepted.
-    await expect(prisma.$executeRawUnsafe(ins(`'2026-09-01T10:00:00Z'`))).resolves.toBeGreaterThanOrEqual(0);
+    await expect(
+      prisma.$executeRawUnsafe(ins(`'2026-09-01T10:00:00Z'`)),
+    ).resolves.toBeGreaterThanOrEqual(0);
     // Different anchors → rejected by the named constraint.
     await expect(prisma.$executeRawUnsafe(ins(`'2026-09-02T10:00:00Z'`))).rejects.toThrow(
       /experiment_assignment_anchor_eq_ck/,
@@ -567,7 +661,12 @@ describe('Consent — GRANT validation & idempotency (spec §8/§17)', () => {
   it('rejects a GRANT bearing assertedEffectiveAt BEFORE any receipt lookup (even after a valid receipt)', async () => {
     const { assignmentId, context } = await consentFixture();
     const key = `cg-${uid()}`;
-    const ok = await recordConsentGrant({ trustedParticipantContext: context, assignmentId, consentPayload: GRANT, idempotencyKey: key });
+    const ok = await recordConsentGrant({
+      trustedParticipantContext: context,
+      assignmentId,
+      consentPayload: GRANT,
+      idempotencyKey: key,
+    });
     expect(ok.resultKind).toBe('EVENT_APPENDED');
     // Retry the SAME key but with a forbidden assertedEffectiveAt → validation error, NOT a replay.
     await expect(
@@ -583,7 +682,12 @@ describe('Consent — GRANT validation & idempotency (spec §8/§17)', () => {
   it('same key + different provenance → idempotency conflict', async () => {
     const { assignmentId, context } = await consentFixture();
     const key = `cg-${uid()}`;
-    await recordConsentGrant({ trustedParticipantContext: context, assignmentId, consentPayload: GRANT, idempotencyKey: key });
+    await recordConsentGrant({
+      trustedParticipantContext: context,
+      assignmentId,
+      consentPayload: GRANT,
+      idempotencyKey: key,
+    });
     await expect(
       recordConsentGrant({
         trustedParticipantContext: context,
@@ -596,15 +700,30 @@ describe('Consent — GRANT validation & idempotency (spec §8/§17)', () => {
 
   it('exact repeated GRANT (different key) → NO_OP_EFFECTIVE_STATE, no new event', async () => {
     const { assignmentId, context } = await consentFixture();
-    await recordConsentGrant({ trustedParticipantContext: context, assignmentId, consentPayload: GRANT, idempotencyKey: `cg-${uid()}` });
-    const again = await recordConsentGrant({ trustedParticipantContext: context, assignmentId, consentPayload: GRANT, idempotencyKey: `cg-${uid()}` });
+    await recordConsentGrant({
+      trustedParticipantContext: context,
+      assignmentId,
+      consentPayload: GRANT,
+      idempotencyKey: `cg-${uid()}`,
+    });
+    const again = await recordConsentGrant({
+      trustedParticipantContext: context,
+      assignmentId,
+      consentPayload: GRANT,
+      idempotencyKey: `cg-${uid()}`,
+    });
     expect(again.resultKind).toBe('NO_OP_EFFECTIVE_STATE');
     expect((await loadEvents(assignmentId)).length).toBe(1);
   });
 
   it('GRANTED + materially different GRANT → StudyConsentUpdateNotSupportedError', async () => {
     const { assignmentId, context } = await consentFixture();
-    await recordConsentGrant({ trustedParticipantContext: context, assignmentId, consentPayload: GRANT, idempotencyKey: `cg-${uid()}` });
+    await recordConsentGrant({
+      trustedParticipantContext: context,
+      assignmentId,
+      consentPayload: GRANT,
+      idempotencyKey: `cg-${uid()}`,
+    });
     await expect(
       recordConsentGrant({
         trustedParticipantContext: context,
@@ -618,8 +737,18 @@ describe('Consent — GRANT validation & idempotency (spec §8/§17)', () => {
   it('concurrent identical GRANTs on one assignment append exactly ONE event (row-lock serialization)', async () => {
     const { assignmentId, context } = await consentFixture();
     await Promise.all([
-      recordConsentGrant({ trustedParticipantContext: context, assignmentId, consentPayload: GRANT, idempotencyKey: `cg-${uid()}` }),
-      recordConsentGrant({ trustedParticipantContext: context, assignmentId, consentPayload: GRANT, idempotencyKey: `cg-${uid()}` }),
+      recordConsentGrant({
+        trustedParticipantContext: context,
+        assignmentId,
+        consentPayload: GRANT,
+        idempotencyKey: `cg-${uid()}`,
+      }),
+      recordConsentGrant({
+        trustedParticipantContext: context,
+        assignmentId,
+        consentPayload: GRANT,
+        idempotencyKey: `cg-${uid()}`,
+      }),
     ]);
     expect((await loadEvents(assignmentId)).length).toBe(1);
   });
@@ -630,20 +759,43 @@ describe('Consent — withdrawal, transitions & intervals (spec §8.3/§8.6/§17
   it('NO_CONSENT → WITHDRAW rejects; WITHDRAWN → GRANT rejects (no re-consent)', async () => {
     const f1 = await consentFixture();
     await expect(
-      recordConsentWithdrawal({ trustedParticipantContext: f1.context, assignmentId: f1.assignmentId, idempotencyKey: `cw-${uid()}` }),
+      recordConsentWithdrawal({
+        trustedParticipantContext: f1.context,
+        assignmentId: f1.assignmentId,
+        idempotencyKey: `cw-${uid()}`,
+      }),
     ).rejects.toBeInstanceOf(StudyConsentInvalidTransitionError);
 
     const f2 = await consentFixture();
-    await recordConsentGrant({ trustedParticipantContext: f2.context, assignmentId: f2.assignmentId, consentPayload: GRANT, idempotencyKey: `cg-${uid()}` });
-    await recordConsentWithdrawal({ trustedParticipantContext: f2.context, assignmentId: f2.assignmentId, idempotencyKey: `cw-${uid()}` });
+    await recordConsentGrant({
+      trustedParticipantContext: f2.context,
+      assignmentId: f2.assignmentId,
+      consentPayload: GRANT,
+      idempotencyKey: `cg-${uid()}`,
+    });
+    await recordConsentWithdrawal({
+      trustedParticipantContext: f2.context,
+      assignmentId: f2.assignmentId,
+      idempotencyKey: `cw-${uid()}`,
+    });
     await expect(
-      recordConsentGrant({ trustedParticipantContext: f2.context, assignmentId: f2.assignmentId, consentPayload: GRANT, idempotencyKey: `cg-${uid()}` }),
+      recordConsentGrant({
+        trustedParticipantContext: f2.context,
+        assignmentId: f2.assignmentId,
+        consentPayload: GRANT,
+        idempotencyKey: `cg-${uid()}`,
+      }),
     ).rejects.toBeInstanceOf(StudyConsentInvalidTransitionError);
   });
 
   it('a backdated withdrawal ALWAYS persists (EMPTY interval), never rejected', async () => {
     const { assignmentId, context } = await consentFixture();
-    const grant = await recordConsentGrant({ trustedParticipantContext: context, assignmentId, consentPayload: GRANT, idempotencyKey: `cg-${uid()}` });
+    const grant = await recordConsentGrant({
+      trustedParticipantContext: context,
+      assignmentId,
+      consentPayload: GRANT,
+      idempotencyKey: `cg-${uid()}`,
+    });
     expect(grant.resultKind).toBe('EVENT_APPENDED');
     // Assert an effective instant BEFORE the grant's trusted capturedAt → closeAt ≤ startAt.
     const withdraw = await recordConsentWithdrawal({
@@ -660,8 +812,17 @@ describe('Consent — withdrawal, transitions & intervals (spec §8.3/§8.6/§17
 
   it('a normal withdrawal yields a non-empty interval [grant.capturedAt, withdraw close)', async () => {
     const { assignmentId, context } = await consentFixture();
-    await recordConsentGrant({ trustedParticipantContext: context, assignmentId, consentPayload: GRANT, idempotencyKey: `cg-${uid()}` });
-    await recordConsentWithdrawal({ trustedParticipantContext: context, assignmentId, idempotencyKey: `cw-${uid()}` });
+    await recordConsentGrant({
+      trustedParticipantContext: context,
+      assignmentId,
+      consentPayload: GRANT,
+      idempotencyKey: `cg-${uid()}`,
+    });
+    await recordConsentWithdrawal({
+      trustedParticipantContext: context,
+      assignmentId,
+      idempotencyKey: `cw-${uid()}`,
+    });
     const events = await loadEvents(assignmentId);
     const intervals = deriveConsentAuthorizationIntervals(events);
     expect(intervals).toHaveLength(1);
@@ -670,28 +831,58 @@ describe('Consent — withdrawal, transitions & intervals (spec §8.3/§8.6/§17
 
   it('repeated-withdrawal receipts: replay / NO_OP / CORRECTION_NOT_APPLIED / conflict (spec §8.13)', async () => {
     const { assignmentId, context } = await consentFixture();
-    await recordConsentGrant({ trustedParticipantContext: context, assignmentId, consentPayload: GRANT, idempotencyKey: `cg-${uid()}` });
+    await recordConsentGrant({
+      trustedParticipantContext: context,
+      assignmentId,
+      consentPayload: GRANT,
+      idempotencyKey: `cg-${uid()}`,
+    });
     const wKey = `cw-${uid()}`;
     const asserted = { assertedEffectiveAt: '2026-09-01T00:00:00.000Z' };
-    const first = await recordConsentWithdrawal({ trustedParticipantContext: context, assignmentId, withdrawPayload: asserted, idempotencyKey: wKey });
+    const first = await recordConsentWithdrawal({
+      trustedParticipantContext: context,
+      assignmentId,
+      withdrawPayload: asserted,
+      idempotencyKey: wKey,
+    });
     expect(first.resultKind).toBe('EVENT_APPENDED');
 
     // same key + same payload → historical receipt replay (same event id).
-    const replay = await recordConsentWithdrawal({ trustedParticipantContext: context, assignmentId, withdrawPayload: asserted, idempotencyKey: wKey });
+    const replay = await recordConsentWithdrawal({
+      trustedParticipantContext: context,
+      assignmentId,
+      withdrawPayload: asserted,
+      idempotencyKey: wKey,
+    });
     expect(replay.consentEventId).toBe(first.consentEventId);
 
     // same key + CHANGED payload → idempotency conflict.
     await expect(
-      recordConsentWithdrawal({ trustedParticipantContext: context, assignmentId, withdrawPayload: { assertedEffectiveAt: '2026-08-01T00:00:00.000Z' }, idempotencyKey: wKey }),
+      recordConsentWithdrawal({
+        trustedParticipantContext: context,
+        assignmentId,
+        withdrawPayload: { assertedEffectiveAt: '2026-08-01T00:00:00.000Z' },
+        idempotencyKey: wKey,
+      }),
     ).rejects.toBeInstanceOf(StudyIdempotencyConflictError);
 
     // different key + SAME payload while WITHDRAWN → NO_OP_EFFECTIVE_STATE, no new event.
-    const noop = await recordConsentWithdrawal({ trustedParticipantContext: context, assignmentId, withdrawPayload: asserted, idempotencyKey: `cw-${uid()}` });
+    const noop = await recordConsentWithdrawal({
+      trustedParticipantContext: context,
+      assignmentId,
+      withdrawPayload: asserted,
+      idempotencyKey: `cw-${uid()}`,
+    });
     expect(noop.resultKind).toBe('NO_OP_EFFECTIVE_STATE');
     expect(noop.consentEventId).toBe(first.consentEventId);
 
     // different key + CHANGED payload while WITHDRAWN → CORRECTION_NOT_APPLIED, no new event.
-    const correction = await recordConsentWithdrawal({ trustedParticipantContext: context, assignmentId, withdrawPayload: { assertedEffectiveAt: '2026-07-01T00:00:00.000Z' }, idempotencyKey: `cw-${uid()}` });
+    const correction = await recordConsentWithdrawal({
+      trustedParticipantContext: context,
+      assignmentId,
+      withdrawPayload: { assertedEffectiveAt: '2026-07-01T00:00:00.000Z' },
+      idempotencyKey: `cw-${uid()}`,
+    });
     expect(correction.resultKind).toBe('CORRECTION_NOT_APPLIED');
     expect(correction.consentEventId).toBe(first.consentEventId);
 
@@ -702,12 +893,17 @@ describe('Consent — withdrawal, transitions & intervals (spec §8.3/§8.6/§17
 
 // ===================================================================================================
 describe('Consent — trusted own-assignment binding & DB CHECK (spec §8.11/§12/§17)', () => {
-  it('a participant cannot consent on ANOTHER participant\'s assignment', async () => {
+  it("a participant cannot consent on ANOTHER participant's assignment", async () => {
     const a = await consentFixture();
     const b = await consentFixture();
     // a's context, b's assignment → ownership rejection.
     await expect(
-      recordConsentGrant({ trustedParticipantContext: a.context, assignmentId: b.assignmentId, consentPayload: GRANT, idempotencyKey: `cg-${uid()}` }),
+      recordConsentGrant({
+        trustedParticipantContext: a.context,
+        assignmentId: b.assignmentId,
+        consentPayload: GRANT,
+        idempotencyKey: `cg-${uid()}`,
+      }),
     ).rejects.toBeInstanceOf(StudyAssignmentOwnershipError);
   });
 
@@ -731,7 +927,9 @@ describe('Consent — trusted own-assignment binding & DB CHECK (spec §8.11/§1
       ).rejects.toBeInstanceOf(StudyValidationError);
     }
     // Zero consent events/receipts were created on B's assignment by any forgery.
-    expect(await prisma.studyConsentEvent.count({ where: { assignmentId: b.assignmentId } })).toBe(0);
+    expect(await prisma.studyConsentEvent.count({ where: { assignmentId: b.assignmentId } })).toBe(
+      0,
+    );
     expect(
       await prisma.studyConsentCommandReceipt.count({
         where: { consentEvent: { assignmentId: b.assignmentId } },
@@ -751,9 +949,16 @@ describe('Consent — trusted own-assignment binding & DB CHECK (spec §8.11/§1
 
   it('consent events are append-only (DB UPDATE rejected)', async () => {
     const { assignmentId, context } = await consentFixture();
-    const g = await recordConsentGrant({ trustedParticipantContext: context, assignmentId, consentPayload: GRANT, idempotencyKey: `cg-${uid()}` });
+    const g = await recordConsentGrant({
+      trustedParticipantContext: context,
+      assignmentId,
+      consentPayload: GRANT,
+      idempotencyKey: `cg-${uid()}`,
+    });
     await expect(
-      prisma.$executeRawUnsafe(`UPDATE "study_consent_event" SET "consentSeq"=9 WHERE "id"='${g.consentEventId}'`),
+      prisma.$executeRawUnsafe(
+        `UPDATE "study_consent_event" SET "consentSeq"=9 WHERE "id"='${g.consentEventId}'`,
+      ),
     ).rejects.toThrow();
   });
 });

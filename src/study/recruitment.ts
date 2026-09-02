@@ -23,5 +23,8 @@ export interface RecruitmentResolver {
   /** Resolve a rotating credential → stable subject key (fail closed if untrusted/unresolvable). */
   resolveCredential(recruitmentCredential: string): Promise<ResolvedRecruitmentSubject>;
   /** Validate a directly-supplied trusted stable key + version (fail closed on unknown version). */
-  resolveDirectKey(recruitmentSubjectKey: string, recruitmentKeyVersion: string): ResolvedRecruitmentSubject;
+  resolveDirectKey(
+    recruitmentSubjectKey: string,
+    recruitmentKeyVersion: string,
+  ): ResolvedRecruitmentSubject;
 }

@@ -25,10 +25,7 @@ export {
 export { assignParticipant, type AssignParticipantRequest } from './study-assignment-admin';
 
 // Read-only analysis load is safe to expose alongside admin (no write capability).
-export {
-  loadFrozenProtocolForAnalysis,
-  type LoadFrozenProtocolRef,
-} from './study-analysis';
+export { loadFrozenProtocolForAnalysis, type LoadFrozenProtocolRef } from './study-analysis';
 
 // Trusted participant session adapter — the ONLY sanctioned construction path for a
 // TrustedParticipantContext (A1-CODE-01). Exposed on the trusted admin surface, never the public

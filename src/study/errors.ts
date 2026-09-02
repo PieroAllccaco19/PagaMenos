@@ -138,7 +138,8 @@ export class StudyProtocolAlreadyFrozenError extends StudyError {
  * fallback). */
 export class UnsupportedStudyVersionError extends StudyError {
   constructor(
-    public readonly kind: 'definitionSchemaVersion' | 'canonicalizationVersion' | 'recruitmentKeyVersion',
+    public readonly kind:
+      'definitionSchemaVersion' | 'canonicalizationVersion' | 'recruitmentKeyVersion',
     public readonly version: unknown,
   ) {
     super(

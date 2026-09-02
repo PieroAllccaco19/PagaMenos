@@ -19,7 +19,11 @@ import { z } from 'zod';
 
 import { canonicalize, sha256Hex } from '@/persistence';
 
-import { StudyProtocolDigestMismatchError, StudyValidationError, UnsupportedStudyVersionError } from './errors';
+import {
+  StudyProtocolDigestMismatchError,
+  StudyValidationError,
+  UnsupportedStudyVersionError,
+} from './errors';
 import { CANONICALIZATION_VERSION_V1, DEFINITION_SCHEMA_VERSION_V1 } from './versions';
 
 /**
@@ -47,7 +51,10 @@ export interface NormalizedProtocolDefinition {
 }
 
 /** Parse + normalize a raw definition body under a frozen schema version (fail closed on unknown). */
-function parseDefinition(definitionSchemaVersion: string, rawDefinition: unknown): Record<string, unknown> {
+function parseDefinition(
+  definitionSchemaVersion: string,
+  rawDefinition: unknown,
+): Record<string, unknown> {
   if (definitionSchemaVersion !== DEFINITION_SCHEMA_VERSION_V1) {
     throw new UnsupportedStudyVersionError('definitionSchemaVersion', definitionSchemaVersion);
   }
@@ -60,7 +67,10 @@ function parseDefinition(definitionSchemaVersion: string, rawDefinition: unknown
 }
 
 /** Canonicalize a normalized definition under a canonicalization version (fail closed on unknown). */
-function canonicalizeDefinition(canonicalizationVersion: string, normalized: Record<string, unknown>): string {
+function canonicalizeDefinition(
+  canonicalizationVersion: string,
+  normalized: Record<string, unknown>,
+): string {
   if (canonicalizationVersion !== CANONICALIZATION_VERSION_V1) {
     throw new UnsupportedStudyVersionError('canonicalizationVersion', canonicalizationVersion);
   }
@@ -82,7 +92,9 @@ export function buildProtocolDefinition(input: {
   const definitionSchemaVersion = input.definitionSchemaVersion ?? DEFINITION_SCHEMA_VERSION_V1;
   const canonicalizationVersion = input.canonicalizationVersion ?? CANONICALIZATION_VERSION_V1;
   const definitionJson = parseDefinition(definitionSchemaVersion, input.definition);
-  const definitionDigest = sha256Hex(canonicalizeDefinition(canonicalizationVersion, definitionJson));
+  const definitionDigest = sha256Hex(
+    canonicalizeDefinition(canonicalizationVersion, definitionJson),
+  );
   return { definitionSchemaVersion, canonicalizationVersion, definitionJson, definitionDigest };
 }
 

@@ -65,11 +65,18 @@ export type ConsentTransition =
   | { kind: 'APPEND'; action: 'GRANTED' | 'WITHDRAWN' }
   | { kind: 'NO_OP_EFFECTIVE_STATE' }
   | { kind: 'CORRECTION_NOT_APPLIED' }
-  | { kind: 'REJECT_INVALID_TRANSITION'; command: 'GRANT' | 'WITHDRAW'; fromState: EffectiveConsentState }
+  | {
+      kind: 'REJECT_INVALID_TRANSITION';
+      command: 'GRANT' | 'WITHDRAW';
+      fromState: EffectiveConsentState;
+    }
   | { kind: 'REJECT_UPDATE_NOT_SUPPORTED' };
 
 /** Whether a GRANT provenance exactly equals a prior GRANTED event's provenance (spec §8.4). */
-export function grantProvenanceEquals(event: ConsentEventFact, provenance: ConsentGrantProvenance): boolean {
+export function grantProvenanceEquals(
+  event: ConsentEventFact,
+  provenance: ConsentGrantProvenance,
+): boolean {
   return (
     event.action === 'GRANTED' &&
     event.consentVersion === provenance.consentVersion &&
@@ -81,7 +88,10 @@ export function grantProvenanceEquals(event: ConsentEventFact, provenance: Conse
 /** Whether a WITHDRAW's asserted instant equals a prior WITHDRAWN event's (spec §8.13). Compared by
  * INSTANT (offset-robust), so `null`/absent are equal and equivalent instants under different offsets
  * are equal — a mere string-representation difference is not a "changed" assertion. */
-export function withdrawalAssertionEquals(event: ConsentEventFact, assertedEffectiveAt: string | null): boolean {
+export function withdrawalAssertionEquals(
+  event: ConsentEventFact,
+  assertedEffectiveAt: string | null,
+): boolean {
   if (event.action !== 'WITHDRAWN') return false;
   const a = event.assertedEffectiveAt;
   const b = assertedEffectiveAt;
@@ -96,7 +106,8 @@ export function evaluateGrant(
 ): ConsentTransition {
   const state = effectiveConsentState(events);
   if (state === 'NO_CONSENT') return { kind: 'APPEND', action: 'GRANTED' };
-  if (state === 'WITHDRAWN') return { kind: 'REJECT_INVALID_TRANSITION', command: 'GRANT', fromState: state };
+  if (state === 'WITHDRAWN')
+    return { kind: 'REJECT_INVALID_TRANSITION', command: 'GRANT', fromState: state };
   // GRANTED: exact repeat is a no-op; any material difference is not an update.
   const last = effectiveEvent(events)!;
   return grantProvenanceEquals(last, provenance)
@@ -111,7 +122,8 @@ export function evaluateWithdraw(
   assertedEffectiveAt: string | null,
 ): ConsentTransition {
   const state = effectiveConsentState(events);
-  if (state === 'NO_CONSENT') return { kind: 'REJECT_INVALID_TRANSITION', command: 'WITHDRAW', fromState: state };
+  if (state === 'NO_CONSENT')
+    return { kind: 'REJECT_INVALID_TRANSITION', command: 'WITHDRAW', fromState: state };
   if (state === 'GRANTED') return { kind: 'APPEND', action: 'WITHDRAWN' };
   // WITHDRAWN: exact repeat is a no-op; a changed/earlier assertion is a correction that is NOT applied.
   const last = effectiveEvent(events)!;
@@ -126,8 +138,7 @@ export function evaluateWithdraw(
 
 /** A derived authorization interval. `endAt === null` denotes +∞ (an open grant with no withdrawal). */
 export type AuthorizationInterval =
-  | { kind: 'INTERVAL'; startAt: string; endAt: string | null }
-  | { kind: 'EMPTY' };
+  { kind: 'INTERVAL'; startAt: string; endAt: string | null } | { kind: 'EMPTY' };
 
 /**
  * Derive authorization intervals over the visible events (spec §16). Ordered by `consentSeq` (NEVER by
@@ -146,7 +157,9 @@ export function deriveConsentAuthorizationIntervals(
   for (const e of ordered) {
     if (e.action === 'GRANTED') {
       if (openGrant !== null) {
-        throw new Error('invalid consent history: GRANTED while a grant is already open (no re-consent)');
+        throw new Error(
+          'invalid consent history: GRANTED while a grant is already open (no re-consent)',
+        );
       }
       openGrant = e;
     } else {
@@ -154,7 +167,8 @@ export function deriveConsentAuthorizationIntervals(
         throw new Error('invalid consent history: WITHDRAWN with no open grant');
       }
       const startAt = openGrant.capturedAt;
-      const assertedMs = e.assertedEffectiveAt !== null ? ms(e.assertedEffectiveAt) : ms(e.capturedAt);
+      const assertedMs =
+        e.assertedEffectiveAt !== null ? ms(e.assertedEffectiveAt) : ms(e.capturedAt);
       const closeMs = Math.min(ms(e.capturedAt), assertedMs);
       const closeAt = closeMs === ms(e.capturedAt) ? e.capturedAt : e.assertedEffectiveAt!;
       intervals.push(
@@ -163,7 +177,8 @@ export function deriveConsentAuthorizationIntervals(
       openGrant = null;
     }
   }
-  if (openGrant !== null) intervals.push({ kind: 'INTERVAL', startAt: openGrant.capturedAt, endAt: null });
+  if (openGrant !== null)
+    intervals.push({ kind: 'INTERVAL', startAt: openGrant.capturedAt, endAt: null });
   return intervals;
 }
 

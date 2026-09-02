@@ -21,7 +21,8 @@ import {
 import { prisma as defaultPrisma } from './client';
 import { assertReceiptRequestHash, isUniqueViolation, wrapStudyUnexpected } from './study-support';
 
-export type ConsentResultKind = 'EVENT_APPENDED' | 'NO_OP_EFFECTIVE_STATE' | 'CORRECTION_NOT_APPLIED';
+export type ConsentResultKind =
+  'EVENT_APPENDED' | 'NO_OP_EFFECTIVE_STATE' | 'CORRECTION_NOT_APPLIED';
 
 /** The durable outcome of a consent command (spec §8.9). `consentEventId` references the event
  * representing the durable effective state (created, or the pre-existing effective event). */
@@ -38,7 +39,11 @@ export interface RecordConsentCommandArgs {
   idempotencyKey: string;
   requestHash: string;
   /** GRANT provenance to persist on an appended GRANTED event. */
-  grantProvenance?: { consentVersion: string; privacyNoticeVersion: string; optionalEvidenceConsent: boolean };
+  grantProvenance?: {
+    consentVersion: string;
+    privacyNoticeVersion: string;
+    optionalEvidenceConsent: boolean;
+  };
   /** Asserted effective instant to persist on an appended WITHDRAWN event (may be null). */
   assertedEffectiveAt?: Date | null;
   /** Pure state-machine evaluation over the reloaded, sequence-ordered events (spec §8.3). */
@@ -100,7 +105,9 @@ export class StudyConsentRepository implements ConsentStore {
           Prisma.sql`SELECT "id" FROM "experiment_assignment" WHERE "id" = ${args.assignmentId}::uuid FOR UPDATE`,
         );
         if (locked.length === 0) {
-          throw new StudyInvariantError(`consent references unknown assignment ${args.assignmentId}`);
+          throw new StudyInvariantError(
+            `consent references unknown assignment ${args.assignmentId}`,
+          );
         }
 
         // Exact transport replay for a VALID request (schema already validated by the service, §8.10).
@@ -136,23 +143,33 @@ export class StudyConsentRepository implements ConsentStore {
         const decision = args.evaluate(events);
 
         if (decision.kind === 'REJECT_INVALID_TRANSITION') {
-          throw new ConsentTransitionRejection('INVALID_TRANSITION', decision.command, decision.fromState);
+          throw new ConsentTransitionRejection(
+            'INVALID_TRANSITION',
+            decision.command,
+            decision.fromState,
+          );
         }
         if (decision.kind === 'REJECT_UPDATE_NOT_SUPPORTED') {
           throw new ConsentTransitionRejection('UPDATE_NOT_SUPPORTED');
         }
 
         // No-op / correction: reference the current effective event; append NO event (spec §8.5/§8.9).
-        if (decision.kind === 'NO_OP_EFFECTIVE_STATE' || decision.kind === 'CORRECTION_NOT_APPLIED') {
+        if (
+          decision.kind === 'NO_OP_EFFECTIVE_STATE' ||
+          decision.kind === 'CORRECTION_NOT_APPLIED'
+        ) {
           const last = events[events.length - 1];
           if (!last) throw new StudyInvariantError('no-op/correction with no effective event');
           const effective = await tx.studyConsentEvent.findFirst({
             where: { assignmentId: args.assignmentId, consentSeq: last.consentSeq },
             select: { id: true },
           });
-          if (!effective) throw new StudyInvariantError('effective consent event vanished under lock');
+          if (!effective)
+            throw new StudyInvariantError('effective consent event vanished under lock');
           const resultKind: ConsentResultKind =
-            decision.kind === 'NO_OP_EFFECTIVE_STATE' ? 'NO_OP_EFFECTIVE_STATE' : 'CORRECTION_NOT_APPLIED';
+            decision.kind === 'NO_OP_EFFECTIVE_STATE'
+              ? 'NO_OP_EFFECTIVE_STATE'
+              : 'CORRECTION_NOT_APPLIED';
           await tx.studyConsentCommandReceipt.create({
             data: {
               operationScope: args.operationScope,

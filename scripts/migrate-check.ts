@@ -184,12 +184,16 @@ function main(): void {
   ];
   const missingA1 = requiredA1Objects.filter((name) => !allSql.includes(name));
   if (missingA1.length > 0) {
-    fail(`M3.5B-A1 migration is missing required guard/constraint object(s): ${missingA1.join(', ')}`);
+    fail(
+      `M3.5B-A1 migration is missing required guard/constraint object(s): ${missingA1.join(', ')}`,
+    );
   }
   // The freeze-guard must permit ONLY the DRAFT→FROZEN transition (a literal check that the guard
   // constrains the lifecycle transition, not merely that a trigger exists).
   if (!/DRAFT->FROZEN|DRAFT→FROZEN/i.test(allSql)) {
-    fail('analysis_protocol freeze-guard does not document/enforce the one-way DRAFT->FROZEN transition');
+    fail(
+      'analysis_protocol freeze-guard does not document/enforce the one-way DRAFT->FROZEN transition',
+    );
   }
 
   console.log(
