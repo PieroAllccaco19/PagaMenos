@@ -1,0 +1,78 @@
+{
+  "schemaVersion": "pagamenos.holiday-calendar-fixture.v1",
+  "version": "pagamenos.holiday.pe-lima-callao.private-commerce.v1",
+  "jurisdiction": "PE-LIMA-CALLAO-PRIVATE-COMMERCE",
+  "legalPolicyVersion": "dl713-art6+ley31381+ley31530+ley31788+ley31822.v1",
+  "coverageStartDate": "2026-01-01",
+  "coverageEndDate": "2027-12-31",
+  "contentDigest": "sha256:6d65409665d176d40390be4ed8414dc22e4ab9d11b40ede1d38abb7b258460d8",
+  "contentDigestPreimageSpec": {
+    "algorithm": "sha256(canonical(payload))",
+    "canonicalizer": "accepted PagaMenos src/persistence/canonical.ts semantics (keys code-point sorted, arrays preserved, JSON-escaped scalars, undefined keys dropped)",
+    "payloadFields": {
+      "versionedPolicy": "legalPolicyVersion",
+      "jurisdiction": "jurisdiction",
+      "coverageStartDate": "coverageStartDate",
+      "coverageEndDate": "coverageEndDate",
+      "normalizedDates": "normalizedDates"
+    },
+    "canonicalPreimage": "{\"coverageEndDate\":\"2027-12-31\",\"coverageStartDate\":\"2026-01-01\",\"jurisdiction\":\"PE-LIMA-CALLAO-PRIVATE-COMMERCE\",\"normalizedDates\":[\"2026-01-01\",\"2026-04-02\",\"2026-04-03\",\"2026-05-01\",\"2026-06-07\",\"2026-06-29\",\"2026-07-23\",\"2026-07-28\",\"2026-07-29\",\"2026-08-06\",\"2026-08-30\",\"2026-10-08\",\"2026-11-01\",\"2026-12-08\",\"2026-12-09\",\"2026-12-25\",\"2027-01-01\",\"2027-03-25\",\"2027-03-26\",\"2027-05-01\",\"2027-06-07\",\"2027-06-29\",\"2027-07-23\",\"2027-07-28\",\"2027-07-29\",\"2027-08-06\",\"2027-08-30\",\"2027-10-08\",\"2027-11-01\",\"2027-12-08\",\"2027-12-09\",\"2027-12-25\"],\"versionedPolicy\":\"dl713-art6+ley31381+ley31530+ley31788+ley31822.v1\"}"
+  },
+  "normalizedDates": [
+    "2026-01-01", "2026-04-02", "2026-04-03", "2026-05-01", "2026-06-07", "2026-06-29",
+    "2026-07-23", "2026-07-28", "2026-07-29", "2026-08-06", "2026-08-30", "2026-10-08",
+    "2026-11-01", "2026-12-08", "2026-12-09", "2026-12-25",
+    "2027-01-01", "2027-03-25", "2027-03-26", "2027-05-01", "2027-06-07", "2027-06-29",
+    "2027-07-23", "2027-07-28", "2027-07-29", "2027-08-06", "2027-08-30", "2027-10-08",
+    "2027-11-01", "2027-12-08", "2027-12-09", "2027-12-25"
+  ],
+  "dates": [
+    { "date": "2026-01-01", "holidayCode": "PE_ANIO_NUEVO", "holidayName": "Año Nuevo", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2026-04-02", "holidayCode": "PE_JUEVES_SANTO", "holidayName": "Jueves Santo (movable; Easter 2026-04-05)", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2026-04-03", "holidayCode": "PE_VIERNES_SANTO", "holidayName": "Viernes Santo (movable)", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2026-05-01", "holidayCode": "PE_DIA_DEL_TRABAJO", "holidayName": "Día del Trabajo", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2026-06-07", "holidayCode": "PE_BATALLA_ARICA_BANDERA", "holidayName": "Batalla de Arica y Día de la Bandera", "authorityRefs": ["Ley 31788"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2026-06-29", "holidayCode": "PE_SAN_PEDRO_SAN_PABLO", "holidayName": "San Pedro y San Pablo", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2026-07-23", "holidayCode": "PE_FUERZA_AEREA_QUINONES", "holidayName": "Día de la Fuerza Aérea del Perú (Cap. FAP J.A. Quiñones)", "authorityRefs": ["Ley 31822"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2026-07-28", "holidayCode": "PE_FIESTAS_PATRIAS_28", "holidayName": "Fiestas Patrias (Independencia)", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2026-07-29", "holidayCode": "PE_FIESTAS_PATRIAS_29", "holidayName": "Fiestas Patrias", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2026-08-06", "holidayCode": "PE_BATALLA_JUNIN", "holidayName": "Batalla de Junín", "authorityRefs": ["Ley 31530"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2026-08-30", "holidayCode": "PE_SANTA_ROSA_LIMA", "holidayName": "Santa Rosa de Lima", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2026-10-08", "holidayCode": "PE_COMBATE_ANGAMOS", "holidayName": "Combate de Angamos", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2026-11-01", "holidayCode": "PE_TODOS_LOS_SANTOS", "holidayName": "Día de Todos los Santos", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2026-12-08", "holidayCode": "PE_INMACULADA_CONCEPCION", "holidayName": "Inmaculada Concepción", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2026-12-09", "holidayCode": "PE_BATALLA_AYACUCHO", "holidayName": "Batalla de Ayacucho", "authorityRefs": ["Ley 31381"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2026-12-25", "holidayCode": "PE_NAVIDAD", "holidayName": "Navidad", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2027-01-01", "holidayCode": "PE_ANIO_NUEVO", "holidayName": "Año Nuevo", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2027-03-25", "holidayCode": "PE_JUEVES_SANTO", "holidayName": "Jueves Santo (movable; Easter 2027-03-28)", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2027-03-26", "holidayCode": "PE_VIERNES_SANTO", "holidayName": "Viernes Santo (movable)", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2027-05-01", "holidayCode": "PE_DIA_DEL_TRABAJO", "holidayName": "Día del Trabajo", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2027-06-07", "holidayCode": "PE_BATALLA_ARICA_BANDERA", "holidayName": "Batalla de Arica y Día de la Bandera", "authorityRefs": ["Ley 31788"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2027-06-29", "holidayCode": "PE_SAN_PEDRO_SAN_PABLO", "holidayName": "San Pedro y San Pablo", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2027-07-23", "holidayCode": "PE_FUERZA_AEREA_QUINONES", "holidayName": "Día de la Fuerza Aérea del Perú (Cap. FAP J.A. Quiñones)", "authorityRefs": ["Ley 31822"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2027-07-28", "holidayCode": "PE_FIESTAS_PATRIAS_28", "holidayName": "Fiestas Patrias (Independencia)", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2027-07-29", "holidayCode": "PE_FIESTAS_PATRIAS_29", "holidayName": "Fiestas Patrias", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2027-08-06", "holidayCode": "PE_BATALLA_JUNIN", "holidayName": "Batalla de Junín", "authorityRefs": ["Ley 31530"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2027-08-30", "holidayCode": "PE_SANTA_ROSA_LIMA", "holidayName": "Santa Rosa de Lima", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2027-10-08", "holidayCode": "PE_COMBATE_ANGAMOS", "holidayName": "Combate de Angamos", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2027-11-01", "holidayCode": "PE_TODOS_LOS_SANTOS", "holidayName": "Día de Todos los Santos", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2027-12-08", "holidayCode": "PE_INMACULADA_CONCEPCION", "holidayName": "Inmaculada Concepción", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2027-12-09", "holidayCode": "PE_BATALLA_AYACUCHO", "holidayName": "Batalla de Ayacucho", "authorityRefs": ["Ley 31381"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" },
+    { "date": "2027-12-25", "holidayCode": "PE_NAVIDAD", "holidayName": "Navidad", "authorityRefs": ["DL 713 Art.6"], "applicability": "PRIVATE_SECTOR_PUBLIC_HOLIDAY" }
+  ],
+  "sourceManifest": [
+    { "authority": "Decreto Legislativo N° 713, Art. 6 (consolidated feriados regime)", "type": "ENACTED_LAW", "url": "https://diariooficial.elperuano.pe/Normas/obtenerDocumento?idNorma=110007", "accessedDate": "2026-09-02" },
+    { "authority": "Ley N° 31788 (7 June feriado — Batalla de Arica y Día de la Bandera)", "type": "ENACTED_LAW", "url": "https://busquedas.elperuano.pe/dispositivo/NL/2187453-1", "accessedDate": "2026-09-02" },
+    { "authority": "Ley N° 31822 (23 July feriado nacional — Día de la Fuerza Aérea del Perú / Cap. FAP J.A. Quiñones; private + public sector)", "type": "ENACTED_LAW", "url": "https://tvperu.gob.pe/noticias/nacionales/es-oficial-declaran-feriado-nacional-el-23-de-julio-por-el-dia-de-la-fuerza-aerea-del-peru", "accessedDate": "2026-09-02" },
+    { "authority": "Ley N° 31530 (6 August feriado — Batalla de Junín)", "type": "ENACTED_LAW", "url": "https://busquedas.elperuano.pe/dispositivo/NL/2089960-2", "accessedDate": "2026-09-02" },
+    { "authority": "Ley N° 31381 (9 December feriado — Batalla de Ayacucho)", "type": "ENACTED_LAW", "url": "https://busquedas.elperuano.pe/dispositivo/NL/2026913-1", "accessedDate": "2026-09-02" },
+    { "authority": "gob.pe Plataforma del Estado Peruano — feriados (consolidated corroboration)", "type": "GOVERNMENT_CONSOLIDATED", "url": "https://www.gob.pe/feriados", "accessedDate": "2026-09-02", "note": "HTTP 418 at authoring; enacting-law identities confirmed via the Diario Oficial El Peruano normative database + gob.pe/TVPerú/SUNAFIL corroboration" }
+  ],
+  "movableDateDerivation": {
+    "method": "Gregorian ecclesiastical computus (Anonymous Gregorian algorithm)",
+    "easter": { "2026": "2026-04-05", "2027": "2027-03-28" },
+    "note": "Jueves Santo = Easter - 3 days; Viernes Santo = Easter - 2 days"
+  },
+  "localJurisdictionDetermination": "No additional Lima/Callao-local private-sector public holidays are included for this fixture; no enacted Lima Metropolitan / Callao regional norm within coverage establishes a feriado applicable to ordinary private commerce beyond the national set.",
+  "gateObligation": "CANDIDATE — an independent reviewer MUST re-verify each cited enacting law's official text and the Lima/Callao determination before this fixture is accepted as authority."
+}

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "pagamenos.holiday-calendar-registry.v1",
+  "entries": {
+    "pagamenos.holiday.pe-lima-callao.private-commerce.v1": {
+      "digest": "sha256:6d65409665d176d40390be4ed8414dc22e4ab9d11b40ede1d38abb7b258460d8",
+      "jurisdiction": "PE-LIMA-CALLAO-PRIVATE-COMMERCE",
+      "legalPolicyVersion": "dl713-art6+ley31381+ley31530+ley31788+ley31822.v1",
+      "coverageStartDate": "2026-01-01",
+      "coverageEndDate": "2027-12-31"
+    }
+  }
+}
