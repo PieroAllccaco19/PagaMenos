@@ -969,6 +969,52 @@ describe('A2 semantic drift & version gates (§14; Sol Finding 5/6 runtime)', ()
     expect(done.snapshotId).toBeTruthy();
     expect(done.reused).toBe(false);
   });
+
+  it('completes crash-repair after a crash AFTER SNAPSHOT before BINDING (§37 #17, real saga path)', async () => {
+    const fx = await grantedAssignment();
+    const { intent } = await finalizedIntent(fx);
+    // Real freeze + real M3.5A decideAndPersist (snapshot persisted), but bind throws → crash before bind.
+    const throwingBindRepo = Object.assign(
+      Object.create(Object.getPrototypeOf(decisionRepo)),
+      decisionRepo,
+      {
+        bindSnapshot: () => {
+          throw new Error('crash before bind');
+        },
+      },
+    );
+    await expect(
+      requestPurchaseIntentDecisionWithDeps(
+        {
+          trustedParticipantContext: fx.context,
+          assignmentId: fx.assignmentId,
+          intentId: intent.intentId,
+        },
+        { decisionRepository: throwingBindRepo },
+      ),
+    ).rejects.toThrow('crash before bind');
+    const frozen = await decisionRepo.findDecisionRequestByIntent(intent.intentId);
+    expect(frozen).not.toBeNull();
+    // Snapshot is persisted (finder FOUND) but no binding exists yet.
+    expect(await decisionRepo.findBindingByRequest(frozen!.id)).toBeNull();
+    const snapCountBefore = await prisma.decisionSnapshot.count({
+      where: { businessDecisionKey: frozen!.businessDecisionKey },
+    });
+    expect(snapCountBefore).toBe(1);
+    // Retry via the real saga → finder FOUND (no re-decide), bind completes.
+    const done = await decide(fx, intent.intentId);
+    expect(done.reused).toBe(true);
+    expect(
+      await prisma.decisionSnapshot.count({
+        where: { businessDecisionKey: frozen!.businessDecisionKey },
+      }),
+    ).toBe(1); // exactly one authoritative snapshot
+    expect(
+      await prisma.purchaseIntentDecisionBinding.count({
+        where: { decisionRequestId: frozen!.id },
+      }),
+    ).toBe(1); // exactly one authoritative binding
+  });
 });
 
 // ── Database immutability (append-only triggers) ────────────────────────────────────────────────────
