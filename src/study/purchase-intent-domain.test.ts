@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { PortfolioInstrument } from '@/engine';
 import { canonicalize } from '@/persistence/canonical';
 
 import {
@@ -128,9 +129,9 @@ describe('A2 eligibility portfolio normalization (§9)', () => {
     ).toThrow(PurchaseIntentValidationError);
   });
   it('comparator: delimiter-style memberships are injective (no collision)', () => {
-    const a = { family: 'IBK_PLIN', memberships: ['A,B'] } as const;
-    const b = { family: 'IBK_PLIN', memberships: ['A', 'B'] } as const;
-    expect(compareNormalizedEligibilityInstrumentV1({ ...a }, { ...b })).not.toBe(0);
+    const a: PortfolioInstrument = { family: 'IBK_PLIN', memberships: ['A,B'] };
+    const b: PortfolioInstrument = { family: 'IBK_PLIN', memberships: ['A', 'B'] };
+    expect(compareNormalizedEligibilityInstrumentV1(a, b)).not.toBe(0);
   });
   it('code-point comparator orders by scalar value, not locale', () => {
     expect(compareUnicodeCodePointStrings('A', 'a')).toBe(-1); // 'A'(65) < 'a'(97)
