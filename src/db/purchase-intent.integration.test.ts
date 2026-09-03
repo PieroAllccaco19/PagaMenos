@@ -43,6 +43,7 @@ import {
 import { purchaseIntentDecisionRepository as decisionRepo } from '@/db/purchase-intent-decision-repository';
 import {
   deriveBusinessDecisionKey,
+  deriveM3_5aIdempotencyKey,
   EligibilityProfileConflictError,
   PurchaseIntentBindingCoherenceError,
   PurchaseIntentCaptureConflictError,
@@ -52,6 +53,7 @@ import {
   PurchaseIntentContextSignatureError,
   PurchaseIntentDecisionRequestIntegrityError,
   PurchaseIntentFinalizationConflictError,
+  PurchaseIntentHistoricalConflictError,
   PurchaseIntentIdempotencyConflictError,
   PurchaseIntentUnsupportedInputSchemaError,
   PurchaseIntentInvalidatedError,
@@ -63,6 +65,23 @@ import {
   type ResolvedEntrySource,
   type TrustedParticipantContext,
 } from '@/study';
+// Sol Closure 4 catch-entry proof: build real drafts + a spy-instrumented repository.
+import {
+  buildDecisionSnapshotDraft,
+  DECISION_PERSIST_OPERATION_SCOPE,
+  type DecisionSnapshotDraft,
+} from '@/persistence/snapshot';
+import { BusinessDecisionConflictError } from '@/persistence';
+import {
+  DecisionSnapshotRepository,
+  type UniqueReconcileEvent,
+} from '@/db/decision-snapshot-repository';
+import { type A2UniqueReconcileEvent } from '@/db/purchase-intent-decision-repository';
+import {
+  chinawokDecision,
+  CORPUS_VERSION,
+  testBuildProvider,
+} from '../persistence/__fixtures__/decision-fixture';
 
 const uid = () => randomUUID().slice(0, 8);
 const DEF = {
@@ -1350,6 +1369,49 @@ async function raceAtAssignmentLock(
   return Promise.all(settled);
 }
 
+/**
+ * Deterministic barrier that contends on the PurchaseIntent ROOT lock (Sol Closures 5/8). A dedicated
+ * connection holds `SELECT … FOR UPDATE` on the purchase_intent row; the given ops are launched, PROVEN
+ * still pending after a settle window (they block on the intent root), then the lock is released so they
+ * serialize. Used for Case-C freeze vs invalidation and finalize vs invalidation — all of which take the
+ * intent root — so the contention exercises the ACTUAL V4.5 serialization point, not a raw Promise.all.
+ */
+async function raceAtIntentRootLock(
+  intentId: string,
+  ops: Array<() => Promise<unknown>>,
+): Promise<Array<{ status: 'fulfilled' | 'rejected'; reason?: unknown }>> {
+  const holder = newClient();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  let acquired!: () => void;
+  const acquiredP = new Promise<void>((r) => (acquired = r));
+  const held = holder.$transaction(
+    async (tx) => {
+      await tx.$queryRawUnsafe(
+        `SELECT "id" FROM "purchase_intent" WHERE "id" = '${intentId}'::uuid FOR UPDATE`,
+      );
+      acquired();
+      await gate;
+    },
+    { timeout: 30000 },
+  );
+  await acquiredP;
+  const settled = ops.map((op) =>
+    op().then(
+      () => ({ status: 'fulfilled' as const }),
+      (reason: unknown) => ({ status: 'rejected' as const, reason }),
+    ),
+  );
+  const probe = await Promise.race([
+    Promise.all(settled).then(() => 'done'),
+    new Promise((r) => setTimeout(() => r('pending'), 400)),
+  ]);
+  expect(probe).toBe('pending'); // both ops block on the intent ROOT lock
+  release();
+  await held;
+  return Promise.all(settled);
+}
+
 describe('A2 genuine withdrawal races — one per new-fact family (Sol Correction 3)', () => {
   const isConsentReject = (r: { status: string; reason?: unknown }) =>
     r.status === 'fulfilled' ||
@@ -1510,11 +1572,13 @@ describe('A2 genuine withdrawal races — one per new-fact family (Sol Correctio
   });
 });
 
-describe('A2 Case C freeze vs invalidation race (Sol Correction 7)', () => {
-  it('a decision freeze and an invalidation contend at the intent lock; never a request under invalidation', async () => {
+describe('A2 Case C freeze vs invalidation race — INTENT ROOT serialization (Sol Closures 5/7)', () => {
+  it('freeze and invalidation contend on the INTENT ROOT lock; never a request frozen under invalidation', async () => {
     const fx = await grantedAssignment();
     const { intent } = await finalizedIntent(fx);
-    const [dec, inv] = await raceAtAssignmentLock(fx.assignmentId, [
+    // Both the freeze (Case C) and the invalidation take the PurchaseIntent ROOT lock — so a barrier on
+    // the intent root (NOT the assignment) is what deterministically serializes them (Sol Closure 5).
+    const [dec, inv] = await raceAtIntentRootLock(intent.intentId, [
       () => decide(fx, intent.intentId),
       () =>
         invalidatePurchaseIntent({
@@ -1525,17 +1589,497 @@ describe('A2 Case C freeze vs invalidation race (Sol Correction 7)', () => {
           idempotencyKey: `inv-${uid()}`,
         }),
     ]);
-    const requestExists =
-      (await prisma.purchaseIntentDecisionRequest.count({
-        where: { intentId: intent.intentId },
-      })) > 0;
-    const invalidated =
+    const invalidatedFirst =
+      inv!.status === 'fulfilled' &&
       (await prisma.purchaseIntentInvalidation.count({
         where: { invalidatedIntentId: intent.intentId },
-      })) > 0;
-    if (invalidated && dec!.status === 'rejected') {
-      expect(requestExists).toBe(false);
+      })) > 0 &&
+      dec!.status === 'rejected';
+    // If the invalidation won the root lock first, the freeze must have been rejected under invalidation
+    // and NO decision request exists — no stale pre-invalidation freeze (Sol Closure 5/7).
+    if (invalidatedFirst) {
+      expect(dec!.reason).toBeInstanceOf(PurchaseIntentInvalidatedError);
+      expect(
+        await prisma.purchaseIntentDecisionRequest.count({ where: { intentId: intent.intentId } }),
+      ).toBe(0);
     }
+    // If the freeze won first, invalidation still commits afterwards (Case A survives) — one of the two
+    // orderings always occurred (never a torn state).
     expect(inv!.status === 'fulfilled' || dec!.status === 'fulfilled').toBe(true);
+  });
+});
+
+// ===================================================================================================
+// Sol Closure 2 + 3 — atomic §18 finder: EXACT / NONE / CONFLICT + repeated two-client crash-repair.
+// ===================================================================================================
+/** Freeze a request WITHOUT deciding (crash after freeze) → a real unbound historical request. */
+async function freezeOnly(fx: Fixture, intentId: string): Promise<void> {
+  await requestPurchaseIntentDecisionWithDeps(
+    { trustedParticipantContext: fx.context, assignmentId: fx.assignmentId, intentId },
+    {
+      decideAndPersist: () => {
+        throw new Error('crash after freeze');
+      },
+    },
+  ).catch((e: unknown) => {
+    if (!(e instanceof Error) || e.message !== 'crash after freeze') throw e;
+  });
+}
+
+describe('A2 atomic §18 finder — EXACT/NONE/CONFLICT (Sol Closures 2/3)', () => {
+  it('NONE when neither receipt nor snapshot exists for the identity', async () => {
+    const missingIntent = randomUUID();
+    const res = await findExactHistoricalDecision({
+      businessDecisionKey: deriveBusinessDecisionKey(missingIntent),
+      idempotencyKey: deriveM3_5aIdempotencyKey(missingIntent),
+      inputHash: 'a'.repeat(64),
+      expectedEngineContractVersion: 'pagamenos.engine.v1',
+      expectedEngineInputSchemaVersion: 'pagamenos.engine-input.v1',
+      expectedCorpusVersion: CORPUS_VERSION,
+    });
+    expect(res.kind).toBe('NONE');
+  });
+
+  it('EXACT when a decision exists for the identity and every pin matches', async () => {
+    const fx = await grantedAssignment();
+    const { intent } = await finalizedIntent(fx);
+    const decision = await decide(fx, intent.intentId);
+    const req = await decisionRepo.findDecisionRequestByIntent(intent.intentId);
+    const res = await findExactHistoricalDecision({
+      businessDecisionKey: req!.businessDecisionKey,
+      idempotencyKey: req!.m3_5aIdempotencyKey,
+      inputHash: req!.decideInputHash,
+      expectedEngineContractVersion: req!.expectedEngineContractVersion,
+      expectedEngineInputSchemaVersion: req!.expectedEngineInputSchemaVersion,
+      expectedCorpusVersion: req!.expectedCorpusVersion,
+    });
+    expect(res.kind).toBe('FOUND');
+    if (res.kind === 'FOUND') expect(res.snapshot.id).toBe(decision.snapshotId);
+  });
+
+  it('CONFLICT (not NONE) when a subset pin mismatches — engine contract / corpus each fail closed', async () => {
+    const fx = await grantedAssignment();
+    const { intent } = await finalizedIntent(fx);
+    await decide(fx, intent.intentId);
+    const req = await decisionRepo.findDecisionRequestByIntent(intent.intentId);
+    const base = {
+      businessDecisionKey: req!.businessDecisionKey,
+      idempotencyKey: req!.m3_5aIdempotencyKey,
+      inputHash: req!.decideInputHash,
+      expectedEngineContractVersion: req!.expectedEngineContractVersion,
+      expectedEngineInputSchemaVersion: req!.expectedEngineInputSchemaVersion,
+      expectedCorpusVersion: req!.expectedCorpusVersion,
+    };
+    await expect(
+      findExactHistoricalDecision({ ...base, expectedEngineContractVersion: 'WRONG' }),
+    ).rejects.toBeInstanceOf(PurchaseIntentHistoricalConflictError);
+    await expect(
+      findExactHistoricalDecision({ ...base, expectedCorpusVersion: 'WRONG_CORPUS' }),
+    ).rejects.toBeInstanceOf(PurchaseIntentHistoricalConflictError);
+    await expect(
+      findExactHistoricalDecision({ ...base, inputHash: 'b'.repeat(64) }),
+    ).rejects.toBeInstanceOf(PurchaseIntentHistoricalConflictError);
+  });
+
+  it('repeated two-client crash-repair NEVER yields a false SNAPSHOT_WITHOUT_RECEIPT (Sol Closure 2)', async () => {
+    // The previously-failing race, run repeatedly: two separate Postgres connections drive the full
+    // saga concurrently. The atomic (REPEATABLE READ) finder must always converge — one request/
+    // snapshot/binding — and NEVER surface a torn receipt-absent/snapshot-present conflict.
+    for (let i = 0; i < 8; i++) {
+      const fx = await grantedAssignment();
+      const { intent } = await finalizedIntent(fx);
+      const clientA = newClient();
+      const clientB = newClient();
+      const depsFor = (c: PrismaClient) => ({
+        intentRepository: new PurchaseIntentRepository(c),
+        decisionRepository: new PurchaseIntentDecisionRepository(c),
+      });
+      const req = {
+        trustedParticipantContext: fx.context,
+        assignmentId: fx.assignmentId,
+        intentId: intent.intentId,
+      };
+      const results = await Promise.allSettled([
+        requestPurchaseIntentDecisionWithDeps(req, depsFor(clientA)),
+        requestPurchaseIntentDecisionWithDeps(req, depsFor(clientB)),
+      ]);
+      for (const r of results) {
+        if (r.status === 'rejected') {
+          // A transient serialization/lock error is acceptable; a false SNAPSHOT_WITHOUT_RECEIPT is NOT.
+          const reason = r.reason as unknown;
+          const isFalseTear =
+            reason instanceof PurchaseIntentHistoricalConflictError &&
+            reason.reason === 'SNAPSHOT_WITHOUT_RECEIPT';
+          expect(isFalseTear).toBe(false);
+        }
+      }
+      // At least one succeeded, and the state converged to exactly one of each.
+      expect(results.some((r) => r.status === 'fulfilled')).toBe(true);
+      expect(
+        await prisma.purchaseIntentDecisionRequest.count({ where: { intentId: intent.intentId } }),
+      ).toBe(1);
+      const reqRow = await decisionRepo.findDecisionRequestByIntent(intent.intentId);
+      expect(
+        await prisma.purchaseIntentDecisionBinding.count({
+          where: { decisionRequestId: reqRow!.id },
+        }),
+      ).toBe(1);
+    }
+  });
+});
+
+// ===================================================================================================
+// Sol Closure 4 — P2002 catch-entry proof: the loser ENTERS the reconciliation path (equivalent/conflict).
+// ===================================================================================================
+describe('A2 P2002 exact reconciliation — proven catch entry (Sol Closure 4)', () => {
+  function mkDraft(businessDecisionKey: string): DecisionSnapshotDraft {
+    const { input, output } = chinawokDecision();
+    return buildDecisionSnapshotDraft({
+      input,
+      output,
+      corpusVersion: CORPUS_VERSION,
+      build: testBuildProvider().resolve(),
+      businessDecisionKey,
+    });
+  }
+
+  it('createDecision: EQUIVALENT winner → P2002 on businessKey → reload-and-prove → reuse', async () => {
+    const events: UniqueReconcileEvent[] = [];
+    const repo = new DecisionSnapshotRepository(prisma, (e) => events.push(e));
+    const bdk = `pagamenos:study-intent-decision:v1:eq-${uid()}`;
+    const draft = mkDraft(bdk);
+    const winner = await repo.createDecision({
+      draft,
+      operationScope: DECISION_PERSIST_OPERATION_SCOPE,
+      idempotencyKey: `idem-${uid()}`,
+      requestHash: draft.inputHash,
+    });
+    // Same business decision, NEW transport key, SAME request hash → equivalent; forces the P2002 catch.
+    const loser = await repo.createDecision({
+      draft,
+      operationScope: DECISION_PERSIST_OPERATION_SCOPE,
+      idempotencyKey: `idem-${uid()}`,
+      requestHash: draft.inputHash,
+    });
+    expect(loser.id).toBe(winner.id);
+    expect(events).toContainEqual({
+      op: 'createDecision',
+      constraint: 'SNAPSHOT_BUSINESS_KEY',
+      outcome: 'equivalent-reuse',
+    });
+  });
+
+  it('createDecision: CONFLICTING winner → P2002 on businessKey → reload-and-prove → domain conflict', async () => {
+    const events: UniqueReconcileEvent[] = [];
+    const repo = new DecisionSnapshotRepository(prisma, (e) => events.push(e));
+    const bdk = `pagamenos:study-intent-decision:v1:cf-${uid()}`;
+    const draft = mkDraft(bdk);
+    await repo.createDecision({
+      draft,
+      operationScope: DECISION_PERSIST_OPERATION_SCOPE,
+      idempotencyKey: `idem-${uid()}`,
+      requestHash: draft.inputHash,
+    });
+    // SAME business key, DIFFERENT request hash → the two are materially different → domain conflict.
+    const conflicting: DecisionSnapshotDraft = { ...mkDraft(bdk), inputHash: 'f'.repeat(64) };
+    await expect(
+      repo.createDecision({
+        draft: conflicting,
+        operationScope: DECISION_PERSIST_OPERATION_SCOPE,
+        idempotencyKey: `idem-${uid()}`,
+        requestHash: 'f'.repeat(64),
+      }),
+    ).rejects.toBeInstanceOf(BusinessDecisionConflictError);
+    expect(events).toContainEqual({
+      op: 'createDecision',
+      constraint: 'SNAPSHOT_BUSINESS_KEY',
+      outcome: 'conflict',
+    });
+  });
+
+  it('bindSnapshot: duplicate bind → P2002 on decisionRequestId → reload-and-prove → reuse', async () => {
+    const fx = await grantedAssignment();
+    const { intent } = await finalizedIntent(fx);
+    const decision = await decide(fx, intent.intentId);
+    const req = await decisionRepo.findDecisionRequestByIntent(intent.intentId);
+    const events: A2UniqueReconcileEvent[] = [];
+    const repo = new PurchaseIntentDecisionRepository(
+      prisma,
+      () => new Date(),
+      (e) => events.push(e),
+    );
+    const again = await repo.bindSnapshot({
+      decisionRequestId: req!.id,
+      snapshotId: decision.snapshotId,
+      findExact: (q) => findExactHistoricalDecision(q),
+    });
+    expect(again.snapshotId).toBe(decision.snapshotId);
+    expect(events).toContainEqual({
+      op: 'bindSnapshot',
+      constraint: 'BINDING_REQUEST',
+      outcome: 'equivalent-reuse',
+    });
+  });
+});
+
+// ===================================================================================================
+// Sol Closure 5 — Case C serializes on the INTENT ROOT lock ONLY (not the assignment lock).
+// ===================================================================================================
+describe('A2 Case C intent-root-only serialization (Sol Closure 5)', () => {
+  it('a freeze is NOT blocked by a held ASSIGNMENT lock (it takes the intent root only)', async () => {
+    const fx = await grantedAssignment();
+    const { intent } = await finalizedIntent(fx);
+    const holder = newClient();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let acquired!: () => void;
+    const acquiredP = new Promise<void>((r) => (acquired = r));
+    const held = holder.$transaction(
+      async (tx) => {
+        await tx.$queryRawUnsafe(
+          `SELECT "id" FROM "experiment_assignment" WHERE "id" = '${fx.assignmentId}'::uuid FOR UPDATE`,
+        );
+        acquired();
+        await gate;
+      },
+      { timeout: 30000 },
+    );
+    await acquiredP;
+    // With the assignment row locked, the Case-C freeze must STILL complete — it never waits on the
+    // assignment lock (Sol Closure 5). If it wrongly took the assignment lock this would hang → timeout.
+    const outcome = await Promise.race([
+      decide(fx, intent.intentId).then(() => 'completed'),
+      new Promise((r) => setTimeout(() => r('blocked'), 3000)),
+    ]);
+    release();
+    await held;
+    expect(outcome).toBe('completed');
+    expect(
+      await prisma.purchaseIntentDecisionRequest.count({ where: { intentId: intent.intentId } }),
+    ).toBe(1);
+  });
+});
+
+// ===================================================================================================
+// §37 #24 — finalize vs invalidate contend on the INTENT ROOT lock (deterministic barrier).
+// ===================================================================================================
+describe('A2 finalize vs invalidate — deterministic intent-root contention (§37 #24)', () => {
+  it('serialize on the intent root; never a finalization committed under a prior invalidation', async () => {
+    const fx = await grantedAssignment();
+    const token = await capturedToken(fx);
+    const intent = await createPurchaseIntent({
+      trustedParticipantContext: fx.context,
+      assignmentId: fx.assignmentId,
+      intentCaptureKey: token.intentCaptureKey,
+      intentType: 'BUYING_NOW',
+      idempotencyKey: `ci-${uid()}`,
+    });
+    const ctx = await appendPurchaseIntentContext({
+      trustedParticipantContext: fx.context,
+      assignmentId: fx.assignmentId,
+      intentId: intent.intentId,
+      contextCaptureKey: `cc-${uid()}`,
+      signature: BILL,
+      intendedTransactionAt: INTENDED_AT,
+      idempotencyKey: `ac-${uid()}`,
+    });
+    const prof = await appendEligibilityProfile({
+      trustedParticipantContext: fx.context,
+      assignmentId: fx.assignmentId,
+      profileCaptureKey: `pc-${uid()}`,
+      portfolio: PORTFOLIO,
+      idempotencyKey: `ap-${uid()}`,
+    });
+    const [finRes, invRes] = await raceAtIntentRootLock(intent.intentId, [
+      () =>
+        finalizePurchaseIntent({
+          trustedParticipantContext: fx.context,
+          assignmentId: fx.assignmentId,
+          intentId: intent.intentId,
+          contextVersionId: ctx.contextVersionId,
+          eligibilityProfileVersionId: prof.eligibilityProfileVersionId,
+          idempotencyKey: `fin-${uid()}`,
+        }),
+      () =>
+        invalidatePurchaseIntent({
+          trustedParticipantContext: fx.context,
+          assignmentId: fx.assignmentId,
+          invalidatedIntentId: intent.intentId,
+          reasonCode: 'DATA_ENTRY_ERROR',
+          idempotencyKey: `inv-${uid()}`,
+        }),
+    ]);
+    const finalized = await prisma.purchaseIntentFinalization.findUnique({
+      where: { intentId: intent.intentId },
+    });
+    const invalidated = await prisma.purchaseIntentInvalidation.findUnique({
+      where: { invalidatedIntentId: intent.intentId },
+    });
+    if (invalidated && finRes!.status === 'rejected') expect(finalized).toBeNull();
+    expect(finRes!.status === 'fulfilled' || invRes!.status === 'fulfilled').toBe(true);
+  });
+});
+
+// ===================================================================================================
+// Sol Closure 6 — historical corruption matrix (fail-closed at authoritative load).
+// ===================================================================================================
+describe('A2 historical corruption matrix (Sol Closure 6)', () => {
+  let tpl: {
+    exactValidatedDecideInputJson: unknown;
+    decideInputHash: string;
+    decisionRequestSchemaVersion: string;
+    expectedEngineInputSchemaVersion: string;
+    expectedEngineContractVersion: string;
+    expectedCorpusVersion: string;
+    expectedCorpusSemanticDigest: string;
+    holidayCalendarVersion: string;
+    holidayCalendarDigest: string;
+  } | null = null;
+
+  async function template() {
+    if (tpl) return tpl;
+    const fx = await grantedAssignment();
+    const { intent } = await finalizedIntent(fx);
+    await freezeOnly(fx, intent.intentId);
+    const row = await prisma.purchaseIntentDecisionRequest.findUnique({
+      where: { intentId: intent.intentId },
+    });
+    tpl = row as unknown as typeof tpl;
+    return tpl;
+  }
+
+  /** Insert a decision-request row on a fresh finalized host with VALID pins except the overrides. */
+  async function insertCorrupt(overrides: Record<string, unknown>) {
+    const t = (await template())!;
+    const fx = await grantedAssignment();
+    const host = await finalizedIntent(fx);
+    await prisma.purchaseIntentDecisionRequest.create({
+      data: {
+        intentId: host.intent.intentId,
+        finalizationId: host.fin.finalizationId,
+        decisionRequestSchemaVersion: t.decisionRequestSchemaVersion,
+        exactValidatedDecideInputJson: t.exactValidatedDecideInputJson as never,
+        decideInputHash: t.decideInputHash,
+        expectedEngineInputSchemaVersion: t.expectedEngineInputSchemaVersion,
+        expectedEngineContractVersion: t.expectedEngineContractVersion,
+        expectedCorpusVersion: t.expectedCorpusVersion,
+        expectedCorpusSemanticDigest: t.expectedCorpusSemanticDigest,
+        holidayCalendarVersion: t.holidayCalendarVersion,
+        holidayCalendarDigest: t.holidayCalendarDigest,
+        businessDecisionKey: deriveBusinessDecisionKey(host.intent.intentId),
+        m3_5aIdempotencyKey: deriveM3_5aIdempotencyKey(host.intent.intentId),
+        ...overrides,
+      },
+    });
+    return host.intent.intentId;
+  }
+
+  const cases: Array<{ name: string; overrides: Record<string, unknown> }> = [
+    {
+      name: 'non-derived businessDecisionKey',
+      overrides: { businessDecisionKey: 'pagamenos:study-intent-decision:v1:not-this-intent' },
+    },
+    {
+      name: 'non-derived m3_5aIdempotencyKey',
+      overrides: { m3_5aIdempotencyKey: 'pagamenos:study-intent-decision-idem:v1:not-this-intent' },
+    },
+    { name: 'decideInputHash mismatch', overrides: { decideInputHash: 'a'.repeat(64) } },
+    {
+      name: 'holiday digest mismatch',
+      overrides: { holidayCalendarDigest: 'sha256:' + 'a'.repeat(64) },
+    },
+    {
+      name: 'corpus semantic-digest empty (label grammar)',
+      overrides: { expectedCorpusSemanticDigest: '' },
+    },
+    {
+      name: 'corpus version with a forbidden character (label grammar)',
+      overrides: { expectedCorpusVersion: 'has space' },
+    },
+  ];
+  for (const c of cases) {
+    it(`rejects ${c.name} at authoritative load`, async () => {
+      const intentId = await insertCorrupt(c.overrides);
+      await expect(decisionRepo.findDecisionRequestByIntent(intentId)).rejects.toBeInstanceOf(
+        PurchaseIntentDecisionRequestIntegrityError,
+      );
+    });
+  }
+
+  it('rejects an unknown holiday calendar version at authoritative load', async () => {
+    const intentId = await insertCorrupt({
+      holidayCalendarVersion: 'pagamenos.holiday.unknown.v9',
+    });
+    await expect(decisionRepo.findDecisionRequestByIntent(intentId)).rejects.toThrow();
+  });
+
+  it('rejects an unknown engine-input schema version at authoritative load', async () => {
+    const intentId = await insertCorrupt({
+      expectedEngineInputSchemaVersion: 'pagamenos.engine-input.vX',
+    });
+    await expect(decisionRepo.findDecisionRequestByIntent(intentId)).rejects.toBeInstanceOf(
+      PurchaseIntentUnsupportedInputSchemaError,
+    );
+  });
+
+  it('rejects a CROSS-TABLE relationship corruption (finalization of a different intent) at load', async () => {
+    const t = (await template())!;
+    const fxA = await grantedAssignment();
+    const hostA = await finalizedIntent(fxA);
+    const fxB = await grantedAssignment();
+    const hostB = await finalizedIntent(fxB);
+    // Request references intent A but pins intent B's finalization → cross-table incoherence at load.
+    await prisma.purchaseIntentDecisionRequest.create({
+      data: {
+        intentId: hostA.intent.intentId,
+        finalizationId: hostB.fin.finalizationId,
+        decisionRequestSchemaVersion: t.decisionRequestSchemaVersion,
+        exactValidatedDecideInputJson: t.exactValidatedDecideInputJson as never,
+        decideInputHash: t.decideInputHash,
+        expectedEngineInputSchemaVersion: t.expectedEngineInputSchemaVersion,
+        expectedEngineContractVersion: t.expectedEngineContractVersion,
+        expectedCorpusVersion: t.expectedCorpusVersion,
+        expectedCorpusSemanticDigest: t.expectedCorpusSemanticDigest,
+        holidayCalendarVersion: t.holidayCalendarVersion,
+        holidayCalendarDigest: t.holidayCalendarDigest,
+        businessDecisionKey: deriveBusinessDecisionKey(hostA.intent.intentId),
+        m3_5aIdempotencyKey: deriveM3_5aIdempotencyKey(hostA.intent.intentId),
+      },
+    });
+    await expect(
+      decisionRepo.findDecisionRequestByIntent(hostA.intent.intentId),
+    ).rejects.toBeInstanceOf(PurchaseIntentDecisionRequestIntegrityError);
+  });
+});
+
+// ===================================================================================================
+// Sol Closure 7 — an UNBOUND historical v1 request repairs via the retained registry, with NO coupling
+// to a current-freeze holiday version/digest.
+// ===================================================================================================
+describe('A2 unbound historical v1 repair — no current-holiday coupling (Sol Closure 7)', () => {
+  it('an unbound v1 DecisionRequest repairs (decide → snapshot + binding) via the retained v1 parser', async () => {
+    const fx = await grantedAssignment();
+    const { intent } = await finalizedIntent(fx);
+    // Leave a REAL, UNBOUND v1 request (crash after freeze, before decide).
+    await freezeOnly(fx, intent.intentId);
+    const unbound = await decisionRepo.findDecisionRequestByIntent(intent.intentId);
+    expect(unbound).not.toBeNull();
+    expect(unbound!.holidayCalendarVersion).toBe(
+      'pagamenos.holiday.pe-lima-callao.private-commerce.v1',
+    );
+    expect(await decisionRepo.findBindingByRequest(unbound!.id)).toBeNull();
+    // Repair now: the drift gate no longer requires current-holiday equality (Sol Closure 7); the stored
+    // v1 holiday pins are validated against their OWN retained registry entry, and the repair completes.
+    const done = await decide(fx, intent.intentId);
+    expect(done.decisionRequestId).toBe(unbound!.id);
+    expect(done.reused).toBe(false);
+    expect(
+      await prisma.purchaseIntentDecisionRequest.count({ where: { intentId: intent.intentId } }),
+    ).toBe(1);
+    expect(
+      await prisma.purchaseIntentDecisionBinding.count({
+        where: { decisionRequestId: unbound!.id },
+      }),
+    ).toBe(1);
   });
 });
