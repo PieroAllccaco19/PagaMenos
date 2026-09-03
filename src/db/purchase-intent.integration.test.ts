@@ -23,7 +23,13 @@ import {
   resolveTrustedEntrySource,
   resolveTrustedParticipantContext,
 } from '@/services/study-admin';
-import { loadDecisionSnapshot, recordConsentGrant, recordConsentWithdrawal } from '@/services';
+import {
+  findExactHistoricalDecision,
+  loadDecisionSnapshot,
+  recordConsentGrant,
+  recordConsentWithdrawal,
+} from '@/services';
+import type { DecisionSnapshotDto } from '@/persistence';
 import {
   captureIntentToken,
   createPurchaseIntent,
@@ -716,8 +722,14 @@ describe('A2 finalization conflict, DB coherence trigger, invalidation lineage',
   });
 });
 
-// ── Authoritative snapshot binding (Sol Finding 4) ──────────────────────────────────────────────────
-describe('A2 authoritative snapshot binding (§16/§17; Sol Finding 4)', () => {
+// ── Authoritative snapshot binding — complete nine-clause predicate (Sol Correction 4) ──────────────
+describe('A2 authoritative snapshot binding (§17; Sol Correction 4)', () => {
+  const realFinder = (q: {
+    businessDecisionKey: string;
+    idempotencyKey: string;
+    inputHash: string;
+  }) => findExactHistoricalDecision(q);
+
   it('the exact cross-wire attack (Request A + unrelated Snapshot B) fails closed', async () => {
     const fxA = await grantedAssignment();
     const fxB = await grantedAssignment();
@@ -726,22 +738,21 @@ describe('A2 authoritative snapshot binding (§16/§17; Sol Finding 4)', () => {
     const decA = await decide(fxA, a.intent.intentId);
     const decB = await decide(fxB, b.intent.intentId);
     const requestA = await decisionRepo.findDecisionRequestByIntent(a.intent.intentId);
-    // Attempt to bind A's request to B's UNRELATED snapshot: bindSnapshot loads BOTH authoritative rows
-    // and rejects on the businessDecisionKey mismatch — caller-described identity is never trusted.
+    // bindSnapshot loads BOTH authoritative rows via the §18 finder (keyed on request A's OWN identity)
+    // and rejects: the finder returns snapshot A, whose id != snapshot B → IDEMPOTENCY clause fails.
     await expect(
       decisionRepo.bindSnapshot({
         decisionRequestId: requestA!.id,
         snapshotId: decB.snapshotId,
-        loadSnapshot: (id) => loadDecisionSnapshot(id),
+        findExact: realFinder,
       }),
     ).rejects.toBeInstanceOf(PurchaseIntentBindingCoherenceError);
-    // The genuine (related) binding remains intact.
     expect(decA.snapshotId).not.toBe(decB.snapshotId);
     const bindingA = await decisionRepo.findBindingByRequest(requestA!.id);
     expect(bindingA?.snapshotId).toBe(decA.snapshotId);
   });
 
-  it('re-binding the SAME snapshot is idempotent; a different snapshot for the request is rejected', async () => {
+  it('re-binding the SAME snapshot is idempotent (complete predicate re-proven on reload)', async () => {
     const fx = await grantedAssignment();
     const { intent } = await finalizedIntent(fx);
     const dec = await decide(fx, intent.intentId);
@@ -749,18 +760,87 @@ describe('A2 authoritative snapshot binding (§16/§17; Sol Finding 4)', () => {
     const same = await decisionRepo.bindSnapshot({
       decisionRequestId: request!.id,
       snapshotId: dec.snapshotId,
-      loadSnapshot: (id) => loadDecisionSnapshot(id),
+      findExact: realFinder,
     });
     expect(same.snapshotId).toBe(dec.snapshotId);
+  });
 
-    const other = await grantedAssignment();
-    const b = await finalizedIntent(other);
-    const decOther = await decide(other, b.intent.intentId);
+  // Freeze a request WITHOUT deciding (crash after freeze) so we can drive bindSnapshot against a
+  // controlled finder that returns a snapshot matching every clause but one.
+  async function frozenUnboundRequest() {
+    const fx = await grantedAssignment();
+    const { intent } = await finalizedIntent(fx);
+    await expect(
+      requestPurchaseIntentDecisionWithDeps(
+        {
+          trustedParticipantContext: fx.context,
+          assignmentId: fx.assignmentId,
+          intentId: intent.intentId,
+        },
+        {
+          decideAndPersist: () => {
+            throw new Error('freeze only');
+          },
+        },
+      ),
+    ).rejects.toThrow('freeze only');
+    const request = (await decisionRepo.findDecisionRequestByIntent(intent.intentId))!;
+    return { request };
+  }
+
+  // A genuine base snapshot DTO that coheres with a request (from a separately decided intent), cloned
+  // and mutated on exactly ONE required pin to prove each clause independently.
+  async function baseSnapshot(): Promise<DecisionSnapshotDto> {
+    const fx = await grantedAssignment();
+    const { intent } = await finalizedIntent(fx);
+    const dec = await decide(fx, intent.intentId);
+    return (await loadDecisionSnapshot(dec.snapshotId))!;
+  }
+
+  const stub =
+    (snap: DecisionSnapshotDto) =>
+    async (): Promise<{ kind: 'FOUND'; snapshot: DecisionSnapshotDto }> => ({
+      kind: 'FOUND',
+      snapshot: snap,
+    });
+
+  it('rejects a snapshot matching a SUBSET of clauses but differing on exactly one required pin', async () => {
+    const base = await baseSnapshot();
+    // Each mutation keeps snapshot.id === request-derived id (so IDEMPOTENCY passes) but breaks one pin.
+    const cases: Array<{
+      reason: string;
+      mutate: (s: DecisionSnapshotDto) => DecisionSnapshotDto;
+    }> = [
+      { reason: 'BUSINESS_KEY', mutate: (s) => ({ ...s, businessDecisionKey: 'WRONG' }) },
+      { reason: 'INPUT_HASH', mutate: (s) => ({ ...s, inputHash: 'a'.repeat(64) }) },
+      { reason: 'CORPUS', mutate: (s) => ({ ...s, corpusVersion: 'WRONG_CORPUS' }) },
+    ];
+    for (const c of cases) {
+      const { request } = await frozenUnboundRequest();
+      // Align id + the derived-key/hash so the finder-keyed clauses would pass, then break ONE pin.
+      const snap = c.mutate({
+        ...base,
+        businessDecisionKey: request.businessDecisionKey,
+        inputHash: request.decideInputHash,
+        corpusVersion: request.expectedCorpusVersion,
+      });
+      await expect(
+        decisionRepo.bindSnapshot({
+          decisionRequestId: request.id,
+          snapshotId: snap.id,
+          findExact: stub(snap),
+        }),
+      ).rejects.toBeInstanceOf(PurchaseIntentBindingCoherenceError);
+    }
+  });
+
+  it('rejects binding when the finder returns NONE (no receipt/idempotency identity)', async () => {
+    const { request } = await frozenUnboundRequest();
     await expect(
       decisionRepo.bindSnapshot({
-        decisionRequestId: request!.id,
-        snapshotId: decOther.snapshotId,
-        loadSnapshot: (id) => loadDecisionSnapshot(id),
+        decisionRequestId: request.id,
+        snapshotId: 'a0000000-0000-0000-0000-000000000000',
+        findExact: async () => ({ kind: 'NONE' }),
       }),
     ).rejects.toBeInstanceOf(PurchaseIntentBindingCoherenceError);
   });
@@ -812,7 +892,7 @@ describe('A2 historical parser & self-integrity (§19; Sol Finding 7)', () => {
          "expectedCorpusVersion","expectedCorpusSemanticDigest","holidayCalendarVersion",
          "holidayCalendarDigest","businessDecisionKey","m3_5aIdempotencyKey","createdAt")
        VALUES (gen_random_uuid(), '${host.intent.intentId}'::uuid, '${host.fin.finalizationId}'::uuid,
-         'pagamenos.a2-decision-request.v1', '{}'::jsonb, 'deadbeef', 'e', 'c', 'v', 'd', 'h', 'hd',
+         'pagamenos.a2-decision-request.v1', '{}'::jsonb, 'deadbeef', 'pagamenos.engine-input.v1', 'c', 'v', 'd', 'h', 'hd',
          '${bdk}', '${idem}', now())`,
     );
     await expect(
@@ -1134,5 +1214,282 @@ describe('A2 real-PostgreSQL concurrency (Sol Finding 8)', () => {
     }
     // Exactly one of the two ordering outcomes occurred (never a torn state).
     expect(finRes.status === 'fulfilled' || invRes.status === 'fulfilled').toBe(true);
+  });
+});
+
+// ── Case A: historical binding survives later invalidation (Sol Correction 7) ───────────────────────
+describe('A2 Case A — historical binding returned even after later invalidation (§20)', () => {
+  it('valid decision → later invalidation → replay returns the SAME binding, no new snapshot/request', async () => {
+    const fx = await grantedAssignment();
+    const { intent } = await finalizedIntent(fx);
+    const first = await decide(fx, intent.intentId);
+    await invalidatePurchaseIntent({
+      trustedParticipantContext: fx.context,
+      assignmentId: fx.assignmentId,
+      invalidatedIntentId: intent.intentId,
+      reasonCode: 'PARTICIPANT_CORRECTION',
+      idempotencyKey: `inv-${uid()}`,
+    });
+    const again = await decide(fx, intent.intentId);
+    expect(again.snapshotId).toBe(first.snapshotId);
+    expect(again.decisionRequestId).toBe(first.decisionRequestId);
+    expect(again.reused).toBe(true);
+    expect(
+      await prisma.purchaseIntentDecisionRequest.count({ where: { intentId: intent.intentId } }),
+    ).toBe(1);
+    expect(
+      await prisma.purchaseIntentDecisionBinding.count({
+        where: { decisionRequestId: first.decisionRequestId },
+      }),
+    ).toBe(1);
+  });
+});
+
+// ── Holiday historical/current gate separation (Sol Correction 5) ───────────────────────────────────
+describe('A2 holiday historical loadability vs current-freeze gate (§3.5; Sol Correction 5)', () => {
+  it('a persisted v1 request loads via the version-DISPATCHED retained parser (no coupling to a current constant)', async () => {
+    const fx = await grantedAssignment();
+    const { intent } = await finalizedIntent(fx);
+    await decide(fx, intent.intentId);
+    const loaded = await decisionRepo.findDecisionRequestByIntent(intent.intentId);
+    expect(loaded).not.toBeNull();
+    expect(loaded!.holidayCalendarVersion).toBe(
+      'pagamenos.holiday.pe-lima-callao.private-commerce.v1',
+    );
+    expect(loaded!.holidayCalendarDigest).toBe(
+      'sha256:6d65409665d176d40390be4ed8414dc22e4ab9d11b40ede1d38abb7b258460d8',
+    );
+  });
+});
+
+// ── GENUINE barrier-synchronized withdrawal + Case-C races (Sol Corrections 3/7) ────────────────────
+// Barrier mechanism: a dedicated Prisma connection opens a transaction, takes the assignment row lock
+// (SELECT … FOR UPDATE) and holds it. The competing production operations are launched and BLOCK on
+// that same row lock; we prove they reached the critical window by asserting they are still pending
+// after a settle window, then release the barrier so they serialize on the real assignment lock. This
+// is the accepted "deterministic row-lock hold/release" barrier — no production synchronization hook.
+async function raceAtAssignmentLock(
+  assignmentId: string,
+  ops: Array<() => Promise<unknown>>,
+): Promise<Array<{ status: 'fulfilled' | 'rejected'; reason?: unknown }>> {
+  const holder = newClient();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  let acquired!: () => void;
+  const acquiredP = new Promise<void>((r) => (acquired = r));
+  const held = holder.$transaction(
+    async (tx) => {
+      await tx.$queryRawUnsafe(
+        `SELECT "id" FROM "experiment_assignment" WHERE "id" = '${assignmentId}'::uuid FOR UPDATE`,
+      );
+      acquired();
+      await gate;
+    },
+    { timeout: 30000 },
+  );
+  await acquiredP;
+  const settled = ops.map((op) =>
+    op().then(
+      () => ({ status: 'fulfilled' as const }),
+      (reason: unknown) => ({ status: 'rejected' as const, reason }),
+    ),
+  );
+  const probe = await Promise.race([
+    Promise.all(settled).then(() => 'done'),
+    new Promise((r) => setTimeout(() => r('pending'), 400)),
+  ]);
+  expect(probe).toBe('pending');
+  release();
+  await held;
+  return Promise.all(settled);
+}
+
+describe('A2 genuine withdrawal races — one per new-fact family (Sol Correction 3)', () => {
+  const isConsentReject = (r: { status: string; reason?: unknown }) =>
+    r.status === 'fulfilled' ||
+    (r.status === 'rejected' && r.reason instanceof PurchaseIntentConsentNotAuthorizedError);
+
+  it('create vs withdrawal', async () => {
+    const fx = await grantedAssignment();
+    const token = await capturedToken(fx);
+    const [write, wd] = await raceAtAssignmentLock(fx.assignmentId, [
+      () =>
+        createPurchaseIntent({
+          trustedParticipantContext: fx.context,
+          assignmentId: fx.assignmentId,
+          intentCaptureKey: token.intentCaptureKey,
+          intentType: 'BUYING_NOW',
+          idempotencyKey: `ci-${uid()}`,
+        }),
+      () =>
+        recordConsentWithdrawal({
+          trustedParticipantContext: fx.context,
+          assignmentId: fx.assignmentId,
+          idempotencyKey: `cw-${uid()}`,
+        }),
+    ]);
+    expect(wd!.status).toBe('fulfilled');
+    expect(isConsentReject(write!)).toBe(true);
+  });
+
+  it('context append vs withdrawal', async () => {
+    const fx = await grantedAssignment();
+    const token = await capturedToken(fx);
+    const intent = await createPurchaseIntent({
+      trustedParticipantContext: fx.context,
+      assignmentId: fx.assignmentId,
+      intentCaptureKey: token.intentCaptureKey,
+      intentType: 'BUYING_NOW',
+      idempotencyKey: `ci-${uid()}`,
+    });
+    const [write, wd] = await raceAtAssignmentLock(fx.assignmentId, [
+      () =>
+        appendPurchaseIntentContext({
+          trustedParticipantContext: fx.context,
+          assignmentId: fx.assignmentId,
+          intentId: intent.intentId,
+          contextCaptureKey: `cc-${uid()}`,
+          signature: BILL,
+          intendedTransactionAt: INTENDED_AT,
+          idempotencyKey: `ac-${uid()}`,
+        }),
+      () =>
+        recordConsentWithdrawal({
+          trustedParticipantContext: fx.context,
+          assignmentId: fx.assignmentId,
+          idempotencyKey: `cw-${uid()}`,
+        }),
+    ]);
+    expect(wd!.status).toBe('fulfilled');
+    expect(isConsentReject(write!)).toBe(true);
+  });
+
+  it('eligibility profile vs withdrawal', async () => {
+    const fx = await grantedAssignment();
+    const [write, wd] = await raceAtAssignmentLock(fx.assignmentId, [
+      () =>
+        appendEligibilityProfile({
+          trustedParticipantContext: fx.context,
+          assignmentId: fx.assignmentId,
+          profileCaptureKey: `pc-${uid()}`,
+          portfolio: PORTFOLIO,
+          idempotencyKey: `ap-${uid()}`,
+        }),
+      () =>
+        recordConsentWithdrawal({
+          trustedParticipantContext: fx.context,
+          assignmentId: fx.assignmentId,
+          idempotencyKey: `cw-${uid()}`,
+        }),
+    ]);
+    expect(wd!.status).toBe('fulfilled');
+    expect(isConsentReject(write!)).toBe(true);
+  });
+
+  it('finalize vs withdrawal', async () => {
+    const fx = await grantedAssignment();
+    const token = await capturedToken(fx);
+    const intent = await createPurchaseIntent({
+      trustedParticipantContext: fx.context,
+      assignmentId: fx.assignmentId,
+      intentCaptureKey: token.intentCaptureKey,
+      intentType: 'BUYING_NOW',
+      idempotencyKey: `ci-${uid()}`,
+    });
+    const ctx = await appendPurchaseIntentContext({
+      trustedParticipantContext: fx.context,
+      assignmentId: fx.assignmentId,
+      intentId: intent.intentId,
+      contextCaptureKey: `cc-${uid()}`,
+      signature: BILL,
+      intendedTransactionAt: INTENDED_AT,
+      idempotencyKey: `ac-${uid()}`,
+    });
+    const prof = await appendEligibilityProfile({
+      trustedParticipantContext: fx.context,
+      assignmentId: fx.assignmentId,
+      profileCaptureKey: `pc-${uid()}`,
+      portfolio: PORTFOLIO,
+      idempotencyKey: `ap-${uid()}`,
+    });
+    const [write, wd] = await raceAtAssignmentLock(fx.assignmentId, [
+      () =>
+        finalizePurchaseIntent({
+          trustedParticipantContext: fx.context,
+          assignmentId: fx.assignmentId,
+          intentId: intent.intentId,
+          contextVersionId: ctx.contextVersionId,
+          eligibilityProfileVersionId: prof.eligibilityProfileVersionId,
+          idempotencyKey: `fin-${uid()}`,
+        }),
+      () =>
+        recordConsentWithdrawal({
+          trustedParticipantContext: fx.context,
+          assignmentId: fx.assignmentId,
+          idempotencyKey: `cw-${uid()}`,
+        }),
+    ]);
+    expect(wd!.status).toBe('fulfilled');
+    expect(isConsentReject(write!)).toBe(true);
+  });
+
+  it('invalidate vs withdrawal', async () => {
+    const fx = await grantedAssignment();
+    const token = await capturedToken(fx);
+    const intent = await createPurchaseIntent({
+      trustedParticipantContext: fx.context,
+      assignmentId: fx.assignmentId,
+      intentCaptureKey: token.intentCaptureKey,
+      intentType: 'BUYING_NOW',
+      idempotencyKey: `ci-${uid()}`,
+    });
+    const [write, wd] = await raceAtAssignmentLock(fx.assignmentId, [
+      () =>
+        invalidatePurchaseIntent({
+          trustedParticipantContext: fx.context,
+          assignmentId: fx.assignmentId,
+          invalidatedIntentId: intent.intentId,
+          reasonCode: 'DATA_ENTRY_ERROR',
+          idempotencyKey: `inv-${uid()}`,
+        }),
+      () =>
+        recordConsentWithdrawal({
+          trustedParticipantContext: fx.context,
+          assignmentId: fx.assignmentId,
+          idempotencyKey: `cw-${uid()}`,
+        }),
+    ]);
+    expect(wd!.status).toBe('fulfilled');
+    expect(isConsentReject(write!)).toBe(true);
+  });
+});
+
+describe('A2 Case C freeze vs invalidation race (Sol Correction 7)', () => {
+  it('a decision freeze and an invalidation contend at the intent lock; never a request under invalidation', async () => {
+    const fx = await grantedAssignment();
+    const { intent } = await finalizedIntent(fx);
+    const [dec, inv] = await raceAtAssignmentLock(fx.assignmentId, [
+      () => decide(fx, intent.intentId),
+      () =>
+        invalidatePurchaseIntent({
+          trustedParticipantContext: fx.context,
+          assignmentId: fx.assignmentId,
+          invalidatedIntentId: intent.intentId,
+          reasonCode: 'SUPERSEDED_BY_REPLACEMENT',
+          idempotencyKey: `inv-${uid()}`,
+        }),
+    ]);
+    const requestExists =
+      (await prisma.purchaseIntentDecisionRequest.count({
+        where: { intentId: intent.intentId },
+      })) > 0;
+    const invalidated =
+      (await prisma.purchaseIntentInvalidation.count({
+        where: { invalidatedIntentId: intent.intentId },
+      })) > 0;
+    if (invalidated && dec!.status === 'rejected') {
+      expect(requestExists).toBe(false);
+    }
+    expect(inv!.status === 'fulfilled' || dec!.status === 'fulfilled').toBe(true);
   });
 });
