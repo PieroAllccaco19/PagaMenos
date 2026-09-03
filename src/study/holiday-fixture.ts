@@ -174,3 +174,49 @@ export function resolveHolidayCalendarFixture(version: string): HolidayCalendarF
   if (!f) throw new UnsupportedHolidayCalendarVersionError(version);
   return f;
 }
+
+const LIMA_DATE_FORMAT = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Lima',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+/**
+ * The America/Lima local calendar date (`YYYY-MM-DD`) of an ISO-8601 instant (A2 §3.5). Uses the exact
+ * accepted Lima civil-time semantics via the IANA zone (Lima is UTC−5 with no DST in the coverage era).
+ */
+export function limaLocalDateOf(instantIso: string): string {
+  const ms = Date.parse(instantIso);
+  if (Number.isNaN(ms)) {
+    throw new HolidayCoverageError(
+      A2_HOLIDAY_CALENDAR_VERSION_V1,
+      String(instantIso),
+      A2_HOLIDAY_CALENDAR_FIXTURE_V1.coverageStartDate,
+      A2_HOLIDAY_CALENDAR_FIXTURE_V1.coverageEndDate,
+    );
+  }
+  // en-CA formats as YYYY-MM-DD.
+  return LIMA_DATE_FORMAT.format(new Date(ms));
+}
+
+/**
+ * Verify an intended-transaction instant's Lima local date lies within a fixture's coverage (A2 §3.5),
+ * returning that local date. Out-of-coverage (before start / after end) fails closed. Used BEFORE a
+ * DecisionRequest freeze; NOT a gate on loading a historical request whose date was already accepted.
+ */
+export function assertIntendedDateWithinCoverage(
+  fixture: HolidayCalendarFixtureV1,
+  intendedTransactionAtIso: string,
+): string {
+  const limaDate = limaLocalDateOf(intendedTransactionAtIso);
+  if (limaDate < fixture.coverageStartDate || limaDate > fixture.coverageEndDate) {
+    throw new HolidayCoverageError(
+      fixture.version,
+      limaDate,
+      fixture.coverageStartDate,
+      fixture.coverageEndDate,
+    );
+  }
+  return limaDate;
+}

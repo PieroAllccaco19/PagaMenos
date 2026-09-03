@@ -23,6 +23,14 @@ export class PurchaseIntentValidationError extends PurchaseIntentError {
   }
 }
 
+/** A new-collection A2 operation was attempted while consent was not authorized at capture time (A2 §7). */
+export class PurchaseIntentConsentNotAuthorizedError extends PurchaseIntentError {
+  constructor(message = 'participant consent was not authorized at the sampled capture time') {
+    super('PURCHASE_INTENT_CONSENT_NOT_AUTHORIZED', message);
+    this.name = 'PurchaseIntentConsentNotAuthorizedError';
+  }
+}
+
 /** Own-assignment / own-intent trusted-context ownership violation (A2 §5/§7). */
 export class PurchaseIntentOwnershipError extends PurchaseIntentError {
   constructor() {

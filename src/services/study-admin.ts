@@ -32,5 +32,7 @@ export { loadFrozenProtocolForAnalysis, type LoadFrozenProtocolRef } from './stu
 // participant barrel; a trusted server-side session/auth layer resolves the authenticated identity.
 export {
   resolveTrustedParticipantContext,
+  resolveTrustedEntrySource,
   type ResolveTrustedParticipantContextArgs,
 } from './study-participant-session';
+export type { ResolvedEntrySource } from '@/study';
