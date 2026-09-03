@@ -18,6 +18,8 @@
 // receipt-return path uses the single `assertReceiptMatchesRequest` identity invariant (§4/§5).
 import { decide, type DecideInput, type EngineEvaluation } from '@/engine';
 
+import { PurchaseIntentHistoricalConflictError } from '@/study';
+
 import { decisionSnapshotRepository } from '@/db/decision-snapshot-repository';
 import { assertCanonicalizable } from '@/persistence/canonical';
 import { BusinessDecisionConflictError, PersistenceInvariantError } from '@/persistence/errors';
@@ -170,19 +172,74 @@ export async function decideAndPersistWithDeps(
   return verifyHistoricalSnapshot(dto);
 }
 
+/** The exact-identity a M3.5B-A2 decision request looks up (§18). */
+export interface FindExactHistoricalDecisionQuery {
+  businessDecisionKey: string;
+  idempotencyKey: string; // the M3.5A idempotency key (operationScope = DECISION_PERSIST_V1)
+  inputHash: string; // == requestHash == decideInputHash
+}
+export type FindExactHistoricalDecisionResult =
+  { kind: 'NONE' } | { kind: 'FOUND'; snapshot: DecisionSnapshotDto };
+
 /**
- * INTERNAL: read-only exact-historical lookup by business key (M3.5B-A2 §18). Loads + fully verifies
- * the existing snapshot for a completed-decision business key WITHOUT deciding, corpus/build work, or
- * any write. Returns null when no decision was ever persisted for the key. Never rewrites history.
+ * INTERNAL: read-only exact-historical decision lookup (M3.5B-A2 §18/§24). READ ONLY — no engine,
+ * corpus, build, or write. Returns NONE only when NOTHING exists for the exact identity and no
+ * conflicting partial state exists; FOUND only when a decision exists for the exact identity AND every
+ * receipt/snapshot integrity + coherence check passes. Any corrupted/contradictory/partial state throws
+ * a typed CONFLICT — it is NEVER collapsed to NONE. The snapshot returned is loaded authoritatively by
+ * id from the receipt and fully verified (`verifyHistoricalSnapshot`); nothing is caller-described.
  */
 export async function findExactHistoricalDecisionWithDeps(
-  businessDecisionKey: string,
+  query: FindExactHistoricalDecisionQuery,
   deps: DecideAndPersistDeps = {},
-): Promise<DecisionSnapshotDto | null> {
+): Promise<FindExactHistoricalDecisionResult> {
   const repository = deps.repository ?? decisionSnapshotRepository;
-  const key = requireNonEmpty(businessDecisionKey, 'businessDecisionKey');
-  const existing = await repository.findSnapshotByBusinessKey(key);
-  return existing ? verifyHistoricalSnapshot(existing) : null;
+  const businessDecisionKey = requireNonEmpty(query.businessDecisionKey, 'businessDecisionKey');
+  const idempotencyKey = requireNonEmpty(query.idempotencyKey, 'idempotencyKey');
+  const inputHash = requireNonEmpty(query.inputHash, 'inputHash');
+  const operationScope = DECISION_PERSIST_OPERATION_SCOPE;
+
+  const receipt = await repository.findReceipt(operationScope, idempotencyKey);
+  const snapshotByKey = await repository.findSnapshotByBusinessKey(businessDecisionKey);
+
+  if (receipt === null && snapshotByKey === null) return { kind: 'NONE' };
+
+  if (receipt !== null) {
+    const snapshot = await repository.findSnapshotById(receipt.decisionSnapshotId);
+    if (!snapshot) {
+      throw new PurchaseIntentHistoricalConflictError(
+        'RECEIPT_DANGLING',
+        `receipt ${operationScope}/${idempotencyKey} references missing snapshot ${receipt.decisionSnapshotId}`,
+      );
+    }
+    if (receipt.requestHash !== inputHash) {
+      throw new PurchaseIntentHistoricalConflictError(
+        'RECEIPT_HASH_MISMATCH',
+        `receipt requestHash ${receipt.requestHash} != expected inputHash ${inputHash}`,
+      );
+    }
+    if (snapshot.businessDecisionKey !== businessDecisionKey) {
+      throw new PurchaseIntentHistoricalConflictError(
+        'BUSINESS_KEY_MISMATCH',
+        `snapshot businessDecisionKey ${snapshot.businessDecisionKey} != ${businessDecisionKey}`,
+      );
+    }
+    verifyHistoricalSnapshot(snapshot); // recompute hashes + column↔payload coherence (throws typed)
+    if (snapshot.inputHash !== inputHash) {
+      throw new PurchaseIntentHistoricalConflictError(
+        'SEMANTIC_MISMATCH',
+        `snapshot inputHash ${snapshot.inputHash} != expected ${inputHash}`,
+      );
+    }
+    return { kind: 'FOUND', snapshot };
+  }
+
+  // receipt === null but a snapshot exists under this business key: A2 writes snapshot+receipt
+  // atomically under one deterministic key, so this is a contradictory partial state — never NONE.
+  throw new PurchaseIntentHistoricalConflictError(
+    'SNAPSHOT_WITHOUT_RECEIPT',
+    `snapshot exists for businessDecisionKey ${businessDecisionKey} but no receipt for the deterministic key`,
+  );
 }
 
 /** INTERNAL: load with an injectable store. See `loadDecisionSnapshot`. */
@@ -231,14 +288,14 @@ export function loadDecisionSnapshot(id: string): Promise<DecisionSnapshotDto | 
 }
 
 /**
- * Read-only exact-historical decision lookup by completed-decision business key (M3.5B-A2 §18), using
- * TRUSTED production dependencies. Returns the fully-verified persisted snapshot, or null if none was
- * ever recorded for the key. Decides nothing and writes nothing.
+ * Read-only exact-historical decision lookup (M3.5B-A2 §18/§24), using TRUSTED production dependencies.
+ * Returns NONE / FOUND(verified snapshot), or throws a typed CONFLICT on any corrupted/partial state.
+ * Decides nothing and writes nothing.
  */
 export function findExactHistoricalDecision(
-  businessDecisionKey: string,
-): Promise<DecisionSnapshotDto | null> {
-  return findExactHistoricalDecisionWithDeps(businessDecisionKey);
+  query: FindExactHistoricalDecisionQuery,
+): Promise<FindExactHistoricalDecisionResult> {
+  return findExactHistoricalDecisionWithDeps(query);
 }
 
 /**

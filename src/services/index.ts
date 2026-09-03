@@ -12,6 +12,8 @@ export {
   replayDecisionSnapshot,
   findExactHistoricalDecision,
   type DecideAndPersistRequest,
+  type FindExactHistoricalDecisionQuery,
+  type FindExactHistoricalDecisionResult,
 } from './decide-and-persist';
 
 // Types + typed errors consumers need to handle results/failures (read-only; no write capability).
@@ -36,6 +38,7 @@ export {
 export {
   recordConsentGrant,
   recordConsentWithdrawal,
+  readConsentAuthorizationFacts,
   type RecordConsentGrantRequest,
   type RecordConsentWithdrawalRequest,
   type ConsentCommandResult,
@@ -69,7 +72,9 @@ export {
 export {
   PurchaseIntentError,
   PurchaseIntentValidationError,
+  PurchaseIntentConsentNotAuthorizedError,
   PurchaseIntentOwnershipError,
+  CorpusAuthorityMismatchError,
   PurchaseIntentCaptureConflictError,
   PurchaseIntentContextConflictError,
   PurchaseIntentContextSignatureError,

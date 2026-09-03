@@ -134,6 +134,25 @@ const FORBIDDEN_DEEP_SERVICE = [
       'Import the public @/services barrel (decideAndPersist / loadDecisionSnapshot / ' +
       'replayDecisionSnapshot). The decide-and-persist module exposes injectable deps and is off-limits.',
   },
+  {
+    // A2-CODE (Sol Finding 1): the A2 lifecycle + decision-saga modules expose the injectable
+    // `*WithDeps` surface (repository, trusted clock, decideAndPersist/finder/loader). Ordinary code
+    // must use the public @/services barrel (one-request-argument wrappers only). Only the barrel and
+    // tests may import these deep modules.
+    group: [
+      '@/services/study-purchase-intent',
+      '@/services/study-purchase-intent.js',
+      '@/services/study-purchase-intent.ts',
+      '**/services/study-purchase-intent',
+      '@/services/study-intent-decision',
+      '@/services/study-intent-decision.js',
+      '@/services/study-intent-decision.ts',
+      '**/services/study-intent-decision',
+    ],
+    message:
+      'Import the public @/services barrel. The A2 study-purchase-intent / study-intent-decision ' +
+      'modules expose injectable dependencies (repository, trusted clock, decision function) and are off-limits.',
+  },
 ];
 
 const FORBIDDEN_WRITE_AND_DEEP = [...FORBIDDEN_WRITE_INTERNALS, ...FORBIDDEN_DEEP_SERVICE];
@@ -177,6 +196,16 @@ const FORBIDDEN_STUDY_ADMIN = [
       'The trusted participant-context creation primitive is off-limits. Participant-facing code uses ' +
       'isTrustedParticipantContext / the TrustedParticipantContext type from @/study; contexts are ' +
       'constructed only by the trusted session adapter (@/services/study-admin).',
+  },
+  {
+    // A2-CODE: the trusted entry-source CREATION primitive submodule. Ordinary code must never reach
+    // it (it would let a caller mint trusted RESEARCH/AUTH/etc. provenance). Only the trusted session
+    // adapter and the study barrel may import it.
+    group: ['@/study/entry-source-context', '**/study/entry-source-context'],
+    message:
+      'The trusted entry-source creation primitive is off-limits. Participant-facing code uses ' +
+      'isResolvedEntrySource / the ResolvedEntrySource type from @/study; trusted entry provenance is ' +
+      'minted only by the trusted session adapter (@/services/study-admin).',
   },
 ];
 

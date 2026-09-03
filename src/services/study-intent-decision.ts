@@ -1,23 +1,27 @@
-// PagaMenos · src/services — PurchaseIntentDecisionCapability + crash-repair saga (A2 §12–§19). SANCTIONED.
+// PagaMenos · src/services — PurchaseIntentDecisionCapability + crash-repair saga (A2 §12–§20). SANCTIONED.
 //
 // Turns a finalized PurchaseIntent into a persisted, exactly-bound M3.5A decision, deterministically and
-// crash-resumably. The saga has three durable steps, each idempotent, so re-invocation after a crash at
-// ANY point converges to the same bound decision without recomputation or history rewrite:
-//   1. FREEZE (once) — build the exact validated DecideInput from the FROZEN finalized authorities +
-//      the accepted corpus snapshot + the pinned holiday fixture, sample the trusted evaluatedAt ONCE,
-//      derive businessDecisionKey / m3_5aIdempotencyKey from the immutable intent id, and persist the
-//      immutable decision request (self-verified on load).
-//   2. DECIDE — run the sanctioned M3.5A `decideAndPersist` over the FROZEN input, keyed by the derived
-//      keys (idempotent + race-safe). Skipped entirely when the decision already exists (read via the
-//      read-only historical facade), which keeps crash-repair safe even after a later corpus update.
-//   3. BIND — persist the exact 1:1 request↔snapshot binding (idempotent; coherence-checked).
-// A frozen-but-undecided request is fail-closed under runtime semantic drift (§14): its pinned corpus/
-// engine/holiday versions must still match the current runtime before a NEW decision may be computed.
-// The raw decision repository is reachable only from here; the intent repository is read-only here.
+// crash-resumably. Three durable, idempotent steps (freeze-once → decide via M3.5A → bind) so
+// re-invocation after a crash at ANY point converges without recomputation or history rewrite.
+//
+// PUBLIC vs INTERNAL surface (Sol Finding 1): the operation is a PUBLIC one-request-argument wrapper
+// plus an INTERNAL `*WithDeps`. Only the wrapper is re-exported by the public barrel; the injectable
+// seam (repositories, trusted clock, decideAndPersist / findExactHistoricalDecision / loadDecisionSnapshot)
+// is reachable only from this sanctioned file and tests. No caller can inject infrastructure or a clock.
+//
+// PRE-FREEZE AUTHORITY (Sol Findings 5/6): before freezing, the corpus semantic-authority digest is
+// recomputed and gated (`assertCorpusAuthority`), and the intended-transaction Lima date is verified
+// inside the accepted holiday-fixture coverage; both the recomputed corpus digest and the exact holiday
+// fixture version+digest are pinned into the immutable frozen request.
+//
+// AUTHORITATIVE BINDING (Sol Finding 4): the exact snapshot is obtained via the read-only §18 finder
+// (authoritative receipt+snapshot verification), and bound via `bindSnapshot`, which independently
+// re-loads both authoritative rows — no caller-described identity is ever trusted.
 import { loadCorpus } from '@/corpus';
 
 import {
   purchaseIntentDecisionRepository,
+  CURRENT_A2_DECISION_REQUEST_SCHEMA_VERSION,
   type PurchaseIntentDecisionRepository,
 } from '@/db/purchase-intent-decision-repository';
 import {
@@ -28,13 +32,17 @@ import { ENGINE_CONTRACT_VERSION, ENGINE_INPUT_SCHEMA_VERSION } from '@/persiste
 import {
   decideAndPersist as decideAndPersistTrusted,
   findExactHistoricalDecision as findExactHistoricalDecisionTrusted,
-  type DecisionSnapshotDto,
+  loadDecisionSnapshot as loadDecisionSnapshotTrusted,
 } from '@/services';
 import {
   A2_HOLIDAY_CALENDAR_FIXTURE_V1,
   A2_HOLIDAY_CALENDAR_VERSION_V1,
+  assertCorpusAuthority,
+  assertIntendedDateWithinCoverage,
   buildDecideInputFromFinalizedAuthorities,
+  computeCorpusSemanticDigest,
   computeDecideInputHash,
+  computeHolidayContentDigest,
   deriveBusinessDecisionKey,
   deriveM3_5aIdempotencyKey,
   isTrustedParticipantContext,
@@ -50,16 +58,19 @@ import {
 } from '@/study';
 import type { DecideInput } from '@/engine';
 
-/** A2 decision-request schema version (A2 §12). */
-export const A2_DECISION_REQUEST_SCHEMA_VERSION_V1 = 'pagamenos.a2-decision-request.v1';
+export const A2_DECISION_REQUEST_SCHEMA_VERSION_V1 = CURRENT_A2_DECISION_REQUEST_SCHEMA_VERSION;
 
-/** Trusted decide/persist + historical-read seam (defaults to the sanctioned production functions). */
+/**
+ * INTERNAL injectable seam (Sol Finding 1). NOT part of the public request and NOT reachable through
+ * the public barrel; only this sanctioned file and tests may pass it. Every field defaults to the
+ * trusted production dependency; `now` is the trusted evaluatedAt clock (never caller-supplied).
+ */
 export interface IntentDecisionDeps {
   intentRepository?: PurchaseIntentRepository;
   decisionRepository?: PurchaseIntentDecisionRepository;
-  now?: () => Date;
   decideAndPersist?: typeof decideAndPersistTrusted;
   findExactHistoricalDecision?: typeof findExactHistoricalDecisionTrusted;
+  loadDecisionSnapshot?: typeof loadDecisionSnapshotTrusted;
 }
 
 export interface RequestPurchaseIntentDecisionRequest {
@@ -87,20 +98,17 @@ function requireTrustedContext(value: unknown): TrustedParticipantContext {
   return value;
 }
 
-/**
- * Request (or resume) the exact bound decision for a finalized PurchaseIntent (A2 §12–§19). Idempotent
- * and crash-resumable end to end: safe to invoke any number of times; converges to one bound decision.
- */
-export async function requestPurchaseIntentDecision(
+/** INTERNAL: request (or resume) the exact bound decision with an injectable seam. See the wrapper. */
+export async function requestPurchaseIntentDecisionWithDeps(
   request: RequestPurchaseIntentDecisionRequest,
   deps: IntentDecisionDeps = {},
 ): Promise<PurchaseIntentDecisionResult> {
   const intentRepo = deps.intentRepository ?? purchaseIntentRepository;
   const decisionRepo = deps.decisionRepository ?? purchaseIntentDecisionRepository;
-  const now = deps.now ?? (() => new Date());
   const decideAndPersist = deps.decideAndPersist ?? decideAndPersistTrusted;
   const findExactHistoricalDecision =
     deps.findExactHistoricalDecision ?? findExactHistoricalDecisionTrusted;
+  const loadDecisionSnapshot = deps.loadDecisionSnapshot ?? loadDecisionSnapshotTrusted;
 
   const context = requireTrustedContext(request.trustedParticipantContext);
 
@@ -122,67 +130,81 @@ export async function requestPurchaseIntentDecision(
   const businessDecisionKey = deriveBusinessDecisionKey(request.intentId);
   const m3_5aIdempotencyKey = deriveM3_5aIdempotencyKey(request.intentId);
 
-  // 2. FREEZE (once). Re-use an existing frozen request verbatim (crash repair); otherwise build the
-  //    exact validated DecideInput from the FROZEN authorities + accepted corpus + pinned holiday
-  //    fixture, sampling evaluatedAt ONCE, and persist it immutably.
+  // 2. FREEZE (once). Re-use an existing frozen request verbatim (crash repair); otherwise gate the
+  //    pre-freeze authorities (corpus §5, holiday coverage §3.5), build the exact validated DecideInput
+  //    from the FROZEN authorities, sample evaluatedAt ONCE, and persist it immutably with its pins.
   let frozen = await decisionRepo.findDecisionRequestByIntent(request.intentId);
   if (!frozen) {
+    const corpus = loadCorpus();
+    const corpusSemanticDigest = assertCorpusAuthority(corpus); // Finding 5 pre-freeze gate
+    const fixture = A2_HOLIDAY_CALENDAR_FIXTURE_V1;
     const signature = normalizeA2PurchaseSignatureV1(
       authorities.finalization.contextVersion.purchaseSignatureJson,
     );
+    const intendedTransactionAt = authorities.finalization.contextVersion.intendedTransactionAt;
+    assertIntendedDateWithinCoverage(fixture, intendedTransactionAt); // Finding 6 coverage gate
     const portfolio = normalizeEligibilityPortfolioV1(
       authorities.finalization.eligibilityProfileVersion.portfolioJson,
     );
-    const corpus = loadCorpus();
     const input = buildDecideInputFromFinalizedAuthorities({
       signature,
-      intendedTransactionAt: authorities.finalization.contextVersion.intendedTransactionAt,
+      intendedTransactionAt,
       portfolio,
       corpus,
-      evaluatedAt: now().toISOString(),
-      holidayCalendar: A2_HOLIDAY_CALENDAR_FIXTURE_V1.normalizedDates,
+      // DETERMINISTIC freeze (A2 §13/§21): evaluatedAt is the durable trusted finalization instant, NOT
+      // a fresh wall-clock sample — so two concurrent first-freezes derive the BYTE-IDENTICAL request
+      // and the P2002 loser reconciles cleanly instead of seeing a spurious mismatch.
+      evaluatedAt: authorities.finalization.finalizedAt,
+      holidayCalendar: fixture.normalizedDates,
     });
     const decideInputHash = computeDecideInputHash(input);
     frozen = await decisionRepo.freezeDecisionRequest({
       intentId: request.intentId,
       finalizationId: authorities.finalization.finalizationId,
-      decisionRequestSchemaVersion: A2_DECISION_REQUEST_SCHEMA_VERSION_V1,
+      decisionRequestSchemaVersion: CURRENT_A2_DECISION_REQUEST_SCHEMA_VERSION,
       exactValidatedDecideInputJson: input as unknown,
       decideInputHash,
       expectedEngineInputSchemaVersion: ENGINE_INPUT_SCHEMA_VERSION,
       expectedEngineContractVersion: ENGINE_CONTRACT_VERSION,
       expectedCorpusVersion: corpus.corpusId,
-      holidayCalendarVersion: A2_HOLIDAY_CALENDAR_VERSION_V1,
+      expectedCorpusSemanticDigest: corpusSemanticDigest,
+      holidayCalendarVersion: fixture.version,
+      holidayCalendarDigest: computeHolidayContentDigest(fixture),
       businessDecisionKey,
       m3_5aIdempotencyKey,
     });
   }
 
-  // 3. DECIDE. If the decision already exists, complete the saga from it (drift-safe crash repair).
-  //    Otherwise the frozen-but-undecided request is fail-closed under runtime semantic drift (§14),
-  //    then decided ONCE over the FROZEN input via the sanctioned M3.5A path.
-  let snapshot: DecisionSnapshotDto | null = await findExactHistoricalDecision(
-    frozen.businessDecisionKey,
-  );
-  let reused = snapshot !== null;
-  if (!snapshot) {
+  // 3. DECIDE. The read-only §18 finder returns FOUND (authoritative, fully verified) / NONE, or throws
+  //    a typed CONFLICT. FOUND ⇒ drift-safe crash-repair completion. NONE ⇒ fail closed under runtime
+  //    semantic drift (§14) then decide ONCE over the FROZEN input via the sanctioned M3.5A path.
+  const found = await findExactHistoricalDecision({
+    businessDecisionKey: frozen.businessDecisionKey,
+    idempotencyKey: frozen.m3_5aIdempotencyKey,
+    inputHash: frozen.decideInputHash,
+  });
+  let snapshotId: string;
+  let reused: boolean;
+  if (found.kind === 'FOUND') {
+    snapshotId = found.snapshot.id;
+    reused = true;
+  } else {
     assertNoRuntimeDrift(frozen);
-    snapshot = await decideAndPersist({
+    const snapshot = await decideAndPersist({
       input: frozen.exactValidatedDecideInputJson as DecideInput,
       businessDecisionKey: frozen.businessDecisionKey,
       idempotencyKey: frozen.m3_5aIdempotencyKey,
     });
+    snapshotId = snapshot.id;
     reused = false;
   }
 
-  // 4. BIND (idempotent, coherence-checked). The intent is reached only via decisionRequestId.
+  // 4. BIND (idempotent, authoritative-row coherence-checked). The intent is reached only via
+  //    decisionRequestId; bindSnapshot independently reloads both authoritative rows.
   const binding = await decisionRepo.bindSnapshot({
     decisionRequestId: frozen.id,
-    snapshotId: snapshot.id,
-    requestDecideInputHash: frozen.decideInputHash,
-    requestBusinessDecisionKey: frozen.businessDecisionKey,
-    snapshotInputHash: snapshot.inputHash,
-    snapshotBusinessDecisionKey: snapshot.businessDecisionKey,
+    snapshotId,
+    loadSnapshot: (id) => loadDecisionSnapshot(id),
   });
 
   return {
@@ -195,17 +217,36 @@ export async function requestPurchaseIntentDecision(
   };
 }
 
+/**
+ * Request (or resume) the exact bound decision for a finalized PurchaseIntent (A2 §12–§20), using
+ * TRUSTED production dependencies. Idempotent and crash-resumable end to end.
+ */
+export function requestPurchaseIntentDecision(
+  request: RequestPurchaseIntentDecisionRequest,
+): Promise<PurchaseIntentDecisionResult> {
+  return requestPurchaseIntentDecisionWithDeps(request);
+}
+
 /** Fail-closed §14 gate: a frozen-but-undecided request's pinned versions MUST match the current runtime. */
 function assertNoRuntimeDrift(frozen: {
   expectedCorpusVersion: string;
+  expectedCorpusSemanticDigest: string;
   expectedEngineInputSchemaVersion: string;
   expectedEngineContractVersion: string;
   holidayCalendarVersion: string;
+  holidayCalendarDigest: string;
 }): void {
-  const currentCorpusId = loadCorpus().corpusId;
+  const corpus = loadCorpus();
+  const currentCorpusSemanticDigest = computeCorpusSemanticDigest(corpus);
+  const currentHolidayDigest = computeHolidayContentDigest(A2_HOLIDAY_CALENDAR_FIXTURE_V1);
   const drifted: string[] = [];
-  if (frozen.expectedCorpusVersion !== currentCorpusId) {
-    drifted.push(`corpus ${frozen.expectedCorpusVersion} != ${currentCorpusId}`);
+  if (frozen.expectedCorpusVersion !== corpus.corpusId) {
+    drifted.push(`corpus ${frozen.expectedCorpusVersion} != ${corpus.corpusId}`);
+  }
+  if (frozen.expectedCorpusSemanticDigest !== currentCorpusSemanticDigest) {
+    drifted.push(
+      `corpusSemantic ${frozen.expectedCorpusSemanticDigest} != ${currentCorpusSemanticDigest}`,
+    );
   }
   if (frozen.expectedEngineInputSchemaVersion !== ENGINE_INPUT_SCHEMA_VERSION) {
     drifted.push(
@@ -221,6 +262,9 @@ function assertNoRuntimeDrift(frozen: {
     drifted.push(
       `holidayCalendar ${frozen.holidayCalendarVersion} != ${A2_HOLIDAY_CALENDAR_VERSION_V1}`,
     );
+  }
+  if (frozen.holidayCalendarDigest !== currentHolidayDigest) {
+    drifted.push(`holidayDigest ${frozen.holidayCalendarDigest} != ${currentHolidayDigest}`);
   }
   if (drifted.length > 0) {
     throw new PurchaseIntentSemanticDriftError(

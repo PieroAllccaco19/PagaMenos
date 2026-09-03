@@ -698,7 +698,14 @@ model PurchaseIntentDecisionRequest {
   expectedEngineInputSchemaVersion String
   expectedEngineContractVersion    String
   expectedCorpusVersion            String
-  holidayCalendarVersion           String
+
+  /// The recomputed corpus semantic-authority digest pinned at freeze (A2 §5; Sol Finding 5).
+  expectedCorpusSemanticDigest String
+
+  holidayCalendarVersion String
+
+  /// The exact holiday-fixture content digest bound at freeze (A2 §3.5/§3.8; Sol Finding 6).
+  holidayCalendarDigest String
 
   /// Derived identities (A2 §11/§15).
   businessDecisionKey String @unique

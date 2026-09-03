@@ -41,8 +41,13 @@ const RAW_WRITE_MODULES = new Set([
   'persistence/provenance',
   'persistence/build-meta',
 ]);
-/** The deep DI module (importing it exposes the injectable *WithDeps surface). */
-const DEEP_SERVICE = new Set(['services/decide-and-persist']);
+/** Deep DI modules (importing one exposes an injectable *WithDeps surface). */
+const DEEP_SERVICE = new Set([
+  'services/decide-and-persist',
+  // A2-CODE (Sol Finding 1): the A2 lifecycle + saga modules expose *WithDeps (repo, clock, decision fn).
+  'services/study-purchase-intent',
+  'services/study-intent-decision',
+]);
 
 type Kind = 'raw' | 'deep' | 'nonliteral';
 interface Violation {
@@ -208,6 +213,12 @@ const DEEP_ATTACKS = [
   "const m = await import('../services/decide-and-persist');",
   // NoSubstitutionTemplateLiteral (STATIC template §10) — inspectable, must resolve to deep.
   'const m = await import(`@/services/decide-and-persist`);',
+  // A2-CODE (Sol Finding 1): the A2 deep modules exposing *WithDeps must be equally unreachable.
+  "import { createPurchaseIntentWithDeps } from '@/services/study-purchase-intent';",
+  "import { requestPurchaseIntentDecisionWithDeps } from '@/services/study-intent-decision';",
+  "const m = await import('@/services/study-purchase-intent.js');",
+  "const m = await import('../services/study-intent-decision');",
+  'const m = await import(`@/services/study-purchase-intent`);',
 ];
 
 // COMPUTED / non-literal dynamic imports (P35A-02 root closure §9/§12). Each MUST be rejected as
@@ -375,6 +386,9 @@ const STUDY_ADMIN_OWNERS: Record<string, string[]> = {
  * checker/type, never the primitive) and the trusted session adapter may import it. */
 const STUDY_RESTRICTED_MODULES: Record<string, string[]> = {
   'study/participant-context': ['study/index.ts', 'services/study-participant-session.ts'],
+  // A2-CODE: the trusted entry-source creation primitive — only the pure barrel (which re-exports the
+  // validator/type, never the primitive) and the trusted session adapter may import it.
+  'study/entry-source-context': ['study/index.ts', 'services/study-participant-session.ts'],
 };
 
 /** Study boundary violations for one file's source (literal specifiers only; non-literal handled by
