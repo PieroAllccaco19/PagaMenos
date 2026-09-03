@@ -80,6 +80,11 @@ model DecisionSnapshot {
   /// Durable idempotency receipts aliasing transport keys to this snapshot (P35A-01).
   receipts DecisionIdempotencyReceipt[]
 
+  /// M3.5B-A2 virtual back-relation (Prisma 6.x relational completeness ONLY; NO SQL column, no stored/
+  /// economic change to decision_snapshot). The exact 1:1 intent↔snapshot binding FK lives on the A2
+  /// `purchase_intent_decision_binding` table (SCI-A2-13; A2 §20).
+  purchaseIntentDecisionBinding PurchaseIntentDecisionBinding?
+
   @@index([merchantId])
   @@index([corpusVersion])
   @@index([decisionStatus])
@@ -295,6 +300,11 @@ model ExperimentAssignment {
   consentEvents StudyConsentEvent[]
   receipts      ExperimentAssignmentReceipt[]
 
+  /// M3.5B-A2 virtual back-relations (Prisma 6.x relational completeness ONLY; NO SQL column, no
+  /// stored/economic change to experiment_assignment). The FK columns live on the A2 child tables.
+  purchaseIntentCaptureTokens PurchaseIntentCaptureToken[]
+  eligibilityProfileVersions  EligibilityProfileVersion[]
+
   @@unique([experimentId, participantId])
   @@index([experimentId])
   @@index([participantId])
@@ -442,4 +452,373 @@ model StudyConsentCommandReceipt {
   @@unique([operationScope, idempotencyKey])
   @@index([consentEventId])
   @@map("study_consent_command_receipt")
+}
+
+// ===================================================================================================
+// M3.5B-A2 — PurchaseIntent lifecycle · deterministic decision freeze · exact snapshot binding.
+// ADDITIVE over accepted A1/M3.5A. Append-only scientific tables (immutability triggers in migration
+// SQL). The two virtual back-relation fields above on DecisionSnapshot / ExperimentAssignment add NO
+// SQL columns (Prisma relational completeness only; SCI-A2-13).
+// ===================================================================================================
+
+/// Trusted server-resolved capture provenance (A2 §8; Phase 0A §29). Never participant-selected.
+enum EntrySource {
+  DIRECT
+  CONTENT
+  SHARED_LINK
+  RESEARCH_LINK
+  AUTH_LINK
+  SAVED_DECISION
+  OTHER
+}
+
+/// Immutable initiation intent type (A2 §4; Phase 0A §29).
+enum PurchaseIntentType {
+  BUYING_NOW
+  BUYING_TODAY
+  CONSIDERING_LATER
+  EXPLORATORY
+}
+
+/// A2 complete-signature families (A2 §1/§3). One discriminant per context version.
+enum PurchaseSignatureKindA2 {
+  BILL
+  TICKETS
+  EXACT_ITEMS
+  NOMINAL_PACKAGE
+}
+
+/// Typed invalidation reason codes (A2 §10) — no free text as scientific input.
+enum PurchaseIntentInvalidationReason {
+  SUPERSEDED_BY_REPLACEMENT
+  PARTICIPANT_CORRECTION
+  DATA_ENTRY_ERROR
+  OTHER
+}
+
+enum PurchaseIntentCreateResultKind {
+  CREATED
+  CAPTURE_ALIAS
+}
+
+enum PurchaseIntentContextResultKind {
+  APPENDED
+  CONTEXT_ALIAS
+}
+
+enum EligibilityProfileResultKind {
+  APPENDED
+  PROFILE_ALIAS
+}
+
+enum PurchaseIntentFinalizationResultKind {
+  FINALIZED
+  FINALIZE_ALIAS
+}
+
+enum PurchaseIntentInvalidationResultKind {
+  INVALIDATED
+  INVALIDATE_ALIAS
+}
+
+/// Server-issued durable capture token, idempotent on a client-held correlation nonce, immutably
+/// bound to the trusted assignment + trusted entrySource (A2 §5). Append-only.
+model PurchaseIntentCaptureToken {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  assignmentId String               @db.Uuid
+  assignment   ExperimentAssignment @relation(fields: [assignmentId], references: [id])
+
+  /// Untrusted client-held correlation material (A2 §13.1). Makes issuance idempotent per assignment.
+  clientCorrelationNonce String
+
+  /// Server-minted opaque stable capture identity (never client-chosen).
+  intentCaptureKey String @unique
+
+  /// Trusted server-resolved entry provenance (A2 §8); immutable.
+  entrySource EntrySource
+
+  issuedAt DateTime @default(now()) @db.Timestamptz(6)
+
+  purchaseIntent PurchaseIntent?
+
+  @@unique([assignmentId, clientCorrelationNonce])
+  @@index([assignmentId])
+  @@map("purchase_intent_capture_token")
+}
+
+/// Immutable PurchaseIntent root (A2 §4). `id` is the SOLE basis of decision identity. Assignment +
+/// entrySource are reached ONLY through the capture token (no independent assignment field). Append-only.
+model PurchaseIntent {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  /// Structural capture binding (A2 §5/§20): one token → at most one intent.
+  captureTokenId String                     @unique @db.Uuid
+  captureToken   PurchaseIntentCaptureToken @relation(fields: [captureTokenId], references: [id])
+
+  intentType  PurchaseIntentType
+  initiatedAt DateTime           @db.Timestamptz(6)
+  createdAt   DateTime           @default(now()) @db.Timestamptz(6)
+
+  contextVersions            PurchaseIntentContextVersion[]
+  finalization               PurchaseIntentFinalization?
+  decisionRequest            PurchaseIntentDecisionRequest?
+  invalidationAsInvalidated  PurchaseIntentInvalidation?    @relation("invalidatedIntent")
+  invalidationsAsReplacement PurchaseIntentInvalidation[]   @relation("replacementIntent")
+  createReceipts             PurchaseIntentCreateReceipt[]
+
+  @@map("purchase_intent")
+}
+
+/// Append-only corrigible context capture (A2 §8). Exactly one complete purchase signature per version
+/// (discriminant + normalized JSON). `contextCaptureKey` is the exact context-command identity.
+model PurchaseIntentContextVersion {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  intentId String         @db.Uuid
+  intent   PurchaseIntent @relation(fields: [intentId], references: [id])
+
+  /// Monotonic per intent (allocated under the PurchaseIntent row lock).
+  contextSeq Int
+
+  /// Client-held correlation identity for one exact context capture (A2 §13.2).
+  contextCaptureKey    String
+  contextSchemaVersion String
+
+  merchantId            String
+  signatureKind         PurchaseSignatureKindA2
+  intendedTransactionAt DateTime                @db.Timestamptz(6)
+
+  /// The exact normalized discriminated purchase signature (authority). JSONB.
+  purchaseSignatureJson Json @db.JsonB
+
+  capturedAt DateTime @db.Timestamptz(6)
+  recordedAt DateTime @default(now()) @db.Timestamptz(6)
+
+  finalizations   PurchaseIntentFinalization[]
+  contextReceipts PurchaseIntentContextCommandReceipt[]
+
+  @@unique([intentId, contextSeq])
+  @@unique([intentId, contextCaptureKey])
+  @@index([intentId])
+  @@map("purchase_intent_context_version")
+}
+
+/// Append-only, assignment-scoped participant eligibility-profile version (A2 §10). The normalized
+/// EligibilityPortfolio (card-number-free) is pinned by finalization into the frozen DecideInput.
+model EligibilityProfileVersion {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  assignmentId String               @db.Uuid
+  assignment   ExperimentAssignment @relation(fields: [assignmentId], references: [id])
+
+  profileSeq Int
+
+  profileCaptureKey      String
+  portfolioSchemaVersion String
+
+  /// The normalized EligibilityPortfolio (A2 §9). JSONB. No PAN/CVV/credentials/transactions.
+  portfolioJson Json @db.JsonB
+
+  capturedAt DateTime @db.Timestamptz(6)
+  recordedAt DateTime @default(now()) @db.Timestamptz(6)
+
+  finalizations   PurchaseIntentFinalization[]
+  profileReceipts EligibilityProfileCommandReceipt[]
+
+  @@unique([assignmentId, profileSeq])
+  @@unique([assignmentId, profileCaptureKey])
+  @@index([assignmentId])
+  @@map("eligibility_profile_version")
+}
+
+/// Exactly one effective finalization per intent (A2 §9), pinning the exact context + eligibility
+/// profile versions. Append-only. Cross-table coherence (context/profile belong to the intent's
+/// assignment) is enforced by an insert-time trigger (migration SQL).
+model PurchaseIntentFinalization {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  intentId String         @unique @db.Uuid
+  intent   PurchaseIntent @relation(fields: [intentId], references: [id])
+
+  contextVersionId String                       @db.Uuid
+  contextVersion   PurchaseIntentContextVersion @relation(fields: [contextVersionId], references: [id])
+
+  eligibilityProfileVersionId String                    @db.Uuid
+  eligibilityProfileVersion   EligibilityProfileVersion @relation(fields: [eligibilityProfileVersionId], references: [id])
+
+  finalizedAt DateTime @db.Timestamptz(6)
+
+  decisionRequest      PurchaseIntentDecisionRequest?
+  finalizationReceipts PurchaseIntentFinalizationReceipt[]
+
+  @@index([contextVersionId])
+  @@index([eligibilityProfileVersionId])
+  @@map("purchase_intent_finalization")
+}
+
+/// Append-only invalidation lineage (A2 §10/§23). Replacement is a NEW root in the SAME assignment
+/// (trigger); no self-link (CHECK); acyclic (service walk under the assignment lock).
+model PurchaseIntentInvalidation {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  invalidatedIntentId String         @unique @db.Uuid
+  invalidatedIntent   PurchaseIntent @relation("invalidatedIntent", fields: [invalidatedIntentId], references: [id])
+
+  replacementIntentId String?         @db.Uuid
+  replacementIntent   PurchaseIntent? @relation("replacementIntent", fields: [replacementIntentId], references: [id])
+
+  invalidatedAt DateTime                          @db.Timestamptz(6)
+  reasonCode    PurchaseIntentInvalidationReason?
+
+  invalidationReceipts PurchaseIntentInvalidationReceipt[]
+
+  @@index([replacementIntentId])
+  @@map("purchase_intent_invalidation")
+}
+
+/// The exact immutable frozen decision request (A2 §12). Freezes the exact validated DecideInput +
+/// hash + pinned semantic versions BEFORE M3.5A runs. Append-only; self-verified on load (A2 §19).
+model PurchaseIntentDecisionRequest {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  intentId String         @unique @db.Uuid
+  intent   PurchaseIntent @relation(fields: [intentId], references: [id])
+
+  finalizationId String                     @unique @db.Uuid
+  finalization   PurchaseIntentFinalization @relation(fields: [finalizationId], references: [id])
+
+  decisionRequestSchemaVersion String
+
+  /// The exact validated DecideInput (normalized semantic JSON). JSONB.
+  exactValidatedDecideInputJson Json   @db.JsonB
+  decideInputHash               String
+
+  /// Pinned expected semantic versions (A2 §14).
+  expectedEngineInputSchemaVersion String
+  expectedEngineContractVersion    String
+  expectedCorpusVersion            String
+  holidayCalendarVersion           String
+
+  /// Derived identities (A2 §11/§15).
+  businessDecisionKey String @unique
+  m3_5aIdempotencyKey String @unique
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  binding PurchaseIntentDecisionBinding?
+
+  @@map("purchase_intent_decision_request")
+}
+
+/// Exact 1:1 intent↔snapshot binding (A2 §16). No free-standing intentId — the intent is reached only
+/// via decisionRequestId, so cross-wiring is structurally impossible. Append-only.
+model PurchaseIntentDecisionBinding {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  decisionRequestId String                        @unique @db.Uuid
+  decisionRequest   PurchaseIntentDecisionRequest @relation(fields: [decisionRequestId], references: [id])
+
+  /// FK to the immutable M3.5A snapshot (ON DELETE RESTRICT; snapshots are never deleted).
+  snapshotId String           @unique @db.Uuid
+  snapshot   DecisionSnapshot @relation(fields: [snapshotId], references: [id])
+
+  boundAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("purchase_intent_decision_binding")
+}
+
+/// Transport idempotency receipt for createPurchaseIntent (A2 §24). Concrete FK; append-only.
+model PurchaseIntentCreateReceipt {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  operationScope String
+  idempotencyKey String
+  requestHash    String
+  resultKind     PurchaseIntentCreateResultKind
+
+  intentId String         @db.Uuid
+  intent   PurchaseIntent @relation(fields: [intentId], references: [id])
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([operationScope, idempotencyKey])
+  @@index([intentId])
+  @@map("purchase_intent_create_receipt")
+}
+
+/// Transport idempotency receipt for appendPurchaseIntentContext (A2 §24). Append-only.
+model PurchaseIntentContextCommandReceipt {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  operationScope String
+  idempotencyKey String
+  requestHash    String
+  resultKind     PurchaseIntentContextResultKind
+
+  contextVersionId String                       @db.Uuid
+  contextVersion   PurchaseIntentContextVersion @relation(fields: [contextVersionId], references: [id])
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([operationScope, idempotencyKey])
+  @@index([contextVersionId])
+  @@map("purchase_intent_context_command_receipt")
+}
+
+/// Transport idempotency receipt for appendEligibilityProfile (A2 §24). Append-only.
+model EligibilityProfileCommandReceipt {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  operationScope String
+  idempotencyKey String
+  requestHash    String
+  resultKind     EligibilityProfileResultKind
+
+  eligibilityProfileVersionId String                    @db.Uuid
+  eligibilityProfileVersion   EligibilityProfileVersion @relation(fields: [eligibilityProfileVersionId], references: [id])
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([operationScope, idempotencyKey])
+  @@index([eligibilityProfileVersionId])
+  @@map("eligibility_profile_command_receipt")
+}
+
+/// Transport idempotency receipt for finalizePurchaseIntent (A2 §24). Append-only.
+model PurchaseIntentFinalizationReceipt {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  operationScope String
+  idempotencyKey String
+  requestHash    String
+  resultKind     PurchaseIntentFinalizationResultKind
+
+  finalizationId String                     @db.Uuid
+  finalization   PurchaseIntentFinalization @relation(fields: [finalizationId], references: [id])
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([operationScope, idempotencyKey])
+  @@index([finalizationId])
+  @@map("purchase_intent_finalization_receipt")
+}
+
+/// Transport idempotency receipt for invalidatePurchaseIntent (A2 §24). Append-only.
+model PurchaseIntentInvalidationReceipt {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  operationScope String
+  idempotencyKey String
+  requestHash    String
+  resultKind     PurchaseIntentInvalidationResultKind
+
+  invalidationId String                     @db.Uuid
+  invalidation   PurchaseIntentInvalidation @relation(fields: [invalidationId], references: [id])
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([operationScope, idempotencyKey])
+  @@index([invalidationId])
+  @@map("purchase_intent_invalidation_receipt")
 }
