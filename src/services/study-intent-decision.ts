@@ -38,7 +38,6 @@ import { findExactHistoricalDecision as findExactHistoricalDecisionTrusted } fro
 import {
   A2_CONTEXT_SCHEMA_VERSION_V1,
   A2_HOLIDAY_CALENDAR_FIXTURE_V1,
-  A2_HOLIDAY_CALENDAR_VERSION_V1,
   A2_PORTFOLIO_SCHEMA_VERSION_V1,
   assertCorpusAuthority,
   assertIntendedDateWithinCoverage,
@@ -153,7 +152,7 @@ export async function requestPurchaseIntentDecisionWithDeps(
     }
   }
 
-  // 3. CASE C — no DecisionRequest yet: FREEZE one under the assignment→intent root lock. The lock path
+  // 3. CASE C — no DecisionRequest yet: FREEZE one under the PurchaseIntent ROOT lock only. The lock path
   //    re-checks Case-C state (finalized + NOT invalidated) authoritatively, so a NEW request is never
   //    created for an invalidated or not-finalized intent. (A already-frozen request with no binding —
   //    Case B — skips this and proceeds to internal-repair completion below, permitted even if later
@@ -190,8 +189,9 @@ export async function requestPurchaseIntentDecisionWithDeps(
     const portfolio = normalizeEligibilityPortfolioV1(
       authorities.finalization.eligibilityProfileVersion.portfolioJson,
     );
-    // Freeze UNDER the assignment→intent root lock (Case C). `evaluatedAt` is the TRUSTED SERVICE SAMPLE
-    // AT FREEZE (A2 §13; Sol Correction 2) — sampled ONCE by the repo under the lock for the winner;
+    // Freeze UNDER the PurchaseIntent ROOT lock ONLY (Case C; Sol Closure 5 — no assignment lock; this
+    // is not a consent-gated collection fact). `evaluatedAt` is the TRUSTED SERVICE SAMPLE AT FREEZE
+    // (A2 §13; Sol Correction 2) — sampled ONCE by the repo under the lock for the winner;
     // concurrent entries adopt the winner's frozen request verbatim (they never require their own
     // sampled instant to match). Everything else in `buildFreeze` is a deterministic function of the
     // frozen authorities + corpus + holiday fixture.
@@ -280,18 +280,25 @@ export function requestPurchaseIntentDecision(
   return requestPurchaseIntentDecisionWithDeps(request);
 }
 
-/** Fail-closed §14 gate: a frozen-but-undecided request's pinned versions MUST match the current runtime. */
+/**
+ * Fail-closed §14 gate BEFORE a NEW decision is computed for a frozen-but-undecided request. It gates
+ * ONLY the pins whose CURRENT value participates in re-deriving the decision through the sanctioned
+ * M3.5A path — corpus authority (decideAndPersist re-verifies corpus provenance against the CURRENT
+ * corpus) and engine contract / input-schema (the CURRENT engine decides). The HOLIDAY calendar is NOT
+ * gated on current equality here (Sol Closure 7): the exact holiday dates were frozen INTO the
+ * DecideInput and the decision is computed over that frozen input, so a later CURRENT holiday-version
+ * advance does not make an unbound historical v1 request unrepairable. The stored holiday version's own
+ * retained-registry self-integrity (version resolvable + content digest reproduces + frozen dates ==
+ * retained dates) is already proven on every authoritative request load by the version-dispatched parser.
+ */
 function assertNoRuntimeDrift(frozen: {
   expectedCorpusVersion: string;
   expectedCorpusSemanticDigest: string;
   expectedEngineInputSchemaVersion: string;
   expectedEngineContractVersion: string;
-  holidayCalendarVersion: string;
-  holidayCalendarDigest: string;
 }): void {
   const corpus = loadCorpus();
   const currentCorpusSemanticDigest = computeCorpusSemanticDigest(corpus);
-  const currentHolidayDigest = computeHolidayContentDigest(A2_HOLIDAY_CALENDAR_FIXTURE_V1);
   const drifted: string[] = [];
   if (frozen.expectedCorpusVersion !== corpus.corpusId) {
     drifted.push(`corpus ${frozen.expectedCorpusVersion} != ${corpus.corpusId}`);
@@ -310,14 +317,6 @@ function assertNoRuntimeDrift(frozen: {
     drifted.push(
       `engineContract ${frozen.expectedEngineContractVersion} != ${ENGINE_CONTRACT_VERSION}`,
     );
-  }
-  if (frozen.holidayCalendarVersion !== A2_HOLIDAY_CALENDAR_VERSION_V1) {
-    drifted.push(
-      `holidayCalendar ${frozen.holidayCalendarVersion} != ${A2_HOLIDAY_CALENDAR_VERSION_V1}`,
-    );
-  }
-  if (frozen.holidayCalendarDigest !== currentHolidayDigest) {
-    drifted.push(`holidayDigest ${frozen.holidayCalendarDigest} != ${currentHolidayDigest}`);
   }
   if (drifted.length > 0) {
     throw new PurchaseIntentSemanticDriftError(

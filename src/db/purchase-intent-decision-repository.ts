@@ -24,9 +24,13 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 
 import {
+  A2_CONTEXT_SCHEMA_VERSION_V1,
+  A2_PORTFOLIO_SCHEMA_VERSION_V1,
   computeHolidayContentDigest,
   deriveBusinessDecisionKey,
   deriveM3_5aIdempotencyKey,
+  normalizeA2PurchaseSignatureV1,
+  normalizeEligibilityPortfolioV1,
   PurchaseIntentBindingCoherenceError,
   PurchaseIntentDecisionRequestIntegrityError,
   PurchaseIntentHistoricalConflictError,
@@ -91,9 +95,67 @@ const RETAINED_DECISION_REQUEST_SCHEMA_VERSIONS = new Set<string>([
  * path performs an unsafe `as DecideInput` cast.
  */
 const RETAINED_ENGINE_INPUT_PARSERS: Record<string, (value: unknown) => DecideInput> = {
+  // The value is VALIDATED by the accepted v1 schema before the type bridge — never a blind cast of raw
+  // persisted JSON (Sol Closure 6). `.parse()` throws on any schema drift.
   [ENGINE_INPUT_SCHEMA_VERSION]: (value) =>
     engineInputV1Schema.parse(value) as unknown as DecideInput,
 };
+
+/**
+ * Retained, version-dispatched parsers for the STORED PurchaseIntentContextVersion payload (Sol Closure
+ * 6). Keyed by the row's own `contextSchemaVersion`; an unknown version fails closed. Each parser
+ * re-validates the exact stored `purchaseSignatureJson` — a historical context row is never assumed to
+ * be the current schema.
+ */
+const RETAINED_CONTEXT_PARSERS: Record<string, (json: unknown) => void> = {
+  [A2_CONTEXT_SCHEMA_VERSION_V1]: (json) => {
+    normalizeA2PurchaseSignatureV1(json);
+  },
+};
+
+/**
+ * Retained, version-dispatched parsers for the STORED EligibilityProfileVersion payload (Sol Closure 6).
+ * Keyed by the row's own `portfolioSchemaVersion`; an unknown version fails closed.
+ */
+const RETAINED_PROFILE_PARSERS: Record<string, (json: unknown) => void> = {
+  [A2_PORTFOLIO_SCHEMA_VERSION_V1]: (json) => {
+    normalizeEligibilityPortfolioV1(json);
+  },
+};
+
+/** Permitted characters for a historical schema/version/key label (V4.5 label grammar; Sol Closure 6). */
+const LABEL_GRAMMAR = /^[A-Za-z0-9._:+-]+$/;
+const MAX_LABEL_LENGTH = 128;
+
+/**
+ * Enforce the V4.5 historical label/version grammar (Sol Closure 6): trimmed, non-empty, ≤128 chars, and
+ * (for schema/version/key identifiers) drawn from the permitted identifier charset. A label that is
+ * internally hash-consistent but malformed is still rejected. `hashLike` allows the `sha256:<hex>` and
+ * derived-key forms (same charset). Throws a typed integrity error.
+ */
+function assertHistoricalLabel(value: unknown, field: string, requestId: string): string {
+  if (typeof value !== 'string') {
+    throw new PurchaseIntentDecisionRequestIntegrityError(
+      `request ${requestId} label ${field} is not a string`,
+    );
+  }
+  if (value !== value.trim()) {
+    throw new PurchaseIntentDecisionRequestIntegrityError(
+      `request ${requestId} label ${field} is not trimmed`,
+    );
+  }
+  if (value.length === 0 || value.length > MAX_LABEL_LENGTH) {
+    throw new PurchaseIntentDecisionRequestIntegrityError(
+      `request ${requestId} label ${field} length ${value.length} not in [1, ${MAX_LABEL_LENGTH}]`,
+    );
+  }
+  if (!LABEL_GRAMMAR.test(value)) {
+    throw new PurchaseIntentDecisionRequestIntegrityError(
+      `request ${requestId} label ${field} contains characters outside the permitted grammar`,
+    );
+  }
+  return value;
+}
 
 export interface FrozenDecisionRequest {
   id: string;
@@ -192,6 +254,22 @@ type RequestRow = Prisma.PurchaseIntentDecisionRequestGetPayload<Record<string, 
  * a typed error on an unknown version or any integrity failure. Never casts stored JSON blindly.
  */
 function parseFrozenDecisionRequest(row: RequestRow): FrozenDecisionRequest {
+  // 0. Label/version grammar (Sol Closure 6): every stored label is trimmed, non-empty, ≤128, and drawn
+  //    from the permitted identifier charset — a hash-consistent but malformed label is still rejected.
+  for (const field of [
+    'decisionRequestSchemaVersion',
+    'expectedEngineInputSchemaVersion',
+    'expectedEngineContractVersion',
+    'expectedCorpusVersion',
+    'expectedCorpusSemanticDigest',
+    'holidayCalendarVersion',
+    'holidayCalendarDigest',
+    'businessDecisionKey',
+    'm3_5aIdempotencyKey',
+    'decideInputHash',
+  ] as const) {
+    assertHistoricalLabel(row[field], field, row.id);
+  }
   if (!RETAINED_DECISION_REQUEST_SCHEMA_VERSIONS.has(row.decisionRequestSchemaVersion)) {
     throw new PurchaseIntentUnsupportedInputSchemaError(row.decisionRequestSchemaVersion);
   }
@@ -316,21 +394,27 @@ export class PurchaseIntentDecisionRepository {
   ) {}
 
   /**
-   * Freeze the exact decision request UNDER the assignment→intent root lock (A2 §13/§20 Case C; Sol
-   * Corrections 2 + 7). Case-C state is RE-CHECKED under the lock (not invalidated, is finalized) so a
-   * concurrent invalidation cannot interleave after a stale inspection. The trusted `evaluatedAt` is
-   * sampled ONCE under the lock for the freeze winner only; concurrent entries find the winner's frozen
-   * request and ADOPT it verbatim — they never require their own locally-sampled instant to match. A
+   * Freeze the exact decision request UNDER the PurchaseIntent ROOT lock ONLY (A2 §13/§20 Case C; Sol
+   * Closure 5). This decision-request/repair operation is NOT a new consent-gated collection fact, so it
+   * must NOT acquire the ExperimentAssignment lock merely because lifecycle writes do — it serializes on
+   * the intent root alone. Ownership is still verified (a read, not a lock). Because finalize and
+   * invalidate also take the intent root (after the assignment), the root lock serializes freeze against
+   * them: the Case-C state (finalized + NOT invalidated) is RE-CHECKED under the root lock, so a
+   * concurrent invalidation cannot interleave after a stale inspection and no stale pre-invalidation
+   * freeze is possible. Acquiring only the root also avoids the assignment→intent lock inversion the
+   * lifecycle ops would otherwise create. The trusted `evaluatedAt` is sampled ONCE under the lock for
+   * the freeze winner only; concurrent entries find the winner's frozen request and ADOPT it verbatim. A
    * cross-connection race is a P2002 backstop that also adopts the winner (same intent) or fails closed
    * on a derived-key collision across intents.
    */
   async freezeDecisionRequestUnderLock(args: FreezeUnderLockArgs): Promise<FrozenDecisionRequest> {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        await this.lockAssignment(tx, args.assignmentId);
+        // ROOT-ONLY serialization (Sol Closure 5): lock the PurchaseIntent root + verify ownership; do
+        // NOT lock the assignment (this is not a consent-gated collection fact).
         await this.lockIntentOwnedBy(tx, args.intentId, args.assignmentId);
 
-        // Case C authoritative state re-check UNDER the lock.
+        // Case C authoritative state re-check UNDER the intent root lock.
         const invalidation = await tx.purchaseIntentInvalidation.findUnique({
           where: { invalidatedIntentId: args.intentId },
           select: { id: true },
@@ -394,15 +478,10 @@ export class PurchaseIntentDecisionRepository {
     }
   }
 
-  private async lockAssignment(tx: Tx, assignmentId: string): Promise<void> {
-    const locked = await tx.$queryRaw<Array<{ id: string }>>(
-      Prisma.sql`SELECT "id" FROM "experiment_assignment" WHERE "id" = ${assignmentId}::uuid FOR UPDATE`,
-    );
-    if (locked.length === 0) {
-      throw new PurchaseIntentInvariantError(`unknown assignment ${assignmentId}`);
-    }
-  }
-
+  /**
+   * Lock the PurchaseIntent ROOT row (FOR UPDATE) and verify ownership (a read). This is the SOLE
+   * serialization point for a Case-C freeze (Sol Closure 5) — no assignment lock is taken here.
+   */
   private async lockIntentOwnedBy(tx: Tx, intentId: string, assignmentId: string): Promise<void> {
     const locked = await tx.$queryRaw<Array<{ id: string }>>(
       Prisma.sql`SELECT "id" FROM "purchase_intent" WHERE "id" = ${intentId}::uuid FOR UPDATE`,
@@ -421,12 +500,104 @@ export class PurchaseIntentDecisionRepository {
 
   async findDecisionRequestByIntent(intentId: string): Promise<FrozenDecisionRequest | null> {
     const row = await this.prisma.purchaseIntentDecisionRequest.findUnique({ where: { intentId } });
-    return row ? parseFrozenDecisionRequest(row) : null;
+    if (!row) return null;
+    const request = parseFrozenDecisionRequest(row);
+    await this.assertRequestCrossTableCoherence(request);
+    return request;
   }
 
   async findDecisionRequestById(id: string): Promise<FrozenDecisionRequest | null> {
     const row = await this.prisma.purchaseIntentDecisionRequest.findUnique({ where: { id } });
-    return row ? parseFrozenDecisionRequest(row) : null;
+    if (!row) return null;
+    const request = parseFrozenDecisionRequest(row);
+    await this.assertRequestCrossTableCoherence(request);
+    return request;
+  }
+
+  /**
+   * Authoritative-load cross-table self-integrity (Sol Closure 6): the DecisionRequest loader itself
+   * verifies coherence against the authoritative PurchaseIntent / Finalization / exact context version /
+   * exact eligibility-profile version / ExperimentAssignment rows — validation is NOT postponed to
+   * snapshot binding. It (a) reloads the finalization the request pins and proves it belongs to the
+   * intent, (b) proves the pinned context version belongs to the intent and the pinned eligibility
+   * profile belongs to the intent's assignment, (c) re-parses BOTH stored payloads through their
+   * RETAINED, version-dispatched parsers (a historical row is never assumed current schema), and (d)
+   * enforces the label grammar on the stored context/profile schema versions. Any failure is a typed
+   * integrity/relationship fault. Binding re-verifies relationship independently (defense in depth).
+   */
+  private async assertRequestCrossTableCoherence(request: FrozenDecisionRequest): Promise<void> {
+    const fin = await this.prisma.purchaseIntentFinalization.findUnique({
+      where: { id: request.finalizationId },
+      select: {
+        intentId: true,
+        contextVersion: {
+          select: {
+            intentId: true,
+            contextSchemaVersion: true,
+            purchaseSignatureJson: true,
+          },
+        },
+        eligibilityProfileVersion: {
+          select: {
+            assignmentId: true,
+            portfolioSchemaVersion: true,
+            portfolioJson: true,
+          },
+        },
+      },
+    });
+    const intent = await this.prisma.purchaseIntent.findUnique({
+      where: { id: request.intentId },
+      select: { captureToken: { select: { assignmentId: true } } },
+    });
+    if (!fin || !intent) {
+      throw new PurchaseIntentDecisionRequestIntegrityError(
+        `request ${request.id} finalization/intent rows missing at authoritative load`,
+      );
+    }
+    // (a)+(b) Relationship coherence from authoritative rows.
+    if (
+      fin.intentId !== request.intentId ||
+      fin.contextVersion.intentId !== request.intentId ||
+      fin.eligibilityProfileVersion.assignmentId !== intent.captureToken.assignmentId
+    ) {
+      throw new PurchaseIntentDecisionRequestIntegrityError(
+        `request ${request.id} finalization/context/profile do not cohere with its intent/assignment`,
+      );
+    }
+    // (d) Label grammar on the stored context/profile schema versions.
+    assertHistoricalLabel(
+      fin.contextVersion.contextSchemaVersion,
+      'contextSchemaVersion',
+      request.id,
+    );
+    assertHistoricalLabel(
+      fin.eligibilityProfileVersion.portfolioSchemaVersion,
+      'portfolioSchemaVersion',
+      request.id,
+    );
+    // (c) Retained, version-dispatched re-parse of BOTH stored payloads (fail closed on unknown version).
+    const ctxParser = RETAINED_CONTEXT_PARSERS[fin.contextVersion.contextSchemaVersion];
+    if (!ctxParser) {
+      throw new PurchaseIntentUnsupportedInputSchemaError(fin.contextVersion.contextSchemaVersion);
+    }
+    const profParser =
+      RETAINED_PROFILE_PARSERS[fin.eligibilityProfileVersion.portfolioSchemaVersion];
+    if (!profParser) {
+      throw new PurchaseIntentUnsupportedInputSchemaError(
+        fin.eligibilityProfileVersion.portfolioSchemaVersion,
+      );
+    }
+    try {
+      ctxParser(fin.contextVersion.purchaseSignatureJson);
+      profParser(fin.eligibilityProfileVersion.portfolioJson);
+    } catch (e) {
+      throw new PurchaseIntentDecisionRequestIntegrityError(
+        `request ${request.id} stored context/profile payload failed retained re-validation: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
   }
 
   /**
