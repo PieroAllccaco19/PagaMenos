@@ -1,25 +1,35 @@
-// PagaMenos · src/db — M3.5B-A2 PurchaseIntent lifecycle repository (A2 §5/§8/§9/§10/§20/§24). INTERNAL.
+// PagaMenos · src/db — M3.5B-A2 PurchaseIntent lifecycle repository (A2 §5–§10/§21/§24). INTERNAL.
 //
 // The ONLY write path to the immutable A2 intent tables (capture token, intent, context version,
-// eligibility profile version, finalization, invalidation) and their durable idempotency receipts.
-// Every lifecycle mutation runs under the correct row lock (the capture token for create; the intent
-// for context/finalize; the assignment for profile/invalidate) so monotonic sequence allocation and
-// state gating are serialized. Two idempotency layers are enforced by REAL unique constraints and
-// reconciled race-safely on P2002:
-//   • transport: `(operationScope, idempotencyKey)` on each receipt (exact command replay), and
-//   • domain correlation: the client-held capture key (`clientCorrelationNonce` / `contextCaptureKey`
-//     / `profileCaptureKey`) — a second transport key bearing the SAME capture key + SAME material
-//     ALIASES the existing row; the SAME capture key + DIFFERENT material is a typed conflict.
-// The alias-vs-conflict decision compares the attempted requestHash to the ORIGIN receipt's frozen
-// requestHash (the CREATED/APPENDED/FINALIZED/INVALIDATED receipt), so it reuses the frozen request
-// identity rather than re-deriving material equality. No update/delete; all tables are DB-immutable.
+// eligibility-profile version, finalization, invalidation) and their durable idempotency receipts.
 //
-// Owning sanctioned service (module-capability AST test): `services/study-purchase-intent.ts`.
+// LOCK ORDER (A2 §21, Sol Finding 8): every intent-scoped mutation acquires the authoritative
+// ExperimentAssignment row FIRST (`SELECT … FOR UPDATE`), then — for operations that transition an
+// intent — the PurchaseIntent root row. This single global order (assignment → intent) (a) establishes
+// the authoritative assignment identity, (b) makes the assignment row the shared serialization point
+// between an A2 fact creation and an A1 consent change (Consent Model A, §7), and (c) forces finalize
+// and invalidate onto the SAME intent lock so they can never both commit against one intent.
+//
+// CONSENT MODEL A (A2 §7, Sol Finding 2): every operation that creates a NEW scientific fact samples
+// the trusted collection time UNDER the assignment lock and, before inserting, evaluates the accepted
+// A1 authority `wasCollectionAuthorizedAtKnownTime` over the consent events read in the same locked
+// transaction. Because A1 consent writes also lock the assignment, a concurrent withdrawal cannot
+// interleave: it either commits before (A2 sees closed consent → reject) or after (A2's sampled time
+// was authorized). Caller-supplied time is never used; historical consent is never rewritten by a later
+// snapshot. Transport replays / domain-key aliases create no new fact and therefore skip the check.
+//
+// TWO idempotency layers (transport receipt `(operationScope, idempotencyKey)`; client capture key)
+// are enforced by REAL unique constraints and reconciled by explicit reload-and-prove keyed on the
+// EXACT constraint that fired (never a generic P2002 catch-all). No update/delete; DB-immutable.
+//
+// Owning sanctioned service (module-capability AST test): `services/study-purchase-intent.ts`
+// (write ops) and, read-only, `services/study-intent-decision.ts` (finalized-authorities load).
 import { Prisma, type PrismaClient } from '@prisma/client';
 
 import {
   EligibilityProfileConflictError,
   PurchaseIntentCaptureConflictError,
+  PurchaseIntentConsentNotAuthorizedError,
   PurchaseIntentContextAfterFinalizationError,
   PurchaseIntentContextConflictError,
   PurchaseIntentFinalizationConflictError,
@@ -29,8 +39,9 @@ import {
   PurchaseIntentInvalidationCycleError,
   PurchaseIntentInvariantError,
   PurchaseIntentOwnershipError,
+  wasCollectionAuthorizedAtKnownTime,
+  type ConsentEventFact,
 } from '@/study';
-import { canonicalHash } from '@/persistence/hash';
 
 import { prisma as defaultPrisma } from './client';
 import { isUniqueViolation } from './study-support';
@@ -45,6 +56,20 @@ function wrapPiUnexpected(e: unknown, whileDoing: string): PurchaseIntentInvaria
     { cause: e },
   );
 }
+
+/** The unique constraint(s) a P2002 fired on (Prisma reports the index fields in `meta.target`). */
+function violatedConstraint(e: unknown): string {
+  if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+    const target = (e.meta as { target?: unknown } | undefined)?.target;
+    if (Array.isArray(target)) return target.join(',');
+    if (typeof target === 'string') return target;
+  }
+  return '';
+}
+const hitConstraint = (e: unknown, ...fields: string[]): boolean => {
+  const c = violatedConstraint(e);
+  return fields.some((f) => c.includes(f));
+};
 
 /** Transport idempotency: a receipt resolves a command ONLY if its frozen requestHash matches (A2 §24). */
 function assertReceiptHash(args: {
@@ -82,7 +107,6 @@ export interface CreatePurchaseIntentArgs {
   assignmentId: string; // trusted actor's assignment (ownership authority)
   intentCaptureKey: string;
   intentType: Prisma.PurchaseIntentCreateInput['intentType'];
-  initiatedAt: string; // ISO-8601
   operationScope: string;
   idempotencyKey: string;
   requestHash: string;
@@ -102,7 +126,6 @@ export interface AppendContextArgs {
   signatureKind: Prisma.PurchaseIntentContextVersionCreateInput['signatureKind'];
   intendedTransactionAt: string;
   purchaseSignatureJson: unknown;
-  capturedAt: string;
   operationScope: string;
   idempotencyKey: string;
   requestHash: string;
@@ -119,7 +142,6 @@ export interface AppendEligibilityProfileArgs {
   profileCaptureKey: string;
   portfolioSchemaVersion: string;
   portfolioJson: unknown;
-  capturedAt: string;
   operationScope: string;
   idempotencyKey: string;
   requestHash: string;
@@ -136,7 +158,6 @@ export interface FinalizeArgs {
   intentId: string;
   contextVersionId: string;
   eligibilityProfileVersionId: string;
-  finalizedAt: string;
   operationScope: string;
   idempotencyKey: string;
   requestHash: string;
@@ -154,7 +175,6 @@ export interface InvalidateArgs {
   invalidatedIntentId: string;
   replacementIntentId?: string | null;
   reasonCode?: Prisma.PurchaseIntentInvalidationCreateInput['reasonCode'];
-  invalidatedAt: string;
   operationScope: string;
   idempotencyKey: string;
   requestHash: string;
@@ -163,18 +183,6 @@ export interface InvalidateResult {
   invalidationId: string;
   resultKind: 'INVALIDATED' | 'INVALIDATE_ALIAS';
   replayed: boolean;
-}
-
-/** The trusted assignment that owns an intent, reached ONLY via its capture token (A2 §5/§20). */
-async function assignmentOfIntent(tx: Tx, intentId: string): Promise<string> {
-  const intent = await tx.purchaseIntent.findUnique({
-    where: { id: intentId },
-    select: { captureToken: { select: { assignmentId: true } } },
-  });
-  if (!intent) {
-    throw new PurchaseIntentInvariantError(`purchase intent ${intentId} not found under lock`);
-  }
-  return intent.captureToken.assignmentId;
 }
 
 /** Read-only projection the decision saga needs to freeze a request (A2 §11/§12/§21). */
@@ -203,8 +211,28 @@ export interface FinalizedDecisionAuthorities {
   } | null;
 }
 
+/** The owning assignment of an intent, reached ONLY via its capture token (A2 §5/§20). */
+async function assignmentOfIntent(tx: Tx, intentId: string): Promise<string> {
+  const intent = await tx.purchaseIntent.findUnique({
+    where: { id: intentId },
+    select: { captureToken: { select: { assignmentId: true } } },
+  });
+  if (!intent) {
+    throw new PurchaseIntentInvariantError(`purchase intent ${intentId} not found under lock`);
+  }
+  return intent.captureToken.assignmentId;
+}
+
 export class PurchaseIntentRepository {
-  constructor(private readonly prisma: PrismaClient = defaultPrisma) {}
+  /**
+   * @param now Trusted server clock, sampled UNDER the row lock for every stored `*At` fact and for the
+   *   consent collection instant. Injectable for deterministic tests (INTERNAL only — never reachable
+   *   through a public participant-facing surface, Sol Finding 1). Defaults to the real system clock.
+   */
+  constructor(
+    private readonly prisma: PrismaClient = defaultPrisma,
+    private readonly now: () => Date = () => new Date(),
+  ) {}
 
   /** The owning participant of an assignment (A2 §5/§7 ownership check), or null if absent. */
   async findAssignmentParticipantId(assignmentId: string): Promise<string | null> {
@@ -286,26 +314,48 @@ export class PurchaseIntentRepository {
    * Issue (or idempotently return) a durable capture token for a trusted assignment (A2 §5). Idempotent
    * on `(assignmentId, clientCorrelationNonce)`: the FIRST resolution is authoritative forever — a
    * re-presented nonce returns the existing token verbatim (its intentCaptureKey + immutable entrySource).
+   * The assignment row is locked so a concurrent identical issuance converges on one token.
    */
   async issueCaptureToken(args: IssueCaptureTokenArgs): Promise<CaptureTokenRecord> {
     try {
-      const row = await this.prisma.purchaseIntentCaptureToken.create({
-        data: {
-          assignmentId: args.assignmentId,
-          clientCorrelationNonce: args.clientCorrelationNonce,
-          intentCaptureKey: args.intentCaptureKey,
-          entrySource: args.entrySource,
-        },
+      return await this.prisma.$transaction(async (tx) => {
+        await this.lockAssignment(tx, args.assignmentId);
+        const existing = await tx.purchaseIntentCaptureToken.findUnique({
+          where: {
+            assignmentId_clientCorrelationNonce: {
+              assignmentId: args.assignmentId,
+              clientCorrelationNonce: args.clientCorrelationNonce,
+            },
+          },
+        });
+        if (existing) {
+          return {
+            id: existing.id,
+            intentCaptureKey: existing.intentCaptureKey,
+            entrySource: existing.entrySource,
+            assignmentId: existing.assignmentId,
+            replayed: true,
+          };
+        }
+        const row = await tx.purchaseIntentCaptureToken.create({
+          data: {
+            assignmentId: args.assignmentId,
+            clientCorrelationNonce: args.clientCorrelationNonce,
+            intentCaptureKey: args.intentCaptureKey,
+            entrySource: args.entrySource,
+          },
+        });
+        return {
+          id: row.id,
+          intentCaptureKey: row.intentCaptureKey,
+          entrySource: row.entrySource,
+          assignmentId: row.assignmentId,
+          replayed: false,
+        };
       });
-      return {
-        id: row.id,
-        intentCaptureKey: row.intentCaptureKey,
-        entrySource: row.entrySource,
-        assignmentId: row.assignmentId,
-        replayed: false,
-      };
     } catch (e) {
       if (!isUniqueViolation(e)) throw wrapPiUnexpected(e, 'issue capture token');
+      // Reload-and-prove on the EXACT nonce/key constraints.
       const existing = await this.prisma.purchaseIntentCaptureToken.findUnique({
         where: {
           assignmentId_clientCorrelationNonce: {
@@ -314,36 +364,40 @@ export class PurchaseIntentRepository {
           },
         },
       });
-      if (!existing) throw wrapPiUnexpected(e, 'issue capture token (missing after conflict)');
-      return {
-        id: existing.id,
-        intentCaptureKey: existing.intentCaptureKey,
-        entrySource: existing.entrySource,
-        assignmentId: existing.assignmentId,
-        replayed: true,
-      };
+      if (existing) {
+        return {
+          id: existing.id,
+          intentCaptureKey: existing.intentCaptureKey,
+          entrySource: existing.entrySource,
+          assignmentId: existing.assignmentId,
+          replayed: true,
+        };
+      }
+      throw wrapPiUnexpected(e, 'issue capture token (missing after conflict)');
     }
   }
 
   /**
-   * Create the immutable PurchaseIntent for a capture token (A2 §5.2/§20). Under the capture-token row
-   * lock: transport replay via the create receipt; a second create on the SAME token ALIASES the existing
-   * intent iff the frozen create requestHash matches (else CaptureConflict). One token → at most one
-   * intent (DB unique + lock).
+   * Create the immutable PurchaseIntent for a capture token (A2 §5.2/§20). Assignment-first lock; a
+   * NEW intent is consent-gated (Consent Model A). Transport replay via the create receipt; a second
+   * create on the SAME token ALIASES the existing intent iff the frozen create requestHash matches
+   * (else CaptureConflict). One token → at most one intent (DB unique + assignment lock serialization).
    */
   async createPurchaseIntent(args: CreatePurchaseIntentArgs): Promise<CreatePurchaseIntentResult> {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const locked = await tx.$queryRaw<Array<{ id: string; assignment_id: string }>>(
-          Prisma.sql`SELECT "id", "assignmentId" AS assignment_id FROM "purchase_intent_capture_token" WHERE "intentCaptureKey" = ${args.intentCaptureKey} FOR UPDATE`,
-        );
-        const token = locked[0];
+        await this.lockAssignment(tx, args.assignmentId);
+
+        const token = await tx.purchaseIntentCaptureToken.findUnique({
+          where: { intentCaptureKey: args.intentCaptureKey },
+          select: { id: true, assignmentId: true },
+        });
         if (!token) {
           throw new PurchaseIntentInvariantError(
             `create references unknown capture key ${JSON.stringify(args.intentCaptureKey)}`,
           );
         }
-        if (token.assignment_id !== args.assignmentId) throw new PurchaseIntentOwnershipError();
+        if (token.assignmentId !== args.assignmentId) throw new PurchaseIntentOwnershipError();
 
         const receipt = await tx.purchaseIntentCreateReceipt.findUnique({
           where: {
@@ -367,7 +421,6 @@ export class PurchaseIntentRepository {
           };
         }
 
-        // A different transport key: does the token already carry an intent? (one capture → one intent)
         const existingIntent = await tx.purchaseIntent.findUnique({
           where: { captureTokenId: token.id },
           select: { id: true },
@@ -399,11 +452,15 @@ export class PurchaseIntentRepository {
           return { intentId: existingIntent.id, resultKind: 'CAPTURE_ALIAS', replayed: false };
         }
 
+        // Genuinely new fact → Consent Model A gate under the assignment lock.
+        const collectionAt = this.now();
+        await this.assertCollectionAuthorized(tx, args.assignmentId, collectionAt);
+
         const intent = await tx.purchaseIntent.create({
           data: {
             captureTokenId: token.id,
             intentType: args.intentType,
-            initiatedAt: new Date(args.initiatedAt),
+            initiatedAt: collectionAt,
           },
         });
         await tx.purchaseIntentCreateReceipt.create({
@@ -418,21 +475,22 @@ export class PurchaseIntentRepository {
         return { intentId: intent.id, resultKind: 'CREATED', replayed: false };
       });
     } catch (e) {
-      if (e instanceof Prisma.PrismaClientKnownRequestError || !(e instanceof Error)) {
-        throw wrapPiUnexpected(e, 'create purchase intent');
+      if (hitConstraint(e, 'captureTokenId', 'operationScope', 'idempotencyKey')) {
+        throw wrapPiUnexpected(e, 'create purchase intent (unexpected create race)');
       }
       throw e;
     }
   }
 
   /**
-   * Append a corrigible context version (A2 §8). Under the intent row lock: forbidden once finalized or
-   * invalidated; transport replay via receipt; a repeated contextCaptureKey ALIASES iff the frozen
-   * append requestHash matches (else ContextConflict); otherwise a fresh contextSeq is allocated.
+   * Append a corrigible context version (A2 §8). Assignment-first then intent-root lock; forbidden once
+   * finalized or invalidated; a NEW version is consent-gated. Transport replay via receipt; a repeated
+   * contextCaptureKey ALIASES iff the frozen append requestHash matches (else ContextConflict).
    */
   async appendContext(args: AppendContextArgs): Promise<AppendContextResult> {
     try {
       return await this.prisma.$transaction(async (tx) => {
+        await this.lockAssignment(tx, args.assignmentId);
         await this.lockIntent(tx, args.intentId, args.assignmentId);
 
         const receipt = await tx.purchaseIntentContextCommandReceipt.findUnique({
@@ -462,7 +520,6 @@ export class PurchaseIntentRepository {
           };
         }
 
-        // State gates (checked UNDER the lock): finalized ⇒ no append; invalidated ⇒ no append.
         const [finalization, invalidation] = await Promise.all([
           tx.purchaseIntentFinalization.findUnique({
             where: { intentId: args.intentId },
@@ -517,6 +574,9 @@ export class PurchaseIntentRepository {
           };
         }
 
+        const collectionAt = this.now();
+        await this.assertCollectionAuthorized(tx, args.assignmentId, collectionAt);
+
         const agg = await tx.purchaseIntentContextVersion.aggregate({
           where: { intentId: args.intentId },
           _max: { contextSeq: true },
@@ -532,7 +592,7 @@ export class PurchaseIntentRepository {
             signatureKind: args.signatureKind,
             intendedTransactionAt: new Date(args.intendedTransactionAt),
             purchaseSignatureJson: args.purchaseSignatureJson as Prisma.InputJsonValue,
-            capturedAt: new Date(args.capturedAt),
+            capturedAt: collectionAt,
           },
         });
         await tx.purchaseIntentContextCommandReceipt.create({
@@ -544,23 +604,20 @@ export class PurchaseIntentRepository {
             contextVersionId: cv.id,
           },
         });
-        return {
-          contextVersionId: cv.id,
-          contextSeq,
-          resultKind: 'APPENDED',
-          replayed: false,
-        };
+        return { contextVersionId: cv.id, contextSeq, resultKind: 'APPENDED', replayed: false };
       });
     } catch (e) {
-      if (isUniqueViolation(e)) throw wrapPiUnexpected(e, 'append purchase-intent context');
+      if (hitConstraint(e, 'contextSeq', 'contextCaptureKey', 'operationScope', 'idempotencyKey')) {
+        throw wrapPiUnexpected(e, 'append purchase-intent context (unexpected race)');
+      }
       throw e;
     }
   }
 
   /**
-   * Append an assignment-scoped eligibility profile version (A2 §10). Under the assignment row lock:
-   * transport replay; a repeated profileCaptureKey ALIASES iff the frozen append requestHash matches
-   * (else EligibilityProfileConflict); otherwise a fresh profileSeq is allocated.
+   * Append an assignment-scoped eligibility profile version (A2 §10). Assignment lock; a NEW version is
+   * consent-gated. Transport replay; a repeated profileCaptureKey ALIASES iff the frozen append
+   * requestHash matches (else EligibilityProfileConflict).
    */
   async appendEligibilityProfile(
     args: AppendEligibilityProfileArgs,
@@ -637,6 +694,9 @@ export class PurchaseIntentRepository {
           };
         }
 
+        const collectionAt = this.now();
+        await this.assertCollectionAuthorized(tx, args.assignmentId, collectionAt);
+
         const agg = await tx.eligibilityProfileVersion.aggregate({
           where: { assignmentId: args.assignmentId },
           _max: { profileSeq: true },
@@ -649,7 +709,7 @@ export class PurchaseIntentRepository {
             profileCaptureKey: args.profileCaptureKey,
             portfolioSchemaVersion: args.portfolioSchemaVersion,
             portfolioJson: args.portfolioJson as Prisma.InputJsonValue,
-            capturedAt: new Date(args.capturedAt),
+            capturedAt: collectionAt,
           },
         });
         await tx.eligibilityProfileCommandReceipt.create({
@@ -669,20 +729,24 @@ export class PurchaseIntentRepository {
         };
       });
     } catch (e) {
-      if (isUniqueViolation(e)) throw wrapPiUnexpected(e, 'append eligibility profile');
+      if (hitConstraint(e, 'profileSeq', 'profileCaptureKey', 'operationScope', 'idempotencyKey')) {
+        throw wrapPiUnexpected(e, 'append eligibility profile (unexpected race)');
+      }
       throw e;
     }
   }
 
   /**
-   * Finalize an intent (A2 §9): pin the exact context + eligibility profile versions. Under the intent
-   * row lock: forbidden if invalidated; transport replay; a second finalize ALIASES iff it pins the
-   * SAME (context, profile) — a different pin is FinalizationConflict. Cross-assignment coherence of the
-   * pinned versions is additionally enforced by an insert-time DB trigger.
+   * Finalize an intent (A2 §9): pin the exact context + eligibility profile versions. Assignment-first
+   * then intent-root lock (so finalize and invalidate serialize on the SAME intent — never both
+   * commit). Forbidden if invalidated; a NEW finalization is consent-gated. Transport replay; a second
+   * finalize ALIASES iff it pins the SAME (context, profile) — a different pin is FinalizationConflict.
+   * Cross-assignment coherence of the pins is additionally enforced by an insert-time DB trigger.
    */
   async finalize(args: FinalizeArgs): Promise<FinalizeResult> {
     try {
       return await this.prisma.$transaction(async (tx) => {
+        await this.lockAssignment(tx, args.assignmentId);
         await this.lockIntent(tx, args.intentId, args.assignmentId);
 
         const receipt = await tx.purchaseIntentFinalizationReceipt.findUnique({
@@ -750,16 +814,16 @@ export class PurchaseIntentRepository {
           };
         }
 
-        // Verify the pinned versions belong to this intent / its assignment (defense-in-depth; the DB
-        // trigger is the hard guarantee).
         await this.assertPinBelongs(tx, args);
+        const collectionAt = this.now();
+        await this.assertCollectionAuthorized(tx, args.assignmentId, collectionAt);
 
         const f = await tx.purchaseIntentFinalization.create({
           data: {
             intentId: args.intentId,
             contextVersionId: args.contextVersionId,
             eligibilityProfileVersionId: args.eligibilityProfileVersionId,
-            finalizedAt: new Date(args.finalizedAt),
+            finalizedAt: collectionAt,
           },
         });
         await tx.purchaseIntentFinalizationReceipt.create({
@@ -780,24 +844,25 @@ export class PurchaseIntentRepository {
         };
       });
     } catch (e) {
-      if (isUniqueViolation(e)) throw wrapPiUnexpected(e, 'finalize purchase intent');
+      if (hitConstraint(e, 'intentId', 'operationScope', 'idempotencyKey')) {
+        throw wrapPiUnexpected(e, 'finalize purchase intent (unexpected race)');
+      }
       throw e;
     }
   }
 
   /**
-   * Invalidate an intent (A2 §10/§23). Under the assignment row lock: transport replay; a second
-   * invalidation of the same intent ALIASES iff the frozen requestHash matches (else
-   * InvalidationConflict). A replacement must live in the SAME assignment and must not create a cycle
-   * or self-link (checked here by an acyclic walk; also enforced by CHECK + trigger).
+   * Invalidate an intent (A2 §10/§23). Assignment-first then intent-root lock (serializes with
+   * finalize); a NEW invalidation is consent-gated. Transport replay; a second invalidation of the same
+   * intent ALIASES iff the frozen requestHash matches (else InvalidationConflict). A replacement must
+   * live in the SAME assignment and must not create a cycle or self-link (acyclic walk under the locks;
+   * also enforced by CHECK + trigger).
    */
   async invalidate(args: InvalidateArgs): Promise<InvalidateResult> {
     try {
       return await this.prisma.$transaction(async (tx) => {
         await this.lockAssignment(tx, args.assignmentId);
-        // The invalidated intent must belong to the locked assignment.
-        const ownerAssignment = await assignmentOfIntent(tx, args.invalidatedIntentId);
-        if (ownerAssignment !== args.assignmentId) throw new PurchaseIntentOwnershipError();
+        await this.lockIntent(tx, args.invalidatedIntentId, args.assignmentId);
 
         const receipt = await tx.purchaseIntentInvalidationReceipt.findUnique({
           where: {
@@ -866,11 +931,14 @@ export class PurchaseIntentRepository {
           await this.assertNoInvalidationCycle(tx, args.invalidatedIntentId, replacementId);
         }
 
+        const collectionAt = this.now();
+        await this.assertCollectionAuthorized(tx, args.assignmentId, collectionAt);
+
         const inv = await tx.purchaseIntentInvalidation.create({
           data: {
             invalidatedIntentId: args.invalidatedIntentId,
             replacementIntentId: replacementId,
-            invalidatedAt: new Date(args.invalidatedAt),
+            invalidatedAt: collectionAt,
             reasonCode: args.reasonCode ?? null,
           },
         });
@@ -886,13 +954,26 @@ export class PurchaseIntentRepository {
         return { invalidationId: inv.id, resultKind: 'INVALIDATED', replayed: false };
       });
     } catch (e) {
-      if (isUniqueViolation(e)) throw wrapPiUnexpected(e, 'invalidate purchase intent');
+      if (hitConstraint(e, 'invalidatedIntentId', 'operationScope', 'idempotencyKey')) {
+        throw wrapPiUnexpected(e, 'invalidate purchase intent (unexpected race)');
+      }
       throw e;
     }
   }
 
   // ── internal helpers ────────────────────────────────────────────────────────────────────────────
 
+  /** Lock the authoritative assignment row FIRST (A2 §21). Also the Consent Model A serialization point. */
+  private async lockAssignment(tx: Tx, assignmentId: string): Promise<void> {
+    const locked = await tx.$queryRaw<Array<{ id: string }>>(
+      Prisma.sql`SELECT "id" FROM "experiment_assignment" WHERE "id" = ${assignmentId}::uuid FOR UPDATE`,
+    );
+    if (locked.length === 0) {
+      throw new PurchaseIntentInvariantError(`unknown assignment ${assignmentId}`);
+    }
+  }
+
+  /** Lock the PurchaseIntent root (assignment must already be locked) + verify ownership (A2 §21). */
   private async lockIntent(tx: Tx, intentId: string, assignmentId: string): Promise<void> {
     const locked = await tx.$queryRaw<Array<{ id: string }>>(
       Prisma.sql`SELECT "id" FROM "purchase_intent" WHERE "id" = ${intentId}::uuid FOR UPDATE`,
@@ -904,13 +985,36 @@ export class PurchaseIntentRepository {
     if (owner !== assignmentId) throw new PurchaseIntentOwnershipError();
   }
 
-  private async lockAssignment(tx: Tx, assignmentId: string): Promise<void> {
-    const locked = await tx.$queryRaw<Array<{ id: string }>>(
-      Prisma.sql`SELECT "id" FROM "experiment_assignment" WHERE "id" = ${assignmentId}::uuid FOR UPDATE`,
-    );
-    if (locked.length === 0) {
-      throw new PurchaseIntentInvariantError(`unknown assignment ${assignmentId}`);
-    }
+  /**
+   * Consent Model A gate (A2 §7): the participant's consent MUST be authorized at the trusted collection
+   * instant sampled under the assignment lock. Reads the append-only consent stream in the SAME locked
+   * transaction (so a concurrent withdrawal cannot interleave) and evaluates the accepted A1 authority.
+   * Never uses caller-supplied time; never rewrites historical authority with a later snapshot.
+   */
+  private async assertCollectionAuthorized(
+    tx: Tx,
+    assignmentId: string,
+    collectionAt: Date,
+  ): Promise<void> {
+    const rows = await tx.studyConsentEvent.findMany({
+      where: { assignmentId },
+      orderBy: { consentSeq: 'asc' },
+    });
+    const events: ConsentEventFact[] = rows.map((r) => ({
+      consentSeq: r.consentSeq,
+      action: r.action,
+      consentVersion: r.consentVersion,
+      privacyNoticeVersion: r.privacyNoticeVersion,
+      optionalEvidenceConsent: r.optionalEvidenceConsent,
+      assertedEffectiveAt: r.assertedEffectiveAt ? r.assertedEffectiveAt.toISOString() : null,
+      capturedAt: r.capturedAt.toISOString(),
+      recordedAt: r.recordedAt.toISOString(),
+    }));
+    const authorized = wasCollectionAuthorizedAtKnownTime({
+      events,
+      collectionAt: collectionAt.toISOString(),
+    });
+    if (!authorized) throw new PurchaseIntentConsentNotAuthorizedError();
   }
 
   /** Defense-in-depth: the pinned context/profile must belong to this intent / its assignment. */
@@ -937,7 +1041,8 @@ export class PurchaseIntentRepository {
 
   /**
    * Walk the replacement chain from `replacementId`; a back-reference to `invalidatedIntentId` is a
-   * cycle (A2 §23). Bounded by the finite invalidation graph in the assignment.
+   * cycle (A2 §23/§44). Bounded by the finite invalidation graph in the assignment (walked under the
+   * assignment lock, so no concurrent invalidation can extend the chain mid-walk).
    */
   private async assertNoInvalidationCycle(
     tx: Tx,
@@ -963,10 +1068,5 @@ export class PurchaseIntentRepository {
   }
 }
 
-/** Deterministic material fingerprint helper (exported for the owning service's request-hash checks). */
-export function purchaseIntentMaterialHash(material: unknown): string {
-  return canonicalHash(material);
-}
-
-/** Default repository over the shared Prisma client. */
+/** Default repository over the shared Prisma client (real system clock). */
 export const purchaseIntentRepository = new PurchaseIntentRepository();
