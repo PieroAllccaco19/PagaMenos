@@ -182,6 +182,9 @@ export class PurchaseIntentHistoricalConflictError extends PurchaseIntentError {
       | 'BUSINESS_KEY_CONFLICT'
       | 'SNAPSHOT_WITHOUT_RECEIPT'
       | 'SEMANTIC_MISMATCH'
+      | 'ENGINE_CONTRACT_MISMATCH'
+      | 'ENGINE_INPUT_SCHEMA_MISMATCH'
+      | 'CORPUS_MISMATCH'
       | 'SNAPSHOT_UNLOADABLE',
     message: string,
   ) {

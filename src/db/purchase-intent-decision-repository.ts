@@ -101,11 +101,15 @@ export interface FreezeDecisionRequestArgs {
   m3_5aIdempotencyKey: string;
 }
 
-/** The read-only §18 exact-historical finder (authoritative receipt+snapshot verification). */
+/** The read-only §18 exact-historical finder (authoritative receipt+snapshot verification). Carries the
+ * COMPLETE expected M3.5A material pins (Sol Closure 3) so the finder proves EXACT/NONE/CONFLICT itself. */
 export type FindExactHistoricalDecisionFn = (query: {
   businessDecisionKey: string;
   idempotencyKey: string;
   inputHash: string;
+  expectedEngineContractVersion: string;
+  expectedEngineInputSchemaVersion: string;
+  expectedCorpusVersion: string;
 }) => Promise<{ kind: 'NONE' } | { kind: 'FOUND'; snapshot: DecisionSnapshotDto }>;
 
 export interface BindSnapshotArgs {
@@ -537,6 +541,9 @@ export class PurchaseIntentDecisionRepository {
       businessDecisionKey: request.businessDecisionKey,
       idempotencyKey: request.m3_5aIdempotencyKey,
       inputHash: request.decideInputHash,
+      expectedEngineContractVersion: request.expectedEngineContractVersion,
+      expectedEngineInputSchemaVersion: request.expectedEngineInputSchemaVersion,
+      expectedCorpusVersion: request.expectedCorpusVersion,
     });
     if (found.kind !== 'FOUND') {
       throw new PurchaseIntentBindingCoherenceError(

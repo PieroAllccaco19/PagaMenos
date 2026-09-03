@@ -52,6 +52,19 @@ class InMemoryStore implements DecisionPersistenceStore {
   async findSnapshotByBusinessKey(businessDecisionKey: string) {
     return this.snapshotsByBiz.get(businessDecisionKey) ?? null;
   }
+  async readHistoricalObservation(args: {
+    operationScope: string;
+    idempotencyKey: string;
+    businessDecisionKey: string;
+  }) {
+    // Single-threaded double: plain reads already observe one consistent state.
+    const receipt = this.receipts.get(this.key(args.operationScope, args.idempotencyKey)) ?? null;
+    const snapshotByBusinessKey = this.snapshotsByBiz.get(args.businessDecisionKey) ?? null;
+    const snapshotByReceipt = receipt
+      ? (this.snapshotsById.get(receipt.decisionSnapshotId) ?? null)
+      : null;
+    return { receipt, snapshotByReceipt, snapshotByBusinessKey };
+  }
 
   async createDecision(args: CreateDecisionArgs): Promise<DecisionSnapshotDto> {
     const { draft, operationScope, idempotencyKey, requestHash } = args;

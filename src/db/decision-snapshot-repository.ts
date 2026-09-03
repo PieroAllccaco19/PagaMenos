@@ -121,6 +121,49 @@ export class DecisionSnapshotRepository implements DecisionPersistenceStore {
   }
 
   /**
+   * Read the receipt, its linked snapshot, and the business-key snapshot in ONE consistent snapshot
+   * (Sol Closure 2). Runs at REPEATABLE READ so all statements observe a single MVCC snapshot: because
+   * M3.5A commits the decision snapshot and its initial receipt atomically (createDecision, one
+   * transaction), this view sees NEITHER or BOTH — never a cross-statement mixed timeline. Read-only.
+   */
+  async readHistoricalObservation(args: {
+    operationScope: string;
+    idempotencyKey: string;
+    businessDecisionKey: string;
+  }): Promise<{
+    receipt: DecisionReceiptRecord | null;
+    snapshotByReceipt: DecisionSnapshotDto | null;
+    snapshotByBusinessKey: DecisionSnapshotDto | null;
+  }> {
+    const { operationScope, idempotencyKey, businessDecisionKey } = args;
+    return this.prisma
+      .$transaction(
+        async (tx) => {
+          const receiptRow = await tx.decisionIdempotencyReceipt.findUnique({
+            where: { operationScope_idempotencyKey: { operationScope, idempotencyKey } },
+          });
+          const receipt = receiptRow ? receiptRowToRecord(receiptRow) : null;
+          const bizRow = await tx.decisionSnapshot.findUnique({
+            where: { businessDecisionKey },
+          });
+          const snapshotByBusinessKey = bizRow ? rowToDto(bizRow) : null;
+          let snapshotByReceipt: DecisionSnapshotDto | null = null;
+          if (receipt) {
+            const linked = await tx.decisionSnapshot.findUnique({
+              where: { id: receipt.decisionSnapshotId },
+            });
+            snapshotByReceipt = linked ? rowToDto(linked) : null;
+          }
+          return { receipt, snapshotByReceipt, snapshotByBusinessKey };
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+      )
+      .catch((e: unknown) => {
+        throw wrapUnexpected(e, `read historical observation for ${businessDecisionKey}`);
+      });
+  }
+
+  /**
    * Persist a NEW decision: snapshot + its initial receipt atomically (§16/§51). On a unique
    * violation, race-reconcile to the already-committed state: an existing receipt for this key
    * resolves the idempotency (same request → return its snapshot; different → IdempotencyConflict); an

@@ -147,9 +147,14 @@ const exemptFromRaw = (rel: string): boolean =>
   rel.startsWith('persistence/') ||
   rel === 'services/decide-and-persist.ts' ||
   isTestOrFixture(rel);
-// The deep DI module may be imported only by the barrel and the module itself.
+// The deep DI module may be imported only by the barrel, the module itself, and — for the INTERNAL
+// §18 finder capability (Sol Closure 3) — the sanctioned A2 decision/repair saga, which is the sole
+// owner of `findExactHistoricalDecision` now that it is off the public barrel.
 const exemptFromDeep = (rel: string): boolean =>
-  rel === 'services/index.ts' || rel === 'services/decide-and-persist.ts' || isTestOrFixture(rel);
+  rel === 'services/index.ts' ||
+  rel === 'services/decide-and-persist.ts' ||
+  rel === 'services/study-intent-decision.ts' ||
+  isTestOrFixture(rel);
 // The non-literal dynamic-import rule is fail-closed for ALL protected production source: NO
 // capability directory (db/, persistence/) and NOT even the sanctioned impl earns a computed-import
 // exemption. Only tests/fixtures/probes may retain their existing exemption.
@@ -213,6 +218,9 @@ const DEEP_ATTACKS = [
   "const m = await import('../services/decide-and-persist');",
   // NoSubstitutionTemplateLiteral (STATIC template §10) — inspectable, must resolve to deep.
   'const m = await import(`@/services/decide-and-persist`);',
+  // Sol Closure 3: the INTERNAL §18 finder lives in the deep module; an unauthorized deep import of it
+  // is a `deep` violation from ordinary code.
+  "import { findExactHistoricalDecision } from '@/services/decide-and-persist';",
   // A2-CODE (Sol Finding 1): the A2 deep modules exposing *WithDeps must be equally unreachable.
   "import { createPurchaseIntentWithDeps } from '@/services/study-purchase-intent';",
   "import { requestPurchaseIntentDecisionWithDeps } from '@/services/study-intent-decision';",
@@ -331,6 +339,37 @@ describe('non-literal dynamic-import closure (P35A-02 root defect §9/§10/§12)
 
   it('exposes the NON_LITERAL_DYNAMIC_IMPORT_FORBIDDEN diagnostic constant', () => {
     expect(NON_LITERAL_DYNAMIC_IMPORT_FORBIDDEN).toBe('NON_LITERAL_DYNAMIC_IMPORT_FORBIDDEN');
+  });
+});
+
+// ===================================================================================================
+// Sol Closure 3 — findExactHistoricalDecision is an INTERNAL A2 decision/repair capability.
+// ===================================================================================================
+describe('§18 finder capability (Sol Closure 3)', () => {
+  it('is ABSENT from the public @/services barrel at runtime', async () => {
+    const svc = (await import('@/services')) as Record<string, unknown>;
+    expect(svc.findExactHistoricalDecision).toBeUndefined();
+    // The public decision surface remains available.
+    expect(typeof svc.decideAndPersist).toBe('function');
+    expect(typeof svc.loadDecisionSnapshot).toBe('function');
+  });
+
+  it('the public barrel SOURCE no longer re-exports the finder (unauthorized deep import required)', () => {
+    const src = readFileSync(path.join(SRC, 'services/index.ts'), 'utf8');
+    expect(src).not.toMatch(/export\s*\{[^}]*findExactHistoricalDecision/s);
+  });
+
+  it('an ordinary service importing the finder from the deep module is a `deep` violation', () => {
+    const hits = forbiddenCapabilities(
+      "import { findExactHistoricalDecision } from '@/services/decide-and-persist';",
+      'services/evil-service.ts',
+    );
+    expect(hits.some((h) => h.kind === 'deep')).toBe(true);
+  });
+
+  it('the sanctioned saga MAY reach the deep module (sole finder owner)', () => {
+    expect(exemptFromDeep('services/study-intent-decision.ts')).toBe(true);
+    expect(exemptFromDeep('services/evil-service.ts')).toBe(false);
   });
 });
 

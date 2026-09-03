@@ -109,6 +109,28 @@ export interface AttachAliasArgs {
 }
 
 /**
+ * A SINGLE transactionally-consistent observation of the receipt + its linked snapshot + the snapshot
+ * for a business key (Sol Closure 2). Because M3.5A commits the snapshot and its initial receipt in ONE
+ * transaction, a consistent-view read observes NEITHER or BOTH — never a torn "snapshot present but
+ * receipt absent" timeline assembled from two separate READ COMMITTED statements. The finder builds its
+ * EXACT/NONE/CONFLICT verdict from this one observation.
+ */
+export interface HistoricalDecisionObservation {
+  receipt: DecisionReceiptRecord | null;
+  /** The snapshot referenced by `receipt.decisionSnapshotId`, read in the SAME consistent view. */
+  snapshotByReceipt: DecisionSnapshotDto | null;
+  /** The snapshot carrying `businessDecisionKey`, read in the SAME consistent view. */
+  snapshotByBusinessKey: DecisionSnapshotDto | null;
+}
+
+/** Identity a consistent historical observation is read for. */
+export interface HistoricalObservationArgs {
+  operationScope: string;
+  idempotencyKey: string;
+  businessDecisionKey: string;
+}
+
+/**
  * The write/read contract the service depends on (structural). The db repository implements it; tests
  * may substitute an in-memory double without pulling Prisma into a DB-free run. All methods are
  * race-safe by construction (DB unique constraints, not in-memory checks).
@@ -120,6 +142,14 @@ export interface DecisionPersistenceStore {
   ): Promise<DecisionReceiptRecord | null>;
   findSnapshotById(id: string): Promise<DecisionSnapshotDto | null>;
   findSnapshotByBusinessKey(businessDecisionKey: string): Promise<DecisionSnapshotDto | null>;
+  /**
+   * Read the receipt + its linked snapshot + the business-key snapshot in ONE transactionally-consistent
+   * view (Sol Closure 2). The finder MUST use this rather than separate reads, so a competitor committing
+   * between statements can never produce a false SNAPSHOT_WITHOUT_RECEIPT.
+   */
+  readHistoricalObservation(
+    args: HistoricalObservationArgs,
+  ): Promise<HistoricalDecisionObservation>;
   /** Persist snapshot + initial receipt atomically; race-reconcile to existing on conflict. */
   createDecision(args: CreateDecisionArgs): Promise<DecisionSnapshotDto>;
   /** Durably consume a new key as an alias of an existing snapshot; race-safe. */

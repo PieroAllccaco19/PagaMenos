@@ -30,10 +30,11 @@ import {
   type PurchaseIntentRepository,
 } from '@/db/purchase-intent-repository';
 import { ENGINE_CONTRACT_VERSION, ENGINE_INPUT_SCHEMA_VERSION } from '@/persistence';
-import {
-  decideAndPersist as decideAndPersistTrusted,
-  findExactHistoricalDecision as findExactHistoricalDecisionTrusted,
-} from '@/services';
+import { decideAndPersist as decideAndPersistTrusted } from '@/services';
+// Sol Closure 3: the §18 finder is an INTERNAL A2 decision/repair capability, NOT on the public barrel.
+// The sanctioned saga (an A2 owner) reaches it directly from the deep module; ordinary code cannot
+// (module-capability AST boundary + ESLint), and `@/services` no longer re-exports it.
+import { findExactHistoricalDecision as findExactHistoricalDecisionTrusted } from '@/services/decide-and-persist';
 import {
   A2_CONTEXT_SCHEMA_VERSION_V1,
   A2_HOLIDAY_CALENDAR_FIXTURE_V1,
@@ -230,6 +231,9 @@ export async function requestPurchaseIntentDecisionWithDeps(
     businessDecisionKey: frozen.businessDecisionKey,
     idempotencyKey: frozen.m3_5aIdempotencyKey,
     inputHash: frozen.decideInputHash,
+    expectedEngineContractVersion: frozen.expectedEngineContractVersion,
+    expectedEngineInputSchemaVersion: frozen.expectedEngineInputSchemaVersion,
+    expectedCorpusVersion: frozen.expectedCorpusVersion,
   });
   let snapshotId: string;
   let reused: boolean;

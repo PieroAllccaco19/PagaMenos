@@ -23,12 +23,9 @@ import {
   resolveTrustedEntrySource,
   resolveTrustedParticipantContext,
 } from '@/services/study-admin';
-import {
-  findExactHistoricalDecision,
-  loadDecisionSnapshot,
-  recordConsentGrant,
-  recordConsentWithdrawal,
-} from '@/services';
+import { loadDecisionSnapshot, recordConsentGrant, recordConsentWithdrawal } from '@/services';
+// Sol Closure 3: the §18 finder is INTERNAL (off the public barrel); tests reach it via the deep module.
+import { findExactHistoricalDecision } from '@/services/decide-and-persist';
 import type { DecisionSnapshotDto } from '@/persistence';
 import {
   captureIntentToken,
@@ -728,6 +725,9 @@ describe('A2 authoritative snapshot binding (§17; Sol Correction 4)', () => {
     businessDecisionKey: string;
     idempotencyKey: string;
     inputHash: string;
+    expectedEngineContractVersion: string;
+    expectedEngineInputSchemaVersion: string;
+    expectedCorpusVersion: string;
   }) => findExactHistoricalDecision(q);
 
   it('the exact cross-wire attack (Request A + unrelated Snapshot B) fails closed', async () => {

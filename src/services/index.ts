@@ -6,14 +6,15 @@
 // reads go through `loadDecisionSnapshot` / `replayDecisionSnapshot`, which verify hash integrity +
 // column↔payload coherence. The raw db client, repository, draft constructor, providers, and the
 // injectable `*WithDeps` / `DecideAndPersistDeps` surface are deliberately NOT re-exported here.
+// Sol Closure 3: `findExactHistoricalDecision` (the §18 exact-historical finder) is deliberately NOT
+// re-exported here. It is an INTERNAL A2 decision/repair capability reachable only from the sanctioned
+// saga (`services/study-intent-decision.ts`) via the deep module; ordinary application code has no
+// access (module-capability AST boundary + ESLint). Its query/result types are likewise internal.
 export {
   decideAndPersist,
   loadDecisionSnapshot,
   replayDecisionSnapshot,
-  findExactHistoricalDecision,
   type DecideAndPersistRequest,
-  type FindExactHistoricalDecisionQuery,
-  type FindExactHistoricalDecisionResult,
 } from './decide-and-persist';
 
 // Types + typed errors consumers need to handle results/failures (read-only; no write capability).
