@@ -138,7 +138,8 @@ async function main(): Promise<number> {
     // authority suite against the same clean database (the A1 migration composed over the M3.5A ones).
     const main = runTool(
       'npx vitest run -c vitest.integration.config.ts ' +
-        'src/db/decision-snapshot.integration.test.ts src/db/study-authority.integration.test.ts',
+        'src/db/decision-snapshot.integration.test.ts src/db/study-authority.integration.test.ts ' +
+        'src/db/purchase-intent.integration.test.ts',
       { env: mainEnv, label: 'vitest integration (main)', allowFail: true },
     );
 

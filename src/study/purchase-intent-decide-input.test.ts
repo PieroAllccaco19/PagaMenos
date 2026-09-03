@@ -50,7 +50,8 @@ describe('A2 complete-signature normalization (§3)', () => {
     ).toThrow(PurchaseIntentContextSignatureError);
   });
   it('rejects incomplete BILL (missing purchaseDomain)', () => {
-    const { purchaseDomain: _pd, ...noDomain } = billRaw;
+    const noDomain: Record<string, unknown> = { ...billRaw };
+    delete noDomain['purchaseDomain'];
     expect(() => normalizeA2PurchaseSignatureV1(noDomain)).toThrow(
       PurchaseIntentContextSignatureError,
     );
