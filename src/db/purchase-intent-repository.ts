@@ -43,7 +43,8 @@ import {
 } from '@/study';
 
 import { prisma as defaultPrisma } from './client';
-import { isUniqueViolation, readConsentAuthorizationFacts } from './study-support';
+import { readConsentAuthorizationFacts } from './study-support';
+import { classifyUniqueViolation, isUniqueViolation, type UniqueConstraintSpec } from './p2002';
 
 type Tx = Prisma.TransactionClient;
 
@@ -56,19 +57,56 @@ function wrapPiUnexpected(e: unknown, whileDoing: string): PurchaseIntentInvaria
   );
 }
 
-/** The unique constraint(s) a P2002 fired on (Prisma reports the index fields in `meta.target`). */
-function violatedConstraint(e: unknown): string {
-  if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-    const target = (e.meta as { target?: unknown } | undefined)?.target;
-    if (Array.isArray(target)) return target.join(',');
-    if (typeof target === 'string') return target;
-  }
-  return '';
-}
-const hitConstraint = (e: unknown, ...fields: string[]): boolean => {
-  const c = violatedConstraint(e);
-  return fields.some((f) => c.includes(f));
+/**
+ * The exact unique constraints each intent-lifecycle op can collide on (Sol Closure 4). These ops
+ * reconcile idempotency PROACTIVELY under the assignment→intent lock (they read the receipt/existing
+ * row before inserting), so a P2002 that nonetheless escapes to the outer catch is by construction an
+ * UNEXPECTED race the lock did not serialize — it is classified exactly (by field set, never substring)
+ * and re-raised as a typed invariant. An unrecognized target is likewise fail-closed. The classifier
+ * confirms the fired constraint belongs to the operation and stamps its id into the diagnostic.
+ */
+const CAP_NONCE: UniqueConstraintSpec = {
+  id: 'CAP_NONCE',
+  fields: ['assignmentId', 'clientCorrelationNonce'],
 };
+const CAP_KEY: UniqueConstraintSpec = { id: 'CAP_KEY', fields: ['intentCaptureKey'] };
+const PI_CAPTURE_TOKEN: UniqueConstraintSpec = {
+  id: 'PI_CAPTURE_TOKEN',
+  fields: ['captureTokenId'],
+};
+const RECEIPT_SCOPE_KEY: UniqueConstraintSpec = {
+  id: 'RECEIPT_SCOPE_KEY',
+  fields: ['operationScope', 'idempotencyKey'],
+};
+const CTX_SEQ: UniqueConstraintSpec = { id: 'CTX_SEQ', fields: ['intentId', 'contextSeq'] };
+const CTX_CAPTURE: UniqueConstraintSpec = {
+  id: 'CTX_CAPTURE',
+  fields: ['intentId', 'contextCaptureKey'],
+};
+const PROF_SEQ: UniqueConstraintSpec = { id: 'PROF_SEQ', fields: ['assignmentId', 'profileSeq'] };
+const PROF_CAPTURE: UniqueConstraintSpec = {
+  id: 'PROF_CAPTURE',
+  fields: ['assignmentId', 'profileCaptureKey'],
+};
+const FIN_INTENT: UniqueConstraintSpec = { id: 'FIN_INTENT', fields: ['intentId'] };
+const INV_INTENT: UniqueConstraintSpec = { id: 'INV_INTENT', fields: ['invalidatedIntentId'] };
+
+/**
+ * Classify a P2002 for a lock-serialized lifecycle op and re-raise it as a typed invariant. Both an
+ * expected-but-unexpectedly-raced constraint and an unrecognized target fail closed (never idempotent
+ * success): the proactive reload-and-prove happens INSIDE the locked transaction, so reaching here at
+ * all means the serialization assumption was violated.
+ */
+function rethrowClassifiedRace(
+  e: unknown,
+  expected: readonly UniqueConstraintSpec[],
+  op: string,
+): never {
+  if (!isUniqueViolation(e)) throw e; // a domain error thrown inside the tx — propagate as-is
+  const cls = classifyUniqueViolation(e, expected);
+  const label = cls.matched ? `constraint ${cls.id}` : `unexpected unique target (${cls.reason})`;
+  throw wrapPiUnexpected(e, `${op} (${label})`);
+}
 
 /** Transport idempotency: a receipt resolves a command ONLY if its frozen requestHash matches (A2 §24). */
 function assertReceiptHash(args: {
@@ -354,6 +392,11 @@ export class PurchaseIntentRepository {
       });
     } catch (e) {
       if (!isUniqueViolation(e)) throw wrapPiUnexpected(e, 'issue capture token');
+      // Exact classification (Sol Closure 4): a capture-token insert may only collide on the nonce pair
+      // or the server-minted intentCaptureKey; any other target is fail-closed.
+      const cls = classifyUniqueViolation(e, [CAP_NONCE, CAP_KEY]);
+      if (!cls.matched)
+        throw wrapPiUnexpected(e, `issue capture token (unexpected unique: ${cls.reason})`);
       // Reload-and-prove on the EXACT nonce/key constraints.
       const existing = await this.prisma.purchaseIntentCaptureToken.findUnique({
         where: {
@@ -474,10 +517,11 @@ export class PurchaseIntentRepository {
         return { intentId: intent.id, resultKind: 'CREATED', replayed: false };
       });
     } catch (e) {
-      if (hitConstraint(e, 'captureTokenId', 'operationScope', 'idempotencyKey')) {
-        throw wrapPiUnexpected(e, 'create purchase intent (unexpected create race)');
-      }
-      throw e;
+      rethrowClassifiedRace(
+        e,
+        [PI_CAPTURE_TOKEN, RECEIPT_SCOPE_KEY],
+        'create purchase intent (unexpected create race)',
+      );
     }
   }
 
@@ -606,10 +650,11 @@ export class PurchaseIntentRepository {
         return { contextVersionId: cv.id, contextSeq, resultKind: 'APPENDED', replayed: false };
       });
     } catch (e) {
-      if (hitConstraint(e, 'contextSeq', 'contextCaptureKey', 'operationScope', 'idempotencyKey')) {
-        throw wrapPiUnexpected(e, 'append purchase-intent context (unexpected race)');
-      }
-      throw e;
+      rethrowClassifiedRace(
+        e,
+        [CTX_SEQ, CTX_CAPTURE, RECEIPT_SCOPE_KEY],
+        'append purchase-intent context (unexpected race)',
+      );
     }
   }
 
@@ -728,10 +773,11 @@ export class PurchaseIntentRepository {
         };
       });
     } catch (e) {
-      if (hitConstraint(e, 'profileSeq', 'profileCaptureKey', 'operationScope', 'idempotencyKey')) {
-        throw wrapPiUnexpected(e, 'append eligibility profile (unexpected race)');
-      }
-      throw e;
+      rethrowClassifiedRace(
+        e,
+        [PROF_SEQ, PROF_CAPTURE, RECEIPT_SCOPE_KEY],
+        'append eligibility profile (unexpected race)',
+      );
     }
   }
 
@@ -843,10 +889,11 @@ export class PurchaseIntentRepository {
         };
       });
     } catch (e) {
-      if (hitConstraint(e, 'intentId', 'operationScope', 'idempotencyKey')) {
-        throw wrapPiUnexpected(e, 'finalize purchase intent (unexpected race)');
-      }
-      throw e;
+      rethrowClassifiedRace(
+        e,
+        [FIN_INTENT, RECEIPT_SCOPE_KEY],
+        'finalize purchase intent (unexpected race)',
+      );
     }
   }
 
@@ -953,10 +1000,11 @@ export class PurchaseIntentRepository {
         return { invalidationId: inv.id, resultKind: 'INVALIDATED', replayed: false };
       });
     } catch (e) {
-      if (hitConstraint(e, 'invalidatedIntentId', 'operationScope', 'idempotencyKey')) {
-        throw wrapPiUnexpected(e, 'invalidate purchase intent (unexpected race)');
-      }
-      throw e;
+      rethrowClassifiedRace(
+        e,
+        [INV_INTENT, RECEIPT_SCOPE_KEY],
+        'invalidate purchase intent (unexpected race)',
+      );
     }
   }
 

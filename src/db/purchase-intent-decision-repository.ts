@@ -44,7 +44,36 @@ import { ENGINE_INPUT_SCHEMA_VERSION } from '@/persistence';
 import type { DecideInput } from '@/engine';
 
 import { prisma as defaultPrisma } from './client';
-import { isUniqueViolation } from './study-support';
+import { classifyUniqueViolation, isUniqueViolation, type UniqueConstraintSpec } from './p2002';
+
+/**
+ * The exact unique constraints the A2 decision-request / binding writes can collide on (Sol Closure 4).
+ * `P2002.meta.target` is an array of these Prisma field names; classification is by exact field set, and
+ * any other target fails closed.
+ */
+const DR_INTENT: UniqueConstraintSpec = { id: 'DR_INTENT', fields: ['intentId'] };
+const DR_FINALIZATION: UniqueConstraintSpec = { id: 'DR_FINALIZATION', fields: ['finalizationId'] };
+const DR_BUSINESS_KEY: UniqueConstraintSpec = {
+  id: 'DR_BUSINESS_KEY',
+  fields: ['businessDecisionKey'],
+};
+const DR_IDEMPOTENCY: UniqueConstraintSpec = {
+  id: 'DR_IDEMPOTENCY',
+  fields: ['m3_5aIdempotencyKey'],
+};
+const FREEZE_CONSTRAINTS = [DR_INTENT, DR_FINALIZATION, DR_BUSINESS_KEY, DR_IDEMPOTENCY];
+const BINDING_REQUEST: UniqueConstraintSpec = {
+  id: 'BINDING_REQUEST',
+  fields: ['decisionRequestId'],
+};
+const BINDING_SNAPSHOT: UniqueConstraintSpec = { id: 'BINDING_SNAPSHOT', fields: ['snapshotId'] };
+
+/** Diagnostic emitted when an A2 P2002 reconciliation path is actually ENTERED (Sol Closure 4 proof). */
+export interface A2UniqueReconcileEvent {
+  op: 'freezeUnderLock' | 'freeze' | 'bindSnapshot';
+  constraint: string;
+  outcome: 'adopt-winner' | 'equivalent-reuse' | 'conflict';
+}
 
 /** The A2 decision-request schema version created by NEW freezes. */
 export const A2_DECISION_REQUEST_SCHEMA_VERSION_V1 = 'pagamenos.a2-decision-request.v1';
@@ -278,6 +307,12 @@ export class PurchaseIntentDecisionRepository {
   constructor(
     private readonly prisma: PrismaClient = defaultPrisma,
     private readonly now: () => Date = () => new Date(),
+    /**
+     * INTERNAL diagnostic sink invoked when a P2002 reconciliation path is actually entered — used by
+     * tests to PROVE the loser took the intended catch (Sol Closure 4). No-op default; never affects
+     * production behavior.
+     */
+    private readonly onReconcile: (event: A2UniqueReconcileEvent) => void = () => {},
   ) {}
 
   /**
@@ -338,9 +373,20 @@ export class PurchaseIntentDecisionRepository {
       });
     } catch (e) {
       if (!isUniqueViolation(e)) throw e;
-      // Cross-connection backstop: the intent's request already exists → adopt the winner.
+      // Exact classification (Sol Closure 4): a freeze insert may only collide on intentId /
+      // finalizationId / businessDecisionKey / m3_5aIdempotencyKey; anything else is fail-closed.
+      const cls = classifyUniqueViolation(e, FREEZE_CONSTRAINTS);
+      if (!cls.matched)
+        throw wrapPiUnexpected(e, `freeze under lock (unexpected unique: ${cls.reason})`);
+      // Cross-connection backstop: the intent's request already exists → adopt the winner (equivalent).
       const existing = await this.findDecisionRequestByIntent(args.intentId);
-      if (existing) return existing;
+      if (existing) {
+        this.onReconcile({ op: 'freezeUnderLock', constraint: cls.id, outcome: 'adopt-winner' });
+        return existing;
+      }
+      // The collision was on a DERIVED key (businessDecisionKey / m3_5aIdempotencyKey) against a
+      // DIFFERENT intent — the intent-scoped derived keys collided across intents: integrity fault.
+      this.onReconcile({ op: 'freezeUnderLock', constraint: cls.id, outcome: 'conflict' });
       throw new PurchaseIntentHistoricalConflictError(
         'BUSINESS_KEY_CONFLICT',
         'derived decision key already frozen for a different intent',
@@ -422,16 +468,21 @@ export class PurchaseIntentDecisionRepository {
       return parseFrozenDecisionRequest(row);
     } catch (e) {
       if (!isUniqueViolation(e)) throw wrapPiUnexpected(e, 'freeze decision request');
+      const cls = classifyUniqueViolation(e, FREEZE_CONSTRAINTS);
+      if (!cls.matched)
+        throw wrapPiUnexpected(e, `freeze decision request (unexpected unique: ${cls.reason})`);
       const existing = await this.findDecisionRequestByIntent(args.intentId);
       if (!existing) {
         // The conflict was on businessDecisionKey / m3_5aIdempotencyKey against a DIFFERENT intent —
         // a derived-key collision across intents is a hard integrity fault (keys are intent-scoped).
+        this.onReconcile({ op: 'freeze', constraint: cls.id, outcome: 'conflict' });
         throw new PurchaseIntentHistoricalConflictError(
           'BUSINESS_KEY_CONFLICT',
           'derived decision key already frozen for a different intent',
         );
       }
       this.assertFreezeMatches(existing, args);
+      this.onReconcile({ op: 'freeze', constraint: cls.id, outcome: 'equivalent-reuse' });
       return existing;
     }
   }
@@ -504,18 +555,27 @@ export class PurchaseIntentDecisionRepository {
       };
     } catch (e) {
       if (!isUniqueViolation(e)) throw wrapPiUnexpected(e, 'bind decision snapshot');
+      // Exact classification (Sol Closure 4): a binding insert can only collide on decisionRequestId or
+      // snapshotId; anything else fails closed.
+      const cls = classifyUniqueViolation(e, [BINDING_REQUEST, BINDING_SNAPSHOT]);
+      if (!cls.matched)
+        throw wrapPiUnexpected(e, `bind decision snapshot (unexpected unique: ${cls.reason})`);
       // Reload-and-prove: rerun the COMPLETE predicate against the persisted winner (Sol Correction 4).
       const existing = await this.findBindingByRequest(request.id);
       if (existing) {
         if (existing.snapshotId !== snapshot.id) {
+          this.onReconcile({ op: 'bindSnapshot', constraint: cls.id, outcome: 'conflict' });
           throw new PurchaseIntentBindingCoherenceError(
             'REQUEST_LINK',
             `request ${request.id} is already bound to a different snapshot`,
           );
         }
         await this.proveCoherentSnapshot(request, existing.snapshotId, args.findExact);
+        this.onReconcile({ op: 'bindSnapshot', constraint: cls.id, outcome: 'equivalent-reuse' });
         return existing;
       }
+      // Constraint fired on snapshotId → this snapshot is already bound to a DIFFERENT request.
+      this.onReconcile({ op: 'bindSnapshot', constraint: cls.id, outcome: 'conflict' });
       throw new PurchaseIntentBindingCoherenceError(
         'REQUEST_LINK',
         `snapshot ${snapshot.id} is already bound to a different decision request`,
