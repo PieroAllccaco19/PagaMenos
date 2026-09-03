@@ -140,12 +140,13 @@ export {
 export {
   A2_CORPUS_PROJECTION_VERSION_V1,
   A2_ACCEPTED_CORPUS_ID,
-  A2_ACCEPTED_AUTHORITY_BASE_SHA,
   A2_ACCEPTED_CORPUS_SEMANTIC_DIGEST_V1,
+  RUNTIME_CORPUS_AUTHORITY,
   normalizeCorpusSemanticProjection,
   computeCorpusSemanticDigest,
   assertCorpusAuthority,
   CorpusAuthorityMismatchError,
+  type RuntimeCorpusAuthorityDeclaration,
 } from './corpus-authority';
 
 export {

@@ -327,4 +327,13 @@ export default tseslint.config(
       'no-restricted-imports': 'off',
     },
   },
+  {
+    // CommonJS build/CI tooling scripts (e.g. the shared runtime-authority verifier consumed by the CI
+    // authority-gate). Node CommonJS module scope: `require`, `module`, `process` are ambient globals.
+    files: ['scripts/**/*.cjs'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: { require: 'readonly', module: 'writable', process: 'readonly', console: 'readonly' },
+    },
+  },
 );

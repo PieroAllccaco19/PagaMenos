@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 
 import { describe, expect, it } from 'vitest';
 
@@ -6,17 +6,43 @@ import { loadCorpus, type Corpus } from '@/corpus';
 import { canonicalize } from '@/persistence/canonical';
 
 import {
-  A2_ACCEPTED_AUTHORITY_BASE_SHA,
   A2_ACCEPTED_CORPUS_ID,
   A2_ACCEPTED_CORPUS_SEMANTIC_DIGEST_V1,
   assertCorpusAuthority,
+  assertCorpusAuthorityAgainst,
   computeCorpusSemanticDigest,
   CorpusAuthorityMismatchError,
   normalizeCorpusSemanticProjection,
+  RUNTIME_CORPUS_AUTHORITY,
+  type RuntimeCorpusAuthorityDeclaration,
 } from './corpus-authority';
 
 const ACCEPTED = 'sha256:ff178a52bf3c3c3492828ae5cc7b8f3e7ca7b843a235ad7671ea2760803aed18';
 const clone = (): Corpus => structuredClone(loadCorpus());
+
+// The SHARED runtime-authority verifier used by the CI authority-gate. Loaded here (no Git / network)
+// to exercise the NEGATIVE trust-boundary cases with an in-memory copy of the external ledger.
+const require = createRequire(import.meta.url);
+const { verifyRuntimeAuthority } = require('../../scripts/runtime-authority-check.cjs') as {
+  verifyRuntimeAuthority: (args: {
+    runtime: unknown;
+    ledger: unknown;
+    manifest?: unknown;
+  }) => { ok: true; corpusId: string; digest: string } | { ok: false; error: string };
+};
+
+// A faithful in-memory copy of the accepted EXTERNAL ledger entry (the CI job reads the real blob via
+// `git show <BASE_SHA>:authority/v1/CORPUS_RELEASE_LEDGER_V1.json`). Unit tests must not touch Git.
+const EXTERNAL_LEDGER = {
+  schemaVersion: 'pagamenos.corpus-release-ledger.v1',
+  entries: {
+    [A2_ACCEPTED_CORPUS_ID]: {
+      semanticProjectionVersion: 'pagamenos.corpus-semantic-projection.v1',
+      sourceCommit: '64cf864a817c137920204487ab3317bc6d4c9ba5',
+      digest: ACCEPTED,
+    },
+  },
+};
 
 describe('A2 corpus semantic authority (Sol Finding 5 / Correction 1; V4.5 §4/§5/§11/§12)', () => {
   it('reproduces the accepted V4.5 digest EXACTLY (56639 canonical bytes)', () => {
@@ -42,29 +68,65 @@ describe('A2 corpus semantic authority (Sol Finding 5 / Correction 1; V4.5 §4/�
     expect(proj.operationalStates.length).toBe(46);
   });
 
-  it('the digest constant is anchored to the EXTERNAL protected ledger (self-approval attack fails)', () => {
-    // Read the accepted corpus digest DIRECTLY from the immutable external authority blob at
-    // PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA. The runtime constant MUST equal it — so a candidate-local
-    // edit of the constant (to launder a mutated corpus) is caught here / by the CI authority-gate.
-    const ledgerJson = execFileSync(
-      'git',
-      ['show', `${A2_ACCEPTED_AUTHORITY_BASE_SHA}:authority/v1/CORPUS_RELEASE_LEDGER_V1.json`],
-      { encoding: 'utf8' },
+  // ── Closure 1: trust boundary ────────────────────────────────────────────────────────────────────
+  it('runtime consumes ONE authority declaration whose digest recompute matches (no Git at runtime)', () => {
+    // The runtime declaration is DATA, consumed directly; the runtime never reads Git/network.
+    expect(RUNTIME_CORPUS_AUTHORITY.corpusId).toBe(A2_ACCEPTED_CORPUS_ID);
+    expect(RUNTIME_CORPUS_AUTHORITY.corpusSemanticDigest).toBe(ACCEPTED);
+    expect(RUNTIME_CORPUS_AUTHORITY.corpusSemanticProjectionVersion).toBe(
+      'pagamenos.corpus-semantic-projection.v1',
     );
-    const ledger = JSON.parse(ledgerJson) as {
-      entries: Record<string, { digest: string; sourceCommit: string }>;
-    };
-    const entry = ledger.entries[A2_ACCEPTED_CORPUS_ID];
-    expect(entry).toBeDefined();
-    expect(entry!.digest).toBe(ACCEPTED);
-    expect(A2_ACCEPTED_CORPUS_SEMANTIC_DIGEST_V1).toBe(entry!.digest);
-    // A mutated corpus cannot reproduce the external-ledger digest under the same corpusId.
+    // Actual current corpus projection is recomputed and must equal the declaration.
+    expect(computeCorpusSemanticDigest(loadCorpus())).toBe(
+      RUNTIME_CORPUS_AUTHORITY.corpusSemanticDigest,
+    );
+  });
+
+  it('the runtime declaration matches the EXTERNAL ledger (authority-gate PASS path)', () => {
+    const result = verifyRuntimeAuthority({
+      runtime: RUNTIME_CORPUS_AUTHORITY,
+      ledger: EXTERNAL_LEDGER,
+    });
+    expect(result).toEqual({ ok: true, corpusId: A2_ACCEPTED_CORPUS_ID, digest: ACCEPTED });
+  });
+
+  it('SELF-APPROVAL ATTACK: mutated corpus + mutated runtime declaration (same corpusId) → authority-gate FAILS', () => {
+    // Simulate a candidate that mutates a corpus field AND edits the runtime declaration to the new,
+    // internally-consistent digest, keeping the SAME historical corpusId. Runtime-local checks would
+    // pass (declaration == recompute), but the EXTERNAL ledger is the oracle and still says ff178…
     const mutated = clone();
     mutated.activeRules[0]!.provenance.url = mutated.activeRules[0]!.provenance.url + '-LAUNDER';
-    expect(computeCorpusSemanticDigest(mutated)).not.toBe(entry!.digest);
-    expect(() => assertCorpusAuthority(mutated, entry!.digest)).toThrow(
-      CorpusAuthorityMismatchError,
-    );
+    const launderedDigest = computeCorpusSemanticDigest(mutated);
+    expect(launderedDigest).not.toBe(ACCEPTED);
+    const forgedDeclaration: RuntimeCorpusAuthorityDeclaration = {
+      declarationVersion: RUNTIME_CORPUS_AUTHORITY.declarationVersion,
+      corpusId: A2_ACCEPTED_CORPUS_ID, // SAME historical id
+      corpusSemanticProjectionVersion: RUNTIME_CORPUS_AUTHORITY.corpusSemanticProjectionVersion,
+      corpusSemanticDigest: launderedDigest, // laundered to match the mutated corpus
+    };
+    // Runtime-local self-consistency is (deliberately) satisfied by the forged pair…
+    expect(assertCorpusAuthorityAgainst(mutated, forgedDeclaration)).toBe(launderedDigest);
+    // …but the external authority-gate comparison FAILS: ledger digest is unchanged.
+    const gate = verifyRuntimeAuthority({ runtime: forgedDeclaration, ledger: EXTERNAL_LEDGER });
+    expect(gate.ok).toBe(false);
+    if (!gate.ok) expect(gate.error).toMatch(/ledger digest/);
+  });
+
+  it('authority-gate FAILS if the runtime digest is edited but the corpus id is kept', () => {
+    const forged = { ...RUNTIME_CORPUS_AUTHORITY, corpusSemanticDigest: 'sha256:deadbeef' };
+    expect(verifyRuntimeAuthority({ runtime: forged, ledger: EXTERNAL_LEDGER }).ok).toBe(false);
+  });
+
+  it('authority-gate FAILS if the runtime corpusId is not present in the external ledger', () => {
+    const forged = { ...RUNTIME_CORPUS_AUTHORITY, corpusId: 'PAGAMENOS_FORGED_CORPUS' };
+    const gate = verifyRuntimeAuthority({ runtime: forged, ledger: EXTERNAL_LEDGER });
+    expect(gate.ok).toBe(false);
+    if (!gate.ok) expect(gate.error).toMatch(/no entry for corpusId/);
+  });
+
+  it('assertCorpusAuthority takes NO caller overrides — production cannot substitute an accepted authority', () => {
+    // The public gate is single-argument; there is no way to pass an alternate accepted id/digest.
+    expect(assertCorpusAuthority.length).toBe(1);
   });
 
   it('rejects a corpus whose declared corpusId is not the accepted authority id', () => {

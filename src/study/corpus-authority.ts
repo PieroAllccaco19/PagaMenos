@@ -16,14 +16,22 @@
 // sorted by MON..SUN index. Serialized with the accepted canonicalizer (sha256(canonical(projection))).
 // Over the frozen corpus this deterministically reproduces the accepted digest (56639 canonical bytes).
 //
-// RUNTIME / PRE-FREEZE AUTHORITY GATE (Sol Finding 5): `assertCorpusAuthority` requires the corpus's
-// declared `corpusId` to equal the accepted id AND the RECOMPUTED digest to equal the accepted ledger
-// anchor `A2_ACCEPTED_CORPUS_SEMANTIC_DIGEST_V1`. The anchor is a FIXED constant equal to the digest in
-// the EXTERNAL protected ledger at PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA (asserted in the test suite by
-// reading that immutable authority blob) — a candidate-local edit of the corpus source changes the
-// recompute and fails the gate, while a candidate-local edit of THIS constant is caught by the external
-// ledger equality test / the CI authority-gate. A mutated corpus can therefore never self-approve under
-// the same historical corpusId.
+// RUNTIME / PRE-FREEZE AUTHORITY GATE (Sol Finding 5; Sol Closure 1): the accepted corpus identity,
+// projection version, and semantic digest are declared ONCE, as DATA, in the immutable runtime
+// authority manifest `runtime-corpus-authority.v1.json`. That SAME file is what the CI `authority-gate`
+// job compares to the EXTERNAL protected historical ledger selected by
+// PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA (see scripts/runtime-authority-check.cjs) — so there is exactly
+// ONE candidate runtime authority declaration, consumed by runtime here and externally verified by CI.
+//
+// The runtime NEVER reads Git, the Git CLI, GitHub, the network, or the protected variable: the
+// protected external authority is a BUILD/CI trust root, not a runtime I/O dependency. `assertCorpusAuthority`
+// takes ONLY the corpus (no caller-supplied accepted-id/digest overrides): it recomputes the actual
+// current corpus projection and requires the corpus's declared `corpusId` to equal the runtime
+// declaration's `corpusId` AND the recomputed digest to equal the runtime declaration's digest. A
+// candidate-local edit of the corpus source changes the recompute and fails the gate; a candidate-local
+// edit of the corpus AND the runtime declaration together (kept internally self-consistent under the
+// same historical corpusId) is caught by the CI authority-gate, because the external ledger digest is
+// unchanged. A mutated corpus can therefore never self-approve under the same historical corpusId.
 import {
   loadCorpus,
   type ComparisonScope,
@@ -35,16 +43,30 @@ import { canonicalHash } from '@/persistence/hash';
 
 import { compareUnicodeCodePointStrings } from './eligibility-portfolio';
 import { PurchaseIntentError } from './purchase-intent-errors';
+import runtimeAuthorityDeclaration from './runtime-corpus-authority.v1.json';
+
+/**
+ * The single immutable runtime authority declaration (DATA, not editable-in-two-places source). This
+ * exact object is also what the CI authority-gate compares to the external historical ledger.
+ */
+export interface RuntimeCorpusAuthorityDeclaration {
+  readonly declarationVersion: string;
+  readonly corpusId: string;
+  readonly corpusSemanticProjectionVersion: string;
+  readonly corpusSemanticDigest: string;
+}
+
+/** The frozen accepted runtime authority declaration consumed by every production authority check. */
+export const RUNTIME_CORPUS_AUTHORITY: RuntimeCorpusAuthorityDeclaration = Object.freeze(
+  runtimeAuthorityDeclaration as RuntimeCorpusAuthorityDeclaration,
+);
 
 /** The accepted corpus semantic-projection version (metadata; NOT part of the digest preimage). */
-export const A2_CORPUS_PROJECTION_VERSION_V1 = 'pagamenos.corpus-semantic-projection.v1';
+export const A2_CORPUS_PROJECTION_VERSION_V1 =
+  RUNTIME_CORPUS_AUTHORITY.corpusSemanticProjectionVersion;
 
-/** The accepted historical corpusId this authority binds. */
-export const A2_ACCEPTED_CORPUS_ID = 'PAGAMENOS_VALIDATION_CORPUS_v1_2026-08-30T1800-0500';
-
-/** The external protected authority anchor (PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA). Documentary; the
- * runtime never reads git — the test suite proves the digest constant equals this authority's ledger. */
-export const A2_ACCEPTED_AUTHORITY_BASE_SHA = '84a7a1a30545b1c61ce2b372a95da9005ea46b6c';
+/** The accepted historical corpusId this authority binds (from the single runtime declaration). */
+export const A2_ACCEPTED_CORPUS_ID = RUNTIME_CORPUS_AUTHORITY.corpusId;
 
 /** Raised when the current corpus's identity/recomputed semantic digest ≠ the accepted authority. */
 export class CorpusAuthorityMismatchError extends PurchaseIntentError {
@@ -177,13 +199,12 @@ export function computeCorpusSemanticDigest(corpus: Corpus): string {
 }
 
 /**
- * The accepted ledger anchor — a FIXED constant equal to the digest recorded in the EXTERNAL protected
- * corpus release ledger at PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA (84a7a1a…). Recomputed at load and
- * asserted below; the test suite additionally asserts it equals the external ledger blob, so this
- * constant cannot be locally redefined to launder a mutated corpus.
+ * The accepted corpus semantic digest — sourced from the SINGLE runtime authority declaration, which
+ * the CI authority-gate binds to the digest recorded in the EXTERNAL protected corpus release ledger at
+ * PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA. There is no independently-editable second copy; a local edit of
+ * the declaration (to launder a mutated corpus) is caught by the CI authority-gate against the ledger.
  */
-export const A2_ACCEPTED_CORPUS_SEMANTIC_DIGEST_V1 =
-  'sha256:ff178a52bf3c3c3492828ae5cc7b8f3e7ca7b843a235ad7671ea2760803aed18';
+export const A2_ACCEPTED_CORPUS_SEMANTIC_DIGEST_V1 = RUNTIME_CORPUS_AUTHORITY.corpusSemanticDigest;
 
 /**
  * Load-time self-check: the shipped corpus MUST reproduce the accepted ledger anchor under its accepted
@@ -202,26 +223,37 @@ export const A2_ACCEPTED_CORPUS_SEMANTIC_DIGEST_V1 =
 }
 
 /**
- * Runtime / pre-freeze authority gate (A2 §5; Sol Finding 5). The corpus's declared identity MUST equal
- * the accepted corpusId AND its RECOMPUTED semantic digest MUST equal the accepted external ledger
- * anchor. A mutation to any projected corpus-owned field breaks this equality under an unchanged
- * corpusId ⇒ fail closed before any DecisionRequest is frozen.
+ * Runtime / pre-freeze authority gate (A2 §5; Sol Finding 5 / Sol Closure 1). Takes ONLY the corpus —
+ * NO caller-supplied accepted-id/digest overrides. The corpus's declared identity MUST equal the SINGLE
+ * runtime authority declaration's corpusId AND its RECOMPUTED semantic digest MUST equal the runtime
+ * declaration's digest. A mutation to any projected corpus-owned field breaks this equality under an
+ * unchanged corpusId ⇒ fail closed before any DecisionRequest is frozen. Production callers cannot
+ * substitute an alternate accepted authority.
  */
-export function assertCorpusAuthority(
+export function assertCorpusAuthority(corpus: Corpus): string {
+  return assertCorpusAuthorityAgainst(corpus, RUNTIME_CORPUS_AUTHORITY);
+}
+
+/**
+ * INTERNAL / TEST-ONLY seam (NOT re-exported by the public `@/study` barrel). Verifies a corpus against
+ * an EXPLICIT runtime authority declaration. Production code uses {@link assertCorpusAuthority}, which
+ * binds the single accepted declaration; this seam exists solely so tests can exercise alternate/adversarial
+ * declarations without a public runtime path being able to inject one.
+ */
+export function assertCorpusAuthorityAgainst(
   corpus: Corpus,
-  acceptedDigest: string = A2_ACCEPTED_CORPUS_SEMANTIC_DIGEST_V1,
-  acceptedCorpusId: string = A2_ACCEPTED_CORPUS_ID,
+  declaration: RuntimeCorpusAuthorityDeclaration,
 ): string {
-  if (corpus.corpusId !== acceptedCorpusId) {
+  if (corpus.corpusId !== declaration.corpusId) {
     throw new CorpusAuthorityMismatchError(
-      acceptedDigest,
+      declaration.corpusSemanticDigest,
       computeCorpusSemanticDigest(corpus),
-      `corpusId ${corpus.corpusId} is not the accepted authority id ${acceptedCorpusId}`,
+      `corpusId ${corpus.corpusId} is not the accepted authority id ${declaration.corpusId}`,
     );
   }
   const actual = computeCorpusSemanticDigest(corpus);
-  if (actual !== acceptedDigest) {
-    throw new CorpusAuthorityMismatchError(acceptedDigest, actual);
+  if (actual !== declaration.corpusSemanticDigest) {
+    throw new CorpusAuthorityMismatchError(declaration.corpusSemanticDigest, actual);
   }
   return actual;
 }
