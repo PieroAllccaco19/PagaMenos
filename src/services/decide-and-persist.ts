@@ -170,6 +170,21 @@ export async function decideAndPersistWithDeps(
   return verifyHistoricalSnapshot(dto);
 }
 
+/**
+ * INTERNAL: read-only exact-historical lookup by business key (M3.5B-A2 §18). Loads + fully verifies
+ * the existing snapshot for a completed-decision business key WITHOUT deciding, corpus/build work, or
+ * any write. Returns null when no decision was ever persisted for the key. Never rewrites history.
+ */
+export async function findExactHistoricalDecisionWithDeps(
+  businessDecisionKey: string,
+  deps: DecideAndPersistDeps = {},
+): Promise<DecisionSnapshotDto | null> {
+  const repository = deps.repository ?? decisionSnapshotRepository;
+  const key = requireNonEmpty(businessDecisionKey, 'businessDecisionKey');
+  const existing = await repository.findSnapshotByBusinessKey(key);
+  return existing ? verifyHistoricalSnapshot(existing) : null;
+}
+
 /** INTERNAL: load with an injectable store. See `loadDecisionSnapshot`. */
 export async function loadDecisionSnapshotWithDeps(
   id: string,
@@ -213,6 +228,17 @@ export function decideAndPersist(request: DecideAndPersistRequest): Promise<Deci
  */
 export function loadDecisionSnapshot(id: string): Promise<DecisionSnapshotDto | null> {
   return loadDecisionSnapshotWithDeps(id);
+}
+
+/**
+ * Read-only exact-historical decision lookup by completed-decision business key (M3.5B-A2 §18), using
+ * TRUSTED production dependencies. Returns the fully-verified persisted snapshot, or null if none was
+ * ever recorded for the key. Decides nothing and writes nothing.
+ */
+export function findExactHistoricalDecision(
+  businessDecisionKey: string,
+): Promise<DecisionSnapshotDto | null> {
+  return findExactHistoricalDecisionWithDeps(businessDecisionKey);
 }
 
 /**

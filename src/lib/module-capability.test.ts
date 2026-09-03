@@ -347,6 +347,18 @@ const STUDY_RAW_OWNERS: Record<string, string[]> = {
   'db/study-consent-repository': ['services/study-consent.ts'],
 };
 
+/** M3.5B-A2 raw repository (src-relative, no ext) → the ONLY sanctioned service files that may import
+ * it. The decision-request/binding writer is owned solely by the decision saga; the intent lifecycle
+ * writer is owned by the intent service AND read-only by the decision saga (which loads the finalized
+ * authorities to freeze a request) — mirroring the two-owner study-protocol-repository pattern. */
+const PI_RAW_OWNERS: Record<string, string[]> = {
+  'db/purchase-intent-repository': [
+    'services/study-purchase-intent.ts',
+    'services/study-intent-decision.ts',
+  ],
+  'db/purchase-intent-decision-repository': ['services/study-intent-decision.ts'],
+};
+
 /** Trusted admin service module → the ONLY files that may import it (study-admin barrel; read-only
  * analysis load additionally reachable from the public @/services barrel). Empty ⇒ tests only. */
 const STUDY_ADMIN_OWNERS: Record<string, string[]> = {
@@ -382,6 +394,14 @@ function studyBoundaryViolations(code: string, fromSrcRel: string): string[] {
       const owners = STUDY_RAW_OWNERS[mod] ?? [];
       if (owners.includes(fromSrcRel)) continue;
       out.push(`raw-study:${mod}`);
+      continue;
+    }
+    if (/^db\/purchase-intent-/.test(mod)) {
+      // Raw A2 internals: only db/ files, the mapped owners, and tests may import them.
+      if (isTest || isDbFile) continue;
+      const owners = PI_RAW_OWNERS[mod] ?? [];
+      if (owners.includes(fromSrcRel)) continue;
+      out.push(`raw-pi:${mod}`);
       continue;
     }
     if (Object.prototype.hasOwnProperty.call(STUDY_ADMIN_OWNERS, mod)) {

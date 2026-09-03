@@ -96,3 +96,88 @@ export { type RecruitmentResolver, type ResolvedRecruitmentSubject } from './rec
 // session adapter (`services/study-participant-session.ts`) and tests (A1-CODE-01). Only the
 // runtime-unforgeable checker and the type are public.
 export { isTrustedParticipantContext, type TrustedParticipantContext } from './participant-context';
+
+// ── M3.5B-A2 pure-domain surface (PurchaseIntent lifecycle, deterministic decision freeze) ──────────
+export {
+  PurchaseIntentError,
+  PurchaseIntentValidationError,
+  PurchaseIntentOwnershipError,
+  PurchaseIntentCaptureConflictError,
+  PurchaseIntentContextConflictError,
+  PurchaseIntentContextSignatureError,
+  PurchaseIntentContextAfterFinalizationError,
+  EligibilityProfileConflictError,
+  PurchaseIntentInvalidationConflictError,
+  PurchaseIntentFinalizationConflictError,
+  PurchaseIntentInvalidatedError,
+  PurchaseIntentNotFinalizedError,
+  PurchaseIntentInvalidationCycleError,
+  PurchaseIntentSemanticDriftError,
+  PurchaseIntentDecisionRequestIntegrityError,
+  PurchaseIntentUnsupportedInputSchemaError,
+  PurchaseIntentBindingCoherenceError,
+  PurchaseIntentHistoricalConflictError,
+  TrustedEntrySourceError,
+  PurchaseIntentIdempotencyConflictError,
+  PurchaseIntentInvariantError,
+} from './purchase-intent-errors';
+
+export {
+  A2_HOLIDAY_CALENDAR_VERSION_V1,
+  A2_HOLIDAY_CALENDAR_DIGEST_V1,
+  A2_HOLIDAY_CALENDAR_FIXTURE_V1,
+  resolveHolidayCalendarFixture,
+  HolidayFixtureIntegrityError,
+  UnsupportedHolidayCalendarVersionError,
+  HolidayCoverageError,
+  type HolidayCalendarFixtureV1,
+} from './holiday-fixture';
+
+export {
+  A2_BUSINESS_DECISION_KEY_PREFIX,
+  A2_M3_5A_IDEMPOTENCY_KEY_PREFIX,
+  deriveBusinessDecisionKey,
+  deriveM3_5aIdempotencyKey,
+} from './purchase-intent-keys';
+
+export {
+  A2_PORTFOLIO_SCHEMA_VERSION_V1,
+  normalizeEligibilityPortfolioV1,
+  compareUnicodeCodePointStrings,
+  compareNormalizedEligibilityInstrumentV1,
+  canonicalMembershipsSerialized,
+  EligibilityProfileNormalizedKeyCollisionError,
+  EligibilityProfileInstrumentComparatorInvariantError,
+} from './eligibility-portfolio';
+
+export {
+  ENTRY_SOURCES,
+  resolveTrustedEntrySource,
+  type EntrySource as A2EntrySource,
+  type TrustedEntryEvidence,
+} from './purchase-intent-entry-source';
+
+export {
+  A2_CONTEXT_SCHEMA_VERSION_V1,
+  normalizeA2PurchaseSignatureV1,
+  flattenToPurchaseContext,
+  buildDecideInputFromFinalizedAuthorities,
+  computeDecideInputHash,
+  type A2PurchaseSignature,
+  type A2SignatureKind,
+  type BuildDecideInputArgs,
+} from './purchase-intent-decide-input';
+
+export {
+  INTENT_CREATE_OPERATION_SCOPE,
+  INTENT_CONTEXT_APPEND_OPERATION_SCOPE,
+  ELIGIBILITY_PROFILE_APPEND_OPERATION_SCOPE,
+  INTENT_FINALIZE_OPERATION_SCOPE,
+  INTENT_INVALIDATE_OPERATION_SCOPE,
+  createPurchaseIntentRequestHash,
+  appendContextRequestHash,
+  appendEligibilityProfileRequestHash,
+  finalizeRequestHash,
+  invalidateRequestHash,
+  type A2TrustedContext,
+} from './purchase-intent-request-hash';

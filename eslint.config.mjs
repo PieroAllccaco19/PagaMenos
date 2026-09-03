@@ -194,6 +194,13 @@ const SANCTIONED_STUDY_IMPL_FILES = [
   'src/services/study-admin.ts',
 ];
 
+/** M3.5B-A2: the sanctioned intent-lifecycle + decision-saga service files. Each may reach its OWN raw
+ * A2 repository; operation-specific ownership is enforced by the module-capability AST test. */
+const SANCTIONED_A2_IMPL_FILES = [
+  'src/services/study-purchase-intent.ts',
+  'src/services/study-intent-decision.ts',
+];
+
 export default tseslint.config(
   {
     ignores: [
@@ -270,6 +277,14 @@ export default tseslint.config(
     // (and the study-admin barrel may aggregate the admin services). Operation-specific ownership is
     // enforced mechanically by the module-capability AST test (src/lib/module-capability.test.ts).
     files: SANCTIONED_STUDY_IMPL_FILES,
+    rules: {
+      'no-restricted-imports': 'off',
+    },
+  },
+  {
+    // The sanctioned M3.5B-A2 intent-lifecycle + decision-saga services may reach their OWN raw A2
+    // repositories. Operation-specific ownership is enforced by the module-capability AST test.
+    files: SANCTIONED_A2_IMPL_FILES,
     rules: {
       'no-restricted-imports': 'off',
     },

@@ -66,6 +66,22 @@ export class PurchaseIntentContextAfterFinalizationError extends PurchaseIntentE
   }
 }
 
+/** Same eligibility-profile capture identity reused for a materially different portfolio (A2 §10.1). */
+export class EligibilityProfileConflictError extends PurchaseIntentError {
+  constructor(message: string) {
+    super('ELIGIBILITY_PROFILE_CONFLICT', message);
+    this.name = 'EligibilityProfileConflictError';
+  }
+}
+
+/** An already-invalidated intent was re-invalidated with materially different reason/replacement (A2 §10). */
+export class PurchaseIntentInvalidationConflictError extends PurchaseIntentError {
+  constructor(message: string) {
+    super('PURCHASE_INTENT_INVALIDATION_CONFLICT', message);
+    this.name = 'PurchaseIntentInvalidationConflictError';
+  }
+}
+
 /** Finalization re-pointed to a different context version (A2 §9). */
 export class PurchaseIntentFinalizationConflictError extends PurchaseIntentError {
   constructor(message: string) {
@@ -159,6 +175,24 @@ export class TrustedEntrySourceError extends PurchaseIntentError {
   constructor(message: string) {
     super('TRUSTED_ENTRY_SOURCE', message);
     this.name = 'TrustedEntrySourceError';
+  }
+}
+
+/** A transport idempotency key was reused for a materially different A2 request (A2 §24). */
+export class PurchaseIntentIdempotencyConflictError extends PurchaseIntentError {
+  constructor(
+    public readonly operationScope: string,
+    public readonly idempotencyKey: string,
+    public readonly existingRequestHash: string,
+    public readonly attemptedRequestHash: string,
+  ) {
+    super(
+      'PURCHASE_INTENT_IDEMPOTENCY_CONFLICT',
+      `idempotency key ${JSON.stringify(idempotencyKey)} for operation ${JSON.stringify(
+        operationScope,
+      )} was already used for a materially different request`,
+    );
+    this.name = 'PurchaseIntentIdempotencyConflictError';
   }
 }
 
