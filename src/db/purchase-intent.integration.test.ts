@@ -957,6 +957,36 @@ describe('A2 real-PostgreSQL concurrency (Sol Finding 8)', () => {
     expect(count).toBe(1);
   });
 
+  it('2b. concurrent context appends (distinct capture keys) get distinct monotonic sequences', async () => {
+    const fx = await grantedAssignment();
+    const token = await capturedToken(fx);
+    const intent = await createPurchaseIntent({
+      trustedParticipantContext: fx.context,
+      assignmentId: fx.assignmentId,
+      intentCaptureKey: token.intentCaptureKey,
+      intentType: 'BUYING_NOW',
+      idempotencyKey: `ci-${uid()}`,
+    });
+    const append = () =>
+      appendPurchaseIntentContext({
+        trustedParticipantContext: fx.context,
+        assignmentId: fx.assignmentId,
+        intentId: intent.intentId,
+        contextCaptureKey: `cc-${uid()}`,
+        signature: BILL,
+        intendedTransactionAt: INTENDED_AT,
+        idempotencyKey: `ac-${uid()}`,
+      });
+    const [c1, c2] = await Promise.all([append(), append()]);
+    expect(new Set([c1.contextSeq, c2.contextSeq]).size).toBe(2); // distinct, no duplicate
+    const seqs = await prisma.purchaseIntentContextVersion.findMany({
+      where: { intentId: intent.intentId },
+      select: { contextSeq: true },
+      orderBy: { contextSeq: 'asc' },
+    });
+    expect(seqs.map((s) => s.contextSeq)).toEqual([1, 2]);
+  });
+
   it('3. duplicate FINALIZATION race → one finalization row', async () => {
     const fx = await grantedAssignment();
     const token = await capturedToken(fx);
