@@ -46,7 +46,12 @@ function verifyRuntimeAuthority(args) {
       return { ok: false, error: `runtime declaration field '${f}' missing/empty` };
     }
   }
-  if (!ledger || typeof ledger !== 'object' || !ledger.entries || typeof ledger.entries !== 'object') {
+  if (
+    !ledger ||
+    typeof ledger !== 'object' ||
+    !ledger.entries ||
+    typeof ledger.entries !== 'object'
+  ) {
     return { ok: false, error: 'external ledger missing or has no entries' };
   }
 

@@ -333,7 +333,12 @@ export default tseslint.config(
     files: ['scripts/**/*.cjs'],
     languageOptions: {
       sourceType: 'commonjs',
-      globals: { require: 'readonly', module: 'writable', process: 'readonly', console: 'readonly' },
+      globals: {
+        require: 'readonly',
+        module: 'writable',
+        process: 'readonly',
+        console: 'readonly',
+      },
     },
   },
 );
