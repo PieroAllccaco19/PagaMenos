@@ -88,20 +88,10 @@ function mapRejection(e: unknown): never {
   throw e;
 }
 
-/**
- * Sanctioned READ-ONLY consent-authorization facade (A2 §7 Consent Model A). Returns the ordered
- * append-only consent event stream for an assignment, so a trusted A2 collection path can evaluate the
- * accepted A1 authority `wasCollectionAuthorizedAtKnownTime(...)` against it. It exposes NO write
- * capability and NO raw consent repository. A2's atomic enforcement additionally reads these facts
- * under the assignment row lock (so a concurrent withdrawal cannot interleave); this facade is the
- * sanctioned surface for non-transactional reads and tests. The raw `study-consent-repository` remains
- * reachable only from this owning service.
- */
-export async function readConsentAuthorizationFacts(
-  assignmentId: string,
-): Promise<import('@/study').ConsentEventFact[]> {
-  return studyConsentRepository.listEvents(assignmentId);
-}
+// NOTE (Sol Correction 3): the A2 Consent Model A read facade is NOT here and is NOT public. It is the
+// db-layer internal `readConsentAuthorizationFacts` in `@/db/study-support`, called by the A2 write
+// boundary inside its assignment-locked transaction (READ COMMITTED). It is never exposed on the public
+// `@/services` barrel.
 
 /** Record a consent GRANT for the participant's own assignment (spec §8.2/§8.3). */
 export async function recordConsentGrant(

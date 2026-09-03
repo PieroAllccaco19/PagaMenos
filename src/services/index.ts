@@ -38,7 +38,6 @@ export {
 export {
   recordConsentGrant,
   recordConsentWithdrawal,
-  readConsentAuthorizationFacts,
   type RecordConsentGrantRequest,
   type RecordConsentWithdrawalRequest,
   type ConsentCommandResult,

@@ -6,7 +6,8 @@
 //
 // PUBLIC vs INTERNAL surface (Sol Finding 1): the operation is a PUBLIC one-request-argument wrapper
 // plus an INTERNAL `*WithDeps`. Only the wrapper is re-exported by the public barrel; the injectable
-// seam (repositories, trusted clock, decideAndPersist / findExactHistoricalDecision / loadDecisionSnapshot)
+// seam (repositories, decideAndPersist / findExactHistoricalDecision; the trusted evaluatedAt clock is
+// on the decision repository, sampled under the intent-root lock)
 // is reachable only from this sanctioned file and tests. No caller can inject infrastructure or a clock.
 //
 // PRE-FREEZE AUTHORITY (Sol Findings 5/6): before freezing, the corpus semantic-authority digest is
@@ -32,11 +33,12 @@ import { ENGINE_CONTRACT_VERSION, ENGINE_INPUT_SCHEMA_VERSION } from '@/persiste
 import {
   decideAndPersist as decideAndPersistTrusted,
   findExactHistoricalDecision as findExactHistoricalDecisionTrusted,
-  loadDecisionSnapshot as loadDecisionSnapshotTrusted,
 } from '@/services';
 import {
+  A2_CONTEXT_SCHEMA_VERSION_V1,
   A2_HOLIDAY_CALENDAR_FIXTURE_V1,
   A2_HOLIDAY_CALENDAR_VERSION_V1,
+  A2_PORTFOLIO_SCHEMA_VERSION_V1,
   assertCorpusAuthority,
   assertIntendedDateWithinCoverage,
   buildDecideInputFromFinalizedAuthorities,
@@ -53,10 +55,10 @@ import {
   PurchaseIntentNotFinalizedError,
   PurchaseIntentOwnershipError,
   PurchaseIntentSemanticDriftError,
+  PurchaseIntentUnsupportedInputSchemaError,
   PurchaseIntentValidationError,
   type TrustedParticipantContext,
 } from '@/study';
-import type { DecideInput } from '@/engine';
 
 export const A2_DECISION_REQUEST_SCHEMA_VERSION_V1 = CURRENT_A2_DECISION_REQUEST_SCHEMA_VERSION;
 
@@ -70,7 +72,6 @@ export interface IntentDecisionDeps {
   decisionRepository?: PurchaseIntentDecisionRepository;
   decideAndPersist?: typeof decideAndPersistTrusted;
   findExactHistoricalDecision?: typeof findExactHistoricalDecisionTrusted;
-  loadDecisionSnapshot?: typeof loadDecisionSnapshotTrusted;
 }
 
 export interface RequestPurchaseIntentDecisionRequest {
@@ -108,11 +109,10 @@ export async function requestPurchaseIntentDecisionWithDeps(
   const decideAndPersist = deps.decideAndPersist ?? decideAndPersistTrusted;
   const findExactHistoricalDecision =
     deps.findExactHistoricalDecision ?? findExactHistoricalDecisionTrusted;
-  const loadDecisionSnapshot = deps.loadDecisionSnapshot ?? loadDecisionSnapshotTrusted;
 
   const context = requireTrustedContext(request.trustedParticipantContext);
 
-  // 1. Load + gate the finalized authorities (ownership, invalidation, finalization).
+  // 1. Load authorities + ownership (ownership is always required).
   const authorities = await intentRepo.loadFinalizedDecisionAuthorities(request.intentId);
   if (!authorities) {
     throw new PurchaseIntentInvariantError(`purchase intent ${request.intentId} not found`);
@@ -124,20 +124,63 @@ export async function requestPurchaseIntentDecisionWithDeps(
   ) {
     throw new PurchaseIntentOwnershipError();
   }
-  if (authorities.invalidated) throw new PurchaseIntentInvalidatedError();
-  if (!authorities.finalization) throw new PurchaseIntentNotFinalizedError();
 
   const businessDecisionKey = deriveBusinessDecisionKey(request.intentId);
   const m3_5aIdempotencyKey = deriveM3_5aIdempotencyKey(request.intentId);
 
-  // 2. FREEZE (once). Re-use an existing frozen request verbatim (crash repair); otherwise gate the
-  //    pre-freeze authorities (corpus §5, holiday coverage §3.5), build the exact validated DecideInput
-  //    from the FROZEN authorities, sample evaluatedAt ONCE, and persist it immutably with its pins.
+  // 2. CASE A (A2 §20; Sol Correction 7): if an exact verified historical binding already exists, return
+  //    it — EVEN IF the intent was later invalidated. Invalidation prevents creating NEW scientific facts;
+  //    it never erases or makes inaccessible a previously valid immutable historical decision. The
+  //    complete nine-clause coherence predicate is re-proven by bindSnapshot (idempotent).
   let frozen = await decisionRepo.findDecisionRequestByIntent(request.intentId);
+  if (frozen) {
+    const existingBinding = await decisionRepo.findBindingByRequest(frozen.id);
+    if (existingBinding) {
+      const binding = await decisionRepo.bindSnapshot({
+        decisionRequestId: frozen.id,
+        snapshotId: existingBinding.snapshotId,
+        findExact: (q) => findExactHistoricalDecision(q),
+      });
+      return {
+        intentId: request.intentId,
+        decisionRequestId: frozen.id,
+        snapshotId: binding.snapshotId,
+        businessDecisionKey: frozen.businessDecisionKey,
+        decideInputHash: frozen.decideInputHash,
+        reused: true,
+      };
+    }
+  }
+
+  // 3. CASE C — no DecisionRequest yet: FREEZE one under the assignment→intent root lock. The lock path
+  //    re-checks Case-C state (finalized + NOT invalidated) authoritatively, so a NEW request is never
+  //    created for an invalidated or not-finalized intent. (A already-frozen request with no binding —
+  //    Case B — skips this and proceeds to internal-repair completion below, permitted even if later
+  //    invalidated, A2 §31.)
   if (!frozen) {
+    // Invalidation is the terminal state — report it first (an invalidated intent can never be decided).
+    if (authorities.invalidated) throw new PurchaseIntentInvalidatedError();
+    if (!authorities.finalization) throw new PurchaseIntentNotFinalizedError();
     const corpus = loadCorpus();
     const corpusSemanticDigest = assertCorpusAuthority(corpus); // Finding 5 pre-freeze gate
     const fixture = A2_HOLIDAY_CALENDAR_FIXTURE_V1;
+    // Version-dispatch the retained context / eligibility-profile payload parsers (Sol Correction 6):
+    // an unknown persisted schema version fails closed; the normalizers then re-validate the payloads.
+    if (
+      authorities.finalization.contextVersion.contextSchemaVersion !== A2_CONTEXT_SCHEMA_VERSION_V1
+    ) {
+      throw new PurchaseIntentUnsupportedInputSchemaError(
+        authorities.finalization.contextVersion.contextSchemaVersion,
+      );
+    }
+    if (
+      authorities.finalization.eligibilityProfileVersion.portfolioSchemaVersion !==
+      A2_PORTFOLIO_SCHEMA_VERSION_V1
+    ) {
+      throw new PurchaseIntentUnsupportedInputSchemaError(
+        authorities.finalization.eligibilityProfileVersion.portfolioSchemaVersion,
+      );
+    }
     const signature = normalizeA2PurchaseSignatureV1(
       authorities.finalization.contextVersion.purchaseSignatureJson,
     );
@@ -146,32 +189,37 @@ export async function requestPurchaseIntentDecisionWithDeps(
     const portfolio = normalizeEligibilityPortfolioV1(
       authorities.finalization.eligibilityProfileVersion.portfolioJson,
     );
-    const input = buildDecideInputFromFinalizedAuthorities({
-      signature,
-      intendedTransactionAt,
-      portfolio,
-      corpus,
-      // DETERMINISTIC freeze (A2 §13/§21): evaluatedAt is the durable trusted finalization instant, NOT
-      // a fresh wall-clock sample — so two concurrent first-freezes derive the BYTE-IDENTICAL request
-      // and the P2002 loser reconciles cleanly instead of seeing a spurious mismatch.
-      evaluatedAt: authorities.finalization.finalizedAt,
-      holidayCalendar: fixture.normalizedDates,
-    });
-    const decideInputHash = computeDecideInputHash(input);
-    frozen = await decisionRepo.freezeDecisionRequest({
+    // Freeze UNDER the assignment→intent root lock (Case C). `evaluatedAt` is the TRUSTED SERVICE SAMPLE
+    // AT FREEZE (A2 §13; Sol Correction 2) — sampled ONCE by the repo under the lock for the winner;
+    // concurrent entries adopt the winner's frozen request verbatim (they never require their own
+    // sampled instant to match). Everything else in `buildFreeze` is a deterministic function of the
+    // frozen authorities + corpus + holiday fixture.
+    frozen = await decisionRepo.freezeDecisionRequestUnderLock({
       intentId: request.intentId,
-      finalizationId: authorities.finalization.finalizationId,
-      decisionRequestSchemaVersion: CURRENT_A2_DECISION_REQUEST_SCHEMA_VERSION,
-      exactValidatedDecideInputJson: input as unknown,
-      decideInputHash,
-      expectedEngineInputSchemaVersion: ENGINE_INPUT_SCHEMA_VERSION,
-      expectedEngineContractVersion: ENGINE_CONTRACT_VERSION,
-      expectedCorpusVersion: corpus.corpusId,
-      expectedCorpusSemanticDigest: corpusSemanticDigest,
-      holidayCalendarVersion: fixture.version,
-      holidayCalendarDigest: computeHolidayContentDigest(fixture),
-      businessDecisionKey,
-      m3_5aIdempotencyKey,
+      assignmentId: request.assignmentId,
+      buildFreeze: (evaluatedAt) => {
+        const input = buildDecideInputFromFinalizedAuthorities({
+          signature,
+          intendedTransactionAt,
+          portfolio,
+          corpus,
+          evaluatedAt,
+          holidayCalendar: fixture.normalizedDates,
+        });
+        return {
+          decisionRequestSchemaVersion: CURRENT_A2_DECISION_REQUEST_SCHEMA_VERSION,
+          exactValidatedDecideInputJson: input as unknown,
+          decideInputHash: computeDecideInputHash(input),
+          expectedEngineInputSchemaVersion: ENGINE_INPUT_SCHEMA_VERSION,
+          expectedEngineContractVersion: ENGINE_CONTRACT_VERSION,
+          expectedCorpusVersion: corpus.corpusId,
+          expectedCorpusSemanticDigest: corpusSemanticDigest,
+          holidayCalendarVersion: fixture.version,
+          holidayCalendarDigest: computeHolidayContentDigest(fixture),
+          businessDecisionKey,
+          m3_5aIdempotencyKey,
+        };
+      },
     });
   }
 
@@ -191,7 +239,8 @@ export async function requestPurchaseIntentDecisionWithDeps(
   } else {
     assertNoRuntimeDrift(frozen);
     const snapshot = await decideAndPersist({
-      input: frozen.exactValidatedDecideInputJson as DecideInput,
+      // The VALIDATED, version-dispatched-parsed DecideInput (no unsafe cast on the load path).
+      input: frozen.parsedDecideInput,
       businessDecisionKey: frozen.businessDecisionKey,
       idempotencyKey: frozen.m3_5aIdempotencyKey,
     });
@@ -204,7 +253,7 @@ export async function requestPurchaseIntentDecisionWithDeps(
   const binding = await decisionRepo.bindSnapshot({
     decisionRequestId: frozen.id,
     snapshotId,
-    loadSnapshot: (id) => loadDecisionSnapshot(id),
+    findExact: (q) => findExactHistoricalDecision(q),
   });
 
   return {

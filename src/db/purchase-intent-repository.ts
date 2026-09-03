@@ -40,11 +40,10 @@ import {
   PurchaseIntentInvariantError,
   PurchaseIntentOwnershipError,
   wasCollectionAuthorizedAtKnownTime,
-  type ConsentEventFact,
 } from '@/study';
 
 import { prisma as defaultPrisma } from './client';
-import { isUniqueViolation } from './study-support';
+import { isUniqueViolation, readConsentAuthorizationFacts } from './study-support';
 
 type Tx = Prisma.TransactionClient;
 
@@ -996,20 +995,9 @@ export class PurchaseIntentRepository {
     assignmentId: string,
     collectionAt: Date,
   ): Promise<void> {
-    const rows = await tx.studyConsentEvent.findMany({
-      where: { assignmentId },
-      orderBy: { consentSeq: 'asc' },
-    });
-    const events: ConsentEventFact[] = rows.map((r) => ({
-      consentSeq: r.consentSeq,
-      action: r.action,
-      consentVersion: r.consentVersion,
-      privacyNoticeVersion: r.privacyNoticeVersion,
-      optionalEvidenceConsent: r.optionalEvidenceConsent,
-      assertedEffectiveAt: r.assertedEffectiveAt ? r.assertedEffectiveAt.toISOString() : null,
-      capturedAt: r.capturedAt.toISOString(),
-      recordedAt: r.recordedAt.toISOString(),
-    }));
+    // Sanctioned Consent Model A facts via the single internal facade (never raw-row reinterpretation),
+    // read under the held assignment lock (READ COMMITTED). Decision = accepted A1 pure authority.
+    const events = await readConsentAuthorizationFacts(tx, assignmentId);
     const authorized = wasCollectionAuthorizedAtKnownTime({
       events,
       collectionAt: collectionAt.toISOString(),

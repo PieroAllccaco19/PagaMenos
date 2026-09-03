@@ -6,7 +6,36 @@
 // only error/violation translation and small mappers shared by the study repositories.
 import { Prisma } from '@prisma/client';
 
-import { StudyIdempotencyConflictError, StudyInvariantError } from '@/study';
+import { StudyIdempotencyConflictError, StudyInvariantError, type ConsentEventFact } from '@/study';
+
+/**
+ * Sanctioned INTERNAL Consent Model A read facade (A2 §7; Sol Correction 3). The SINGLE place that maps
+ * raw `study_consent_event` rows into the accepted `ConsentEventFact` shape, so no scientific-write path
+ * ever re-interprets raw consent rows itself. It is db-layer internal (never on the public `@/services`
+ * barrel) and is called by the A2 write boundary WITHIN its assignment-locked transaction, giving the
+ * accepted READ COMMITTED behavior: the ordered committed consent stream is read while the assignment
+ * row lock is held, so a concurrent withdrawal cannot interleave. The authorization DECISION is the
+ * accepted pure A1 authority `wasCollectionAuthorizedAtKnownTime`, applied by the caller to these facts.
+ */
+export async function readConsentAuthorizationFacts(
+  tx: Prisma.TransactionClient,
+  assignmentId: string,
+): Promise<ConsentEventFact[]> {
+  const rows = await tx.studyConsentEvent.findMany({
+    where: { assignmentId },
+    orderBy: { consentSeq: 'asc' },
+  });
+  return rows.map((r) => ({
+    consentSeq: r.consentSeq,
+    action: r.action,
+    consentVersion: r.consentVersion,
+    privacyNoticeVersion: r.privacyNoticeVersion,
+    optionalEvidenceConsent: r.optionalEvidenceConsent,
+    assertedEffectiveAt: r.assertedEffectiveAt ? r.assertedEffectiveAt.toISOString() : null,
+    capturedAt: r.capturedAt.toISOString(),
+    recordedAt: r.recordedAt.toISOString(),
+  }));
+}
 
 /** A Prisma unique-constraint (P2002) violation — the race-reconciliation signal. */
 export function isUniqueViolation(e: unknown): e is Prisma.PrismaClientKnownRequestError {

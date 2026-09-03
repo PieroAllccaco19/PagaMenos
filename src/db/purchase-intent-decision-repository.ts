@@ -30,13 +30,18 @@ import {
   PurchaseIntentBindingCoherenceError,
   PurchaseIntentDecisionRequestIntegrityError,
   PurchaseIntentHistoricalConflictError,
+  PurchaseIntentInvalidatedError,
   PurchaseIntentInvariantError,
+  PurchaseIntentNotFinalizedError,
+  PurchaseIntentOwnershipError,
   PurchaseIntentUnsupportedInputSchemaError,
   resolveHolidayCalendarFixture,
 } from '@/study';
 import { canonicalHash } from '@/persistence/hash';
 import { engineInputV1Schema } from '@/persistence/schema';
 import type { DecisionSnapshotDto } from '@/persistence/schema';
+import { ENGINE_INPUT_SCHEMA_VERSION } from '@/persistence';
+import type { DecideInput } from '@/engine';
 
 import { prisma as defaultPrisma } from './client';
 import { isUniqueViolation } from './study-support';
@@ -50,12 +55,25 @@ const RETAINED_DECISION_REQUEST_SCHEMA_VERSIONS = new Set<string>([
   A2_DECISION_REQUEST_SCHEMA_VERSION_V1,
 ]);
 
+/**
+ * Retained, version-dispatched engine-input parsers (Sol Correction 6). `expectedEngineInputSchemaVersion`
+ * SELECTS the parser that actually validates the frozen DecideInput — it is never a mere label. An
+ * unknown version fails closed on load. Each parser validates + returns a typed DecideInput, so no load
+ * path performs an unsafe `as DecideInput` cast.
+ */
+const RETAINED_ENGINE_INPUT_PARSERS: Record<string, (value: unknown) => DecideInput> = {
+  [ENGINE_INPUT_SCHEMA_VERSION]: (value) =>
+    engineInputV1Schema.parse(value) as unknown as DecideInput,
+};
+
 export interface FrozenDecisionRequest {
   id: string;
   intentId: string;
   finalizationId: string;
   decisionRequestSchemaVersion: string;
   exactValidatedDecideInputJson: unknown;
+  /** The VALIDATED, version-dispatched-parsed DecideInput (never an unsafe cast). */
+  parsedDecideInput: DecideInput;
   decideInputHash: string;
   expectedEngineInputSchemaVersion: string;
   expectedEngineContractVersion: string;
@@ -83,11 +101,22 @@ export interface FreezeDecisionRequestArgs {
   m3_5aIdempotencyKey: string;
 }
 
+/** The read-only §18 exact-historical finder (authoritative receipt+snapshot verification). */
+export type FindExactHistoricalDecisionFn = (query: {
+  businessDecisionKey: string;
+  idempotencyKey: string;
+  inputHash: string;
+}) => Promise<{ kind: 'NONE' } | { kind: 'FOUND'; snapshot: DecisionSnapshotDto }>;
+
 export interface BindSnapshotArgs {
   decisionRequestId: string;
   snapshotId: string;
-  /** Sanctioned authoritative snapshot loader (the M3.5A `loadDecisionSnapshot`); wired by the saga. */
-  loadSnapshot: (id: string) => Promise<DecisionSnapshotDto | null>;
+  /**
+   * Sanctioned §18 finder — the authoritative snapshot+receipt loader/verifier (wired by the saga to
+   * the trusted `findExactHistoricalDecision`). bindSnapshot uses it to load the snapshot by the
+   * request's own derived identity and to prove the M3.5A receipt/idempotency + integrity clauses.
+   */
+  findExact: FindExactHistoricalDecisionFn;
 }
 
 export interface BindingRecord {
@@ -95,6 +124,32 @@ export interface BindingRecord {
   decisionRequestId: string;
   snapshotId: string;
   replayed: boolean;
+}
+
+/** The deterministic freeze material a saga produces for a sampled trusted `evaluatedAt` (A2 §13). */
+export interface FrozenRequestMaterial {
+  decisionRequestSchemaVersion: string;
+  exactValidatedDecideInputJson: unknown;
+  decideInputHash: string;
+  expectedEngineInputSchemaVersion: string;
+  expectedEngineContractVersion: string;
+  expectedCorpusVersion: string;
+  expectedCorpusSemanticDigest: string;
+  holidayCalendarVersion: string;
+  holidayCalendarDigest: string;
+  businessDecisionKey: string;
+  m3_5aIdempotencyKey: string;
+}
+
+export interface FreezeUnderLockArgs {
+  intentId: string;
+  assignmentId: string;
+  /**
+   * Deterministic build of the exact validated DecideInput + pins for the given trusted `evaluatedAt`.
+   * Invoked at most ONCE — under the intent-root lock, for the freeze winner only. Every field it
+   * produces except the winner's `evaluatedAt` is a deterministic function of the frozen authorities.
+   */
+  buildFreeze: (evaluatedAt: string, finalizationId: string) => FrozenRequestMaterial;
 }
 
 type RequestRow = Prisma.PurchaseIntentDecisionRequestGetPayload<Record<string, never>>;
@@ -107,10 +162,15 @@ function parseFrozenDecisionRequest(row: RequestRow): FrozenDecisionRequest {
   if (!RETAINED_DECISION_REQUEST_SCHEMA_VERSIONS.has(row.decisionRequestSchemaVersion)) {
     throw new PurchaseIntentUnsupportedInputSchemaError(row.decisionRequestSchemaVersion);
   }
-  // 1. The frozen DecideInput MUST parse under the accepted retained engine-input schema.
-  let parsedInput: unknown;
+  // 1. `expectedEngineInputSchemaVersion` SELECTS the retained engine-input parser (Sol Correction 6);
+  //    an unknown version fails closed. The selected parser VALIDATES + returns the typed DecideInput.
+  const engineParser = RETAINED_ENGINE_INPUT_PARSERS[row.expectedEngineInputSchemaVersion];
+  if (!engineParser) {
+    throw new PurchaseIntentUnsupportedInputSchemaError(row.expectedEngineInputSchemaVersion);
+  }
+  let parsedInput: DecideInput;
   try {
-    parsedInput = engineInputV1Schema.parse(row.exactValidatedDecideInputJson);
+    parsedInput = engineParser(row.exactValidatedDecideInputJson);
   } catch (e) {
     throw new PurchaseIntentDecisionRequestIntegrityError(
       `frozen DecideInput for request ${row.id} failed schema validation: ${
@@ -145,7 +205,7 @@ function parseFrozenDecisionRequest(row: RequestRow): FrozenDecisionRequest {
       `request ${row.id} holidayCalendarDigest ${row.holidayCalendarDigest} != retained fixture digest ${fixtureDigest}`,
     );
   }
-  const frozenHoliday = (parsedInput as { holidayCalendar?: unknown }).holidayCalendar;
+  const frozenHoliday: unknown = parsedInput.holidayCalendar;
   if (
     !Array.isArray(frozenHoliday) ||
     canonicalHash(frozenHoliday) !== canonicalHash([...fixture.normalizedDates])
@@ -169,6 +229,7 @@ function parseFrozenDecisionRequest(row: RequestRow): FrozenDecisionRequest {
     finalizationId: row.finalizationId,
     decisionRequestSchemaVersion: row.decisionRequestSchemaVersion,
     exactValidatedDecideInputJson: row.exactValidatedDecideInputJson,
+    parsedDecideInput: parsedInput,
     decideInputHash: row.decideInputHash,
     expectedEngineInputSchemaVersion: row.expectedEngineInputSchemaVersion,
     expectedEngineContractVersion: row.expectedEngineContractVersion,
@@ -181,6 +242,19 @@ function parseFrozenDecisionRequest(row: RequestRow): FrozenDecisionRequest {
   };
 }
 
+/** Freeze-time well-formedness: only the CURRENT creation version, and hash == canonicalHash(input). */
+function assertMaterialWellFormed(m: FrozenRequestMaterial): void {
+  if (m.decisionRequestSchemaVersion !== CURRENT_A2_DECISION_REQUEST_SCHEMA_VERSION) {
+    throw new PurchaseIntentUnsupportedInputSchemaError(m.decisionRequestSchemaVersion);
+  }
+  const recomputed = canonicalHash(m.exactValidatedDecideInputJson);
+  if (recomputed !== m.decideInputHash) {
+    throw new PurchaseIntentDecisionRequestIntegrityError(
+      `refusing to freeze: decideInputHash ${m.decideInputHash} != canonicalHash(input) ${recomputed}`,
+    );
+  }
+}
+
 function wrapPiUnexpected(e: unknown, whileDoing: string): PurchaseIntentInvariantError {
   if (e instanceof PurchaseIntentInvariantError) return e;
   const message = e instanceof Error ? e.message : String(e);
@@ -190,8 +264,110 @@ function wrapPiUnexpected(e: unknown, whileDoing: string): PurchaseIntentInvaria
   );
 }
 
+type Tx = Prisma.TransactionClient;
+
 export class PurchaseIntentDecisionRepository {
-  constructor(private readonly prisma: PrismaClient = defaultPrisma) {}
+  /**
+   * @param now Trusted service clock, sampled UNDER the intent-root lock at the authoritative first
+   *   freeze (A2 §13 evaluatedAt). Injectable for deterministic tests (INTERNAL only). Real clock default.
+   */
+  constructor(
+    private readonly prisma: PrismaClient = defaultPrisma,
+    private readonly now: () => Date = () => new Date(),
+  ) {}
+
+  /**
+   * Freeze the exact decision request UNDER the assignment→intent root lock (A2 §13/§20 Case C; Sol
+   * Corrections 2 + 7). Case-C state is RE-CHECKED under the lock (not invalidated, is finalized) so a
+   * concurrent invalidation cannot interleave after a stale inspection. The trusted `evaluatedAt` is
+   * sampled ONCE under the lock for the freeze winner only; concurrent entries find the winner's frozen
+   * request and ADOPT it verbatim — they never require their own locally-sampled instant to match. A
+   * cross-connection race is a P2002 backstop that also adopts the winner (same intent) or fails closed
+   * on a derived-key collision across intents.
+   */
+  async freezeDecisionRequestUnderLock(args: FreezeUnderLockArgs): Promise<FrozenDecisionRequest> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await this.lockAssignment(tx, args.assignmentId);
+        await this.lockIntentOwnedBy(tx, args.intentId, args.assignmentId);
+
+        // Case C authoritative state re-check UNDER the lock.
+        const invalidation = await tx.purchaseIntentInvalidation.findUnique({
+          where: { invalidatedIntentId: args.intentId },
+          select: { id: true },
+        });
+        if (invalidation) throw new PurchaseIntentInvalidatedError();
+        const finalization = await tx.purchaseIntentFinalization.findUnique({
+          where: { intentId: args.intentId },
+          select: { id: true },
+        });
+        if (!finalization) throw new PurchaseIntentNotFinalizedError();
+
+        const existing = await tx.purchaseIntentDecisionRequest.findUnique({
+          where: { intentId: args.intentId },
+        });
+        if (existing) return parseFrozenDecisionRequest(existing); // adopt the freeze winner verbatim
+
+        // Trusted freeze instant sampled ONCE, under the lock, for the winner (§13).
+        const evaluatedAt = this.now().toISOString();
+        const material = args.buildFreeze(evaluatedAt, finalization.id);
+        assertMaterialWellFormed(material);
+        const row = await tx.purchaseIntentDecisionRequest.create({
+          data: {
+            intentId: args.intentId,
+            finalizationId: finalization.id,
+            decisionRequestSchemaVersion: material.decisionRequestSchemaVersion,
+            exactValidatedDecideInputJson:
+              material.exactValidatedDecideInputJson as Prisma.InputJsonValue,
+            decideInputHash: material.decideInputHash,
+            expectedEngineInputSchemaVersion: material.expectedEngineInputSchemaVersion,
+            expectedEngineContractVersion: material.expectedEngineContractVersion,
+            expectedCorpusVersion: material.expectedCorpusVersion,
+            expectedCorpusSemanticDigest: material.expectedCorpusSemanticDigest,
+            holidayCalendarVersion: material.holidayCalendarVersion,
+            holidayCalendarDigest: material.holidayCalendarDigest,
+            businessDecisionKey: material.businessDecisionKey,
+            m3_5aIdempotencyKey: material.m3_5aIdempotencyKey,
+          },
+        });
+        return parseFrozenDecisionRequest(row);
+      });
+    } catch (e) {
+      if (!isUniqueViolation(e)) throw e;
+      // Cross-connection backstop: the intent's request already exists → adopt the winner.
+      const existing = await this.findDecisionRequestByIntent(args.intentId);
+      if (existing) return existing;
+      throw new PurchaseIntentHistoricalConflictError(
+        'BUSINESS_KEY_CONFLICT',
+        'derived decision key already frozen for a different intent',
+      );
+    }
+  }
+
+  private async lockAssignment(tx: Tx, assignmentId: string): Promise<void> {
+    const locked = await tx.$queryRaw<Array<{ id: string }>>(
+      Prisma.sql`SELECT "id" FROM "experiment_assignment" WHERE "id" = ${assignmentId}::uuid FOR UPDATE`,
+    );
+    if (locked.length === 0) {
+      throw new PurchaseIntentInvariantError(`unknown assignment ${assignmentId}`);
+    }
+  }
+
+  private async lockIntentOwnedBy(tx: Tx, intentId: string, assignmentId: string): Promise<void> {
+    const locked = await tx.$queryRaw<Array<{ id: string }>>(
+      Prisma.sql`SELECT "id" FROM "purchase_intent" WHERE "id" = ${intentId}::uuid FOR UPDATE`,
+    );
+    if (locked.length === 0) {
+      throw new PurchaseIntentInvariantError(`purchase intent ${intentId} not found`);
+    }
+    const owner = await tx.purchaseIntent.findUnique({
+      where: { id: intentId },
+      select: { captureToken: { select: { assignmentId: true } } },
+    });
+    if (!owner || owner.captureToken.assignmentId !== assignmentId) {
+      throw new PurchaseIntentOwnershipError();
+    }
+  }
 
   async findDecisionRequestByIntent(intentId: string): Promise<FrozenDecisionRequest | null> {
     const row = await this.prisma.purchaseIntentDecisionRequest.findUnique({ where: { intentId } });
@@ -310,14 +486,7 @@ export class PurchaseIntentDecisionRepository {
         `decision request ${args.decisionRequestId} not found for binding`,
       );
     }
-    const snapshot = await args.loadSnapshot(args.snapshotId);
-    if (!snapshot) {
-      throw new PurchaseIntentBindingCoherenceError(
-        'SEMANTIC',
-        `snapshot ${args.snapshotId} not found / unloadable for binding`,
-      );
-    }
-    this.assertSnapshotCoheres(request, snapshot);
+    const snapshot = await this.proveCoherentSnapshot(request, args.snapshotId, args.findExact);
 
     try {
       const row = await this.prisma.purchaseIntentDecisionBinding.create({
@@ -331,7 +500,7 @@ export class PurchaseIntentDecisionRepository {
       };
     } catch (e) {
       if (!isUniqueViolation(e)) throw wrapPiUnexpected(e, 'bind decision snapshot');
-      // Reload-and-prove BOTH sides on the exact uniqueness that fired.
+      // Reload-and-prove: rerun the COMPLETE predicate against the persisted winner (Sol Correction 4).
       const existing = await this.findBindingByRequest(request.id);
       if (existing) {
         if (existing.snapshotId !== snapshot.id) {
@@ -340,6 +509,7 @@ export class PurchaseIntentDecisionRepository {
             `request ${request.id} is already bound to a different snapshot`,
           );
         }
+        await this.proveCoherentSnapshot(request, existing.snapshotId, args.findExact);
         return existing;
       }
       throw new PurchaseIntentBindingCoherenceError(
@@ -349,20 +519,114 @@ export class PurchaseIntentDecisionRepository {
     }
   }
 
-  private assertSnapshotCoheres(
+  /**
+   * The COMPLETE V4.5 §17 nine-clause snapshot/request coherence predicate (Sol Correction 4). Proves,
+   * from AUTHORITATIVE persisted rows only, that `snapshotId` is exactly the M3.5A decision for `request`.
+   * No partial-match snapshot (matching a subset of clauses) can bind.
+   */
+  private async proveCoherentSnapshot(
     request: FrozenDecisionRequest,
-    snapshot: DecisionSnapshotDto,
-  ): void {
+    snapshotId: string,
+    findExact: FindExactHistoricalDecisionFn,
+  ): Promise<DecisionSnapshotDto> {
+    // Clauses 1 (M3.5A receipt/idempotency identity) + 8 (snapshot self-integrity): the §18 finder
+    // loads the snapshot from the receipt for (DECISION_PERSIST_V1, m3_5aIdempotencyKey), asserts
+    // receipt.requestHash == inputHash and snapshot.businessDecisionKey == businessDecisionKey, and runs
+    // verifyHistoricalSnapshot. It is keyed on the REQUEST's own derived identity, never a caller value.
+    const found = await findExact({
+      businessDecisionKey: request.businessDecisionKey,
+      idempotencyKey: request.m3_5aIdempotencyKey,
+      inputHash: request.decideInputHash,
+    });
+    if (found.kind !== 'FOUND') {
+      throw new PurchaseIntentBindingCoherenceError(
+        'IDEMPOTENCY',
+        `no exact historical decision for request ${request.id} identity`,
+      );
+    }
+    const snapshot = found.snapshot;
+    if (snapshot.id !== snapshotId) {
+      throw new PurchaseIntentBindingCoherenceError(
+        'IDEMPOTENCY',
+        `finder snapshot ${snapshot.id} != requested snapshot ${snapshotId}`,
+      );
+    }
+    // Clause 2 businessDecisionKey.
     if (snapshot.businessDecisionKey !== request.businessDecisionKey) {
       throw new PurchaseIntentBindingCoherenceError(
         'BUSINESS_KEY',
         `snapshot businessDecisionKey ${snapshot.businessDecisionKey} != request ${request.businessDecisionKey}`,
       );
     }
+    // Clause 3 DecideInput / inputHash.
     if (snapshot.inputHash !== request.decideInputHash) {
       throw new PurchaseIntentBindingCoherenceError(
         'INPUT_HASH',
         `snapshot inputHash ${snapshot.inputHash} != request decideInputHash ${request.decideInputHash}`,
+      );
+    }
+    // Clause 4 engine contract version / stamp.
+    if (snapshot.engineContractVersion !== request.expectedEngineContractVersion) {
+      throw new PurchaseIntentBindingCoherenceError(
+        'ENGINE_CONTRACT',
+        `snapshot engineContractVersion ${snapshot.engineContractVersion} != request ${request.expectedEngineContractVersion}`,
+      );
+    }
+    // Clause 5 engine-input schema version.
+    if (snapshot.engineInputSchemaVersion !== request.expectedEngineInputSchemaVersion) {
+      throw new PurchaseIntentBindingCoherenceError(
+        'ENGINE_INPUT_SCHEMA',
+        `snapshot engineInputSchemaVersion ${snapshot.engineInputSchemaVersion} != request ${request.expectedEngineInputSchemaVersion}`,
+      );
+    }
+    // Clause 6 corpus authority / version (+ the A2 semantic-digest pin must be present).
+    if (snapshot.corpusVersion !== request.expectedCorpusVersion) {
+      throw new PurchaseIntentBindingCoherenceError(
+        'CORPUS',
+        `snapshot corpusVersion ${snapshot.corpusVersion} != request ${request.expectedCorpusVersion}`,
+      );
+    }
+    if (!request.expectedCorpusSemanticDigest) {
+      throw new PurchaseIntentBindingCoherenceError(
+        'CORPUS',
+        `request ${request.id} is missing its corpus semantic-authority pin`,
+      );
+    }
+    // Clause 7 request ↔ finalization ↔ context ↔ profile ↔ intent/assignment relationship.
+    await this.assertRequestRelationships(request);
+    // Clause 9 derived-key reproduction (businessDecisionKey / m3_5aIdempotencyKey from intentId) is
+    // enforced by the version-dispatched parser on every request load (findDecisionRequestById above).
+    return snapshot;
+  }
+
+  /** Clause 7: the request's finalization/context/profile all belong to its intent + assignment. */
+  private async assertRequestRelationships(request: FrozenDecisionRequest): Promise<void> {
+    const fin = await this.prisma.purchaseIntentFinalization.findUnique({
+      where: { id: request.finalizationId },
+      select: {
+        intentId: true,
+        contextVersion: { select: { intentId: true } },
+        eligibilityProfileVersion: { select: { assignmentId: true } },
+      },
+    });
+    const intent = await this.prisma.purchaseIntent.findUnique({
+      where: { id: request.intentId },
+      select: { captureToken: { select: { assignmentId: true } } },
+    });
+    if (!fin || !intent) {
+      throw new PurchaseIntentBindingCoherenceError(
+        'RELATIONSHIP',
+        `request ${request.id} finalization/intent rows missing`,
+      );
+    }
+    if (
+      fin.intentId !== request.intentId ||
+      fin.contextVersion.intentId !== request.intentId ||
+      fin.eligibilityProfileVersion.assignmentId !== intent.captureToken.assignmentId
+    ) {
+      throw new PurchaseIntentBindingCoherenceError(
+        'RELATIONSHIP',
+        `request ${request.id} finalization/context/profile do not cohere with its intent/assignment`,
       );
     }
   }

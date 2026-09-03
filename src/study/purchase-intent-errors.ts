@@ -149,10 +149,22 @@ export class PurchaseIntentUnsupportedInputSchemaError extends PurchaseIntentErr
   }
 }
 
-/** A snapshot proposed for binding did not exactly cohere with the frozen request (A2 §17). */
+/** A snapshot proposed for binding did not exactly cohere with the frozen request (A2 §17). The reason
+ * labels the exact V4.5 coherence clause that failed (Sol Correction 4 — complete nine-clause predicate). */
 export class PurchaseIntentBindingCoherenceError extends PurchaseIntentError {
   constructor(
-    public readonly reason: 'BUSINESS_KEY' | 'RECEIPT' | 'INPUT_HASH' | 'SEMANTIC' | 'REQUEST_LINK',
+    public readonly reason:
+      | 'IDEMPOTENCY' // M3.5A receipt / idempotency identity (finder FOUND + snapshot id)
+      | 'BUSINESS_KEY' // businessDecisionKey equality
+      | 'INPUT_HASH' // DecideInput / inputHash equality
+      | 'ENGINE_CONTRACT' // engine contract version/stamp
+      | 'ENGINE_INPUT_SCHEMA' // engine-input schema version
+      | 'CORPUS' // corpus authority / version / semantic-digest pin
+      | 'RELATIONSHIP' // request ↔ finalization ↔ context ↔ profile ↔ intent/assignment
+      | 'INTEGRITY' // snapshot self-integrity (verifyHistoricalSnapshot)
+      | 'RECEIPT'
+      | 'SEMANTIC'
+      | 'REQUEST_LINK', // 1:1 binding uniqueness
     message: string,
   ) {
     super('PURCHASE_INTENT_BINDING_COHERENCE', message);
