@@ -1,0 +1,652 @@
+# PagaMenos · PRE-A2 TRUSTED AUTHORITY GATE — v2 (bounded patch on 417eddf)
+# =============================================================================
+# Bounded corrective for Sol's remaining finding on 417eddf (not a redesign;
+# duplicate-equivalence lifecycle otherwise accepted). Closes the "successful
+# duplicate finalization" hole and formalizes canonicalization semantics:
+#
+#   [HIGH]  Canonical single-required-name success invariant.
+#           On PASS the finalizer no longer patches every exact logical run to
+#           the required check name + success. It:
+#             (a) picks a deterministic canonical run — highest numeric id
+#                 (§3/§19);
+#             (b) FIRST renames every noncanonical duplicate OUT of the
+#                 required check name (`trusted-a2-authority/head`) into
+#                 `trusted-a2-authority/duplicate/<id>` and completes it as
+#                 `failure` (§4/§5). Security comes from the NAME change, not
+#                 the conclusion semantics — GitHub treats `neutral`/`skipped`
+#                 as passing for required checks, so we deliberately do not
+#                 rely on those;
+#             (c) VERIFIES every duplicate rename PATCH returned OK; ONLY THEN
+#                 promotes canonical to required-name success (§6).
+#           Any failure at any stage classifies TRUSTED ISSUER INTEGRITY
+#           FAILURE + ADMINISTRATIVE MERGE FREEZE (§8/§9). No required-context
+#           `success` can be published until every known duplicate has left
+#           that required context.
+#
+#   [MED]   ID-metadata-conflict detection (§18).
+#           `findAllExactRuns` now detects a single check_run id returning with
+#           differing metadata across pages and classifies that as TRUSTED
+#           ISSUER INTEGRITY FAILURE (fail closed). Materially-identical
+#           duplicate rows across pages are still silently deduped.
+#
+#   [MED]   Injectable paginator (§16).
+#           `listAllCheckRunsForRefWithFetcher(fetcher, {...})` is now a pure
+#           in-region function driven by an injected page fetcher, so the local
+#           harness genuinely executes the pagination loop (page 2, page 3,
+#           MAX_PAGES limit, raw-scan cap, API failure) rather than merely
+#           inspecting constants. Production `listAllCheckRunsForRef` is a
+#           thin wrapper that supplies `ghFetch` as the fetcher.
+#
+# (Retained history — do not regress; already accepted by Sol as of 417eddf:)
+#   [HIGH 417eddf] All-exact enumeration + reset + finalize (equivalence class).
+#   [HIGH e7fb49b] STEP-order for stale-same-head-success cannot revert.
+#   [MED  e7fb49b] Same-repository policy before App credential use.
+#   [MED  e7fb49b] Deterministic external_id, App/name-scoped reuse.
+#   [MED  e7fb49b] Installation-token narrowing (repository_ids + minimum perms).
+#
+# Retained (do not regress):
+#   pull_request_target from default-branch definition; no candidate code
+#   execution; PR content read only as inert JSON via `git show <headSHA>:<fixed
+#   path>`; strict runtime declaration; four-file authority-manifest inventory;
+#   structural 68269bb rejection; exact A2 head pin; rename/NUL-safe protected-
+#   path diff (with scripts-trusted/**); GitHub App head-bound Check Run.
+# =============================================================================
+name: trusted-a2-authority
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    branches: [m3.5b-a2-integration]
+
+permissions:
+  contents: read # Git reads only; the head-bound check is minted by the App, not this token.
+
+concurrency:
+  group: trusted-a2-authority-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  trusted-a2-authority:
+    runs-on: ubuntu-latest
+    environment: trusted-a2-gate
+    steps:
+      - name: Checkout trusted base tree (no PR code)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      # (15/§D) Materialize the trusted logic ONCE from inline workflow content.
+      # This file originates from the trusted default-branch workflow; it is
+      # never read from the PR. The local harness extracts and hash-pins the
+      # sentinel-bounded region below so silent drift fails.
+      - name: Materialize trusted library
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/trusted-a2-lib.cjs" <<'LIB'
+          'use strict';
+          // ===BEGIN TRUSTED-A2 TRUSTED LOGIC (authoritative; mirrored byte-for-byte by the local harness)===
+          const REQUIRED_A2_CORPUS_ID = 'PAGAMENOS_VALIDATION_CORPUS_v1_2026-08-30T1800-0500';
+          const REQUIRED_DECLARATION_VERSION = 'pagamenos.runtime-corpus-authority.v1';
+          const REQUIRED_PROJECTION_VERSION = 'pagamenos.corpus-semantic-projection.v1';
+          const LEDGER_SCHEMA_VERSION = 'pagamenos.corpus-release-ledger.v1';
+          const DIGEST_RE = /^sha256:[0-9a-f]{64}$/;
+          const CORPUS_ID_RE = /^PAGAMENOS_VALIDATION_CORPUS_[0-9A-Za-z._:+-]+$/;
+          const SHA40_RE = /^[0-9a-f]{40}$/;
+          const RUNTIME_KEYS = ['corpusId', 'corpusSemanticDigest', 'corpusSemanticProjectionVersion', 'declarationVersion'];
+          const REQUIRED_AUTHORITY_FILES = [
+            'authority/v1/AUTHORITY_BASELINE_MANIFEST_V1.json',
+            'authority/v1/CORPUS_RELEASE_LEDGER_V1.json',
+            'authority/v1/HOLIDAY_CALENDAR_REGISTRY_V1.json',
+            'authority/v1/holiday-calendar/pagamenos.holiday.pe-lima-callao.private-commerce.v1.json',
+          ];
+          const CHECK_NAME = 'trusted-a2-authority/head';
+          const DUPLICATE_NAME_PREFIX = 'trusted-a2-authority/duplicate/';
+          const PROTECTED_PREFIXES = ['src/corpus/', 'src/engine/', 'authority/', '.github/workflows/', 'scripts-trusted/'];
+          const REJECTED_AUTHORITY_BASE_SHA = '68269bb5acad77bb6e8dc1644bb32d29ef485d31';
+
+          const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
+          const lc = (s) => (typeof s === 'string' ? s.toLowerCase() : '');
+
+          // ---- SAME-REPOSITORY policy (§B; runs BEFORE any App-credential use) ----
+          function sameRepositoryPolicy(input) {
+            const { pr, repository } = input;
+            if (!isPlainObject(pr)) return { ok: false, error: 'event has no pull_request' };
+            if (typeof repository !== 'string' || repository.length === 0) return { ok: false, error: 'github.repository missing' };
+            const head = pr.head;
+            if (!isPlainObject(head) || !isPlainObject(head.repo)) return { ok: false, error: 'pr.head.repo missing (fork or malformed event)' };
+            if (typeof head.repo.full_name !== 'string' || head.repo.full_name.length === 0) return { ok: false, error: 'pr.head.repo.full_name missing' };
+            if (head.repo.full_name !== repository) return { ok: false, error: 'FORK PR REJECTED: head.repo.full_name ' + head.repo.full_name + ' != github.repository ' + repository };
+            return { ok: true };
+          }
+
+          // ---- Minimal immutable pre-check validation (§C; before App auth) ----
+          function preCheckEvent(input) {
+            const { eventName, repository, pr } = input;
+            if (eventName !== 'pull_request_target') return { ok: false, error: 'event is not pull_request_target' };
+            if (!isPlainObject(pr)) return { ok: false, error: 'event has no pull_request' };
+            if (typeof pr.number !== 'number' || !Number.isInteger(pr.number) || pr.number <= 0) return { ok: false, error: 'PR number invalid' };
+            if (!isPlainObject(pr.head) || !SHA40_RE.test(lc(pr.head.sha))) return { ok: false, error: 'PR head SHA malformed' };
+            if (typeof repository !== 'string' || !/^[^/]+\/[^/]+$/.test(repository)) return { ok: false, error: 'repository identity invalid' };
+            const same = sameRepositoryPolicy({ pr, repository });
+            if (!same.ok) return same;
+            return { ok: true, headSha: lc(pr.head.sha), prNumber: pr.number, repository };
+          }
+
+          // ---- Deterministic external_id for the head-bound trusted check (§E) ----
+          function externalIdFor(input) {
+            const { repositoryId, prNumber, headSha } = input;
+            if (typeof repositoryId !== 'number' && typeof repositoryId !== 'string') throw new Error('repositoryId required');
+            if (!Number.isInteger(prNumber) || prNumber <= 0) throw new Error('prNumber invalid');
+            if (typeof headSha !== 'string' || !SHA40_RE.test(lc(headSha))) throw new Error('headSha malformed');
+            return 'pagamenos:trusted-a2-authority:' + String(repositoryId) + ':pr-' + prNumber + ':' + lc(headSha);
+          }
+
+          // ---- Sanity ceilings (defensible; documented in the bootstrap doc) ----
+          const MAX_EXACT_RUNS = 512;
+          const MAX_PAGES = 100;      // ≤ MAX_PAGES * PAGE_SIZE = 10 000 raw rows scanned
+          const PAGE_SIZE = 100;
+
+          // ---- Deterministic canonical / duplicate naming (§4/§19) ----
+          function duplicateNameFor(id) {
+            const n = Number(id);
+            if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) throw new Error('duplicateNameFor: id must be a positive integer');
+            return DUPLICATE_NAME_PREFIX + n;
+          }
+
+          // ---- Exact logical trusted-check identity (§2/§E) ----
+          function isExactLogicalMatch(run, want) {
+            if (!isPlainObject(run)) return false;
+            const owner = run && run.app && run.app.id;
+            if (owner == null || String(owner) !== String(want.appId)) return false;
+            if (run.name !== want.checkName) return false;
+            if (run.external_id !== want.externalId) return false;
+            if (lc(run.head_sha) !== lc(want.headSha)) return false;
+            return true;
+          }
+
+          // §18: detect a single check_run id returning with conflicting metadata
+          // across pages. Materially-identical rows dedupe silently; any conflict
+          // in (name / external_id / head_sha / app.id / status / conclusion) is
+          // TRUSTED ISSUER INTEGRITY FAILURE. Operates on the RAW pre-filter list
+          // so an anomaly is not hidden by the exact-match filter.
+          function idMetadataSignature(r) {
+            return JSON.stringify({
+              name: r && r.name,
+              external_id: r && r.external_id,
+              head_sha: lc(r && r.head_sha),
+              appId: r && r.app && r.app.id != null ? String(r.app.id) : null,
+              status: r && r.status,
+              conclusion: r && r.conclusion,
+            });
+          }
+          function detectIdMetadataConflicts(runs) {
+            if (!Array.isArray(runs)) return;
+            const byId = new Map();
+            for (const r of runs) {
+              if (!isPlainObject(r)) continue;
+              const id = Number(r.id);
+              if (!Number.isFinite(id)) continue;
+              const sig = idMetadataSignature(r);
+              const prev = byId.get(id);
+              if (prev !== undefined && prev !== sig) {
+                throw new Error('TRUSTED ISSUER INTEGRITY FAILURE: check_run id ' + id + ' returned with conflicting metadata across pages');
+              }
+              byId.set(id, sig);
+            }
+          }
+
+          function findAllExactRuns(input) {
+            const { runs, appId, checkName, externalId, headSha } = input;
+            if (!Array.isArray(runs)) return [];
+            detectIdMetadataConflicts(runs);
+            const want = { appId, checkName, externalId, headSha };
+            const hits = runs.filter((r) => isExactLogicalMatch(r, want));
+            const seen = new Set();
+            const dedup = [];
+            for (const h of hits) {
+              const id = Number(h && h.id);
+              if (!Number.isFinite(id) || seen.has(id)) continue;
+              seen.add(id);
+              dedup.push(h);
+            }
+            dedup.sort((a, b) => Number(a.id) - Number(b.id));
+            return dedup;
+          }
+
+          // Canonical = HIGHEST numeric id (§3/§19). Deterministic; not lexicographic.
+          function chooseCanonical(exactRuns) {
+            if (!Array.isArray(exactRuns) || exactRuns.length === 0) return null;
+            let max = null;
+            for (const r of exactRuns) {
+              const id = Number(r && r.id);
+              if (!Number.isFinite(id)) continue;
+              if (max === null || id > Number(max.id)) max = r;
+            }
+            return max;
+          }
+          function partitionCanonical(exactRuns) {
+            const canonical = chooseCanonical(exactRuns);
+            if (!canonical) return { canonical: null, duplicates: [] };
+            const dups = [];
+            for (const r of exactRuns) {
+              if (Number(r.id) !== Number(canonical.id)) dups.push(r);
+            }
+            return { canonical, duplicates: dups };
+          }
+
+          function partitionOutcomes(outcomes) {
+            const ok = [], failed = [];
+            for (const o of outcomes) (o && o.ok ? ok : failed).push(o);
+            return { ok, failed };
+          }
+
+          // ---- Strict runtime + ledger + manifest inventory ----
+          function verifyTrustedA2(input) {
+            const { runtime, ledger, manifest } = input;
+            if (!isPlainObject(runtime)) return { ok: false, error: 'runtime declaration is not a JSON object' };
+            const keys = Object.keys(runtime).sort();
+            if (keys.length !== RUNTIME_KEYS.length || keys.some((k, i) => k !== RUNTIME_KEYS[i])) {
+              return { ok: false, error: 'runtime key set mismatch; require exactly [' + RUNTIME_KEYS.join(', ') + '] got [' + keys.join(', ') + ']' };
+            }
+            for (const k of RUNTIME_KEYS) {
+              if (typeof runtime[k] !== 'string' || runtime[k].length === 0) {
+                return { ok: false, error: 'runtime field "' + k + '" must be a non-empty string (no null/number/array coercion)' };
+              }
+            }
+            if (runtime.declarationVersion !== REQUIRED_DECLARATION_VERSION) return { ok: false, error: 'declarationVersion != ' + REQUIRED_DECLARATION_VERSION };
+            if (!CORPUS_ID_RE.test(runtime.corpusId)) return { ok: false, error: 'corpusId fails grammar' };
+            if (runtime.corpusId !== REQUIRED_A2_CORPUS_ID) return { ok: false, error: 'corpusId != required historical corpus ' + REQUIRED_A2_CORPUS_ID };
+            if (runtime.corpusSemanticProjectionVersion !== REQUIRED_PROJECTION_VERSION) return { ok: false, error: 'projection version != ' + REQUIRED_PROJECTION_VERSION };
+            if (!DIGEST_RE.test(runtime.corpusSemanticDigest)) return { ok: false, error: 'digest fails sha256:<64-hex> grammar' };
+
+            if (!isPlainObject(ledger)) return { ok: false, error: 'external ledger is not a JSON object' };
+            if (ledger.schemaVersion !== LEDGER_SCHEMA_VERSION) return { ok: false, error: 'ledger schemaVersion mismatch' };
+            if (!isPlainObject(ledger.entries)) return { ok: false, error: 'ledger has no entries object' };
+            const entry = ledger.entries[runtime.corpusId];
+            if (!isPlainObject(entry)) return { ok: false, error: 'ledger has no entry for corpusId ' + runtime.corpusId };
+            if (typeof entry.digest !== 'string' || !DIGEST_RE.test(entry.digest)) return { ok: false, error: 'ledger entry digest malformed' };
+            if (typeof entry.semanticProjectionVersion !== 'string' || entry.semanticProjectionVersion.length === 0) return { ok: false, error: 'ledger entry semanticProjectionVersion malformed' };
+            if (runtime.corpusSemanticDigest !== entry.digest) return { ok: false, error: 'runtime digest ' + runtime.corpusSemanticDigest + ' != external ledger digest ' + entry.digest };
+            if (runtime.corpusSemanticProjectionVersion !== entry.semanticProjectionVersion) return { ok: false, error: 'runtime projection version != external ledger ' + entry.semanticProjectionVersion };
+
+            if (!isPlainObject(manifest)) return { ok: false, error: 'baseline manifest is not a JSON object' };
+            if (manifest.corpusId !== runtime.corpusId) return { ok: false, error: 'manifest corpusId != runtime corpusId' };
+            if (manifest.corpusSemanticDigest !== entry.digest) return { ok: false, error: 'manifest digest != external ledger digest' };
+            if (manifest.corpusSemanticProjectionVersion !== entry.semanticProjectionVersion) return { ok: false, error: 'manifest projection version != external ledger' };
+            const inv = manifest.authorityFiles;
+            if (!Array.isArray(inv)) return { ok: false, error: 'manifest.authorityFiles missing or not an array' };
+            if (inv.some((x) => typeof x !== 'string')) return { ok: false, error: 'manifest.authorityFiles has a non-string entry' };
+            if (new Set(inv).size !== inv.length) return { ok: false, error: 'manifest.authorityFiles has duplicate entries' };
+            if (inv.length !== REQUIRED_AUTHORITY_FILES.length) return { ok: false, error: 'manifest.authorityFiles count ' + inv.length + ' != required ' + REQUIRED_AUTHORITY_FILES.length };
+            const got = inv.slice().sort();
+            const want = REQUIRED_AUTHORITY_FILES.slice().sort();
+            for (let i = 0; i < want.length; i++) {
+              if (got[i] !== want[i]) return { ok: false, error: 'manifest.authorityFiles set mismatch (missing/extra); e.g. ' + (got[i] || '<none>') + ' != ' + want[i] };
+            }
+            return { ok: true, corpusId: runtime.corpusId, digest: entry.digest };
+          }
+
+          // ---- Head-pin + accepted authority selector validation (revocable) ----
+          function verifyRevocableSelectors(input) {
+            const { prHeadSha, acceptedA2Head, acceptedAuthorityBaseSha } = input;
+            if (!SHA40_RE.test(lc(prHeadSha))) return { ok: false, error: 'PR head SHA malformed (revalidation)' };
+            if (typeof acceptedA2Head !== 'string' || !SHA40_RE.test(lc(acceptedA2Head))) return { ok: false, error: 'PAGAMENOS_ACCEPTED_A2_HEAD_SHA blank or malformed (fail closed)' };
+            if (typeof acceptedAuthorityBaseSha !== 'string' || !SHA40_RE.test(lc(acceptedAuthorityBaseSha))) return { ok: false, error: 'PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA blank or malformed (fail closed)' };
+            if (lc(acceptedAuthorityBaseSha) === REJECTED_AUTHORITY_BASE_SHA) return { ok: false, error: 'authority base is the REJECTED baseline 68269bb' };
+            if (lc(prHeadSha) !== lc(acceptedA2Head)) return { ok: false, error: 'PR head ' + lc(prHeadSha) + ' != accepted A2 head ' + lc(acceptedA2Head) };
+            return { ok: true };
+          }
+
+          // ---- Rename-safe protected-path predicate ----
+          function forbiddenPaths(changedPaths) {
+            const hits = [];
+            for (const p of changedPaths) {
+              if (typeof p !== 'string' || p.length === 0) continue;
+              if (PROTECTED_PREFIXES.some((pre) => p.startsWith(pre))) hits.push(p);
+            }
+            return hits;
+          }
+
+          // ---- Pure GitHub App / check-run request builders (no network) ----
+          function b64url(buf) { return Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+          function buildAppJwt(appId, nowSec) {
+            const header = { alg: 'RS256', typ: 'JWT' };
+            const payload = { iat: nowSec - 60, exp: nowSec + 9 * 60, iss: String(appId) };
+            return { header, payload, signingInput: b64url(JSON.stringify(header)) + '.' + b64url(JSON.stringify(payload)) };
+          }
+          function buildInProgressBody(o) {
+            return { name: o.name, head_sha: lc(o.headSha), external_id: o.externalId, status: 'in_progress', started_at: o.startedAt, output: { title: 'Trusted A2 authority (running)', summary: o.summary || 'Head-bound trusted validation in progress.' } };
+          }
+          function buildCompletedBody(o) {
+            return { name: o.name, head_sha: lc(o.headSha), external_id: o.externalId, status: 'completed', conclusion: o.conclusion, completed_at: o.completedAt, output: { title: o.title, summary: o.summary } };
+          }
+          // §4/§5: rename a noncanonical duplicate OUT of the required context
+          // and complete it. The security invariant comes from the NAME change
+          // (`trusted-a2-authority/duplicate/<id>` cannot satisfy required
+          // context `trusted-a2-authority/head`), not from the conclusion
+          // semantics. `failure` is used because success/skipped/neutral all
+          // count as passing for required checks — so a non-passing conclusion
+          // makes intent unambiguous even under future ruleset changes.
+          function buildDuplicateFailureBody(o) {
+            return {
+              name: duplicateNameFor(o.id),
+              head_sha: lc(o.headSha),
+              external_id: o.externalId,
+              status: 'completed',
+              conclusion: 'failure',
+              completed_at: o.completedAt,
+              output: {
+                title: 'Superseded duplicate trusted check',
+                summary: 'Renamed OUT of required context "' + CHECK_NAME + '"; canonical run id = ' + Number(o.canonicalId) + '.',
+              },
+            };
+          }
+          function concludeFromValidation(ok) { return ok ? 'success' : 'failure'; }
+
+          // ---- Pure paginator core (§16). Driven by an injected `fetcher(url)`
+          // returning `{ ok, status, json }`; used by the production wrapper and
+          // exercised in the harness with a fake fetcher that yields per-page
+          // canned responses. Semantics: fail closed on non-2xx, non-object,
+          // non-array shape, raw scan cap exceedance, or exceeding MAX_PAGES.
+          async function listAllCheckRunsForRefWithFetcher(fetcher, input) {
+            const { owner, repo, ref, checkName } = input;
+            const acc = [];
+            for (let page = 1; page <= MAX_PAGES; page++) {
+              const url = 'https://api.github.com/repos/' + owner + '/' + repo + '/commits/' + ref + '/check-runs?check_name=' + encodeURIComponent(checkName) + '&per_page=' + PAGE_SIZE + '&filter=all&page=' + page;
+              const res = await fetcher(url);
+              if (!res || !res.ok) throw new Error('TRUSTED ISSUER INTEGRITY FAILURE: check-runs list failed (status ' + (res && res.status) + ' on page ' + page + ')');
+              if (!isPlainObject(res.json) || !Array.isArray(res.json.check_runs)) {
+                throw new Error('TRUSTED ISSUER INTEGRITY FAILURE: unexpected check-runs response shape on page ' + page);
+              }
+              const chunk = res.json.check_runs;
+              acc.push(...chunk);
+              if (acc.length > MAX_EXACT_RUNS * 4) {
+                throw new Error('TRUSTED ISSUER INTEGRITY FAILURE: check-run scan exceeds sanity ceiling (' + acc.length + ')');
+              }
+              if (chunk.length < PAGE_SIZE) return acc;
+            }
+            throw new Error('TRUSTED ISSUER INTEGRITY FAILURE: check-runs pagination exceeded MAX_PAGES=' + MAX_PAGES);
+          }
+
+          // ===END TRUSTED-A2 TRUSTED LOGIC===
+
+          // --- Network layer (executed ONLY in the trusted workflow) ---
+          const crypto = require('crypto');
+          async function ghFetch(url, opts) {
+            const res = await fetch(url, opts);
+            const text = await res.text();
+            let json; try { json = text ? JSON.parse(text) : {}; } catch { json = { raw: text }; }
+            return { status: res.status, ok: res.ok, json };
+          }
+          async function mintInstallationToken({ appId, privateKey, owner, repo, repositoryId }) {
+            const jwtParts = buildAppJwt(appId, Math.floor(Date.now() / 1000));
+            const sig = b64url(crypto.sign('RSA-SHA256', Buffer.from(jwtParts.signingInput), privateKey));
+            const jwt = jwtParts.signingInput + '.' + sig;
+            const inst = await ghFetch('https://api.github.com/repos/' + owner + '/' + repo + '/installation', { headers: { authorization: 'Bearer ' + jwt, accept: 'application/vnd.github+json', 'user-agent': 'trusted-a2-authority' } });
+            if (!inst.ok || !inst.json.id) throw new Error('TRUSTED ISSUER AVAILABILITY FAILURE: cannot resolve App installation (status ' + inst.status + ')');
+            const body = repositoryId ? JSON.stringify({ repository_ids: [Number(repositoryId)], permissions: { checks: 'write', metadata: 'read' } }) : undefined;
+            const tok = await ghFetch('https://api.github.com/app/installations/' + inst.json.id + '/access_tokens', { method: 'POST', headers: { authorization: 'Bearer ' + jwt, accept: 'application/vnd.github+json', 'user-agent': 'trusted-a2-authority', 'content-type': 'application/json' }, body });
+            if (!tok.ok || !tok.json.token) throw new Error('TRUSTED ISSUER AVAILABILITY FAILURE: cannot mint installation token (status ' + tok.status + ')');
+            return tok.json.token;
+          }
+          // Production wrapper: supplies ghFetch with the installation token as
+          // the injected fetcher. All pagination logic lives in the in-region
+          // listAllCheckRunsForRefWithFetcher above.
+          async function listAllCheckRunsForRef({ token, owner, repo, ref, checkName }) {
+            const fetcher = (url) => ghFetch(url, { headers: { authorization: 'token ' + token, accept: 'application/vnd.github+json', 'user-agent': 'trusted-a2-authority' } });
+            return listAllCheckRunsForRefWithFetcher(fetcher, { owner, repo, ref, checkName });
+          }
+          async function createCheckRun({ token, owner, repo, body }) {
+            const res = await ghFetch('https://api.github.com/repos/' + owner + '/' + repo + '/check-runs', { method: 'POST', headers: { authorization: 'token ' + token, accept: 'application/vnd.github+json', 'user-agent': 'trusted-a2-authority', 'content-type': 'application/json' }, body: JSON.stringify(body) });
+            if (!res.ok) throw new Error('TRUSTED ISSUER AVAILABILITY FAILURE: check-run POST failed (status ' + res.status + ')');
+            return res.json.id;
+          }
+          async function updateCheckRun({ token, owner, repo, id, body }) {
+            const res = await ghFetch('https://api.github.com/repos/' + owner + '/' + repo + '/check-runs/' + id, { method: 'PATCH', headers: { authorization: 'token ' + token, accept: 'application/vnd.github+json', 'user-agent': 'trusted-a2-authority', 'content-type': 'application/json' }, body: JSON.stringify(body) });
+            if (!res.ok) throw new Error('TRUSTED ISSUER INTEGRITY FAILURE: check-run PATCH failed (status ' + res.status + ' on id ' + id + ')');
+            return res.json.id;
+          }
+          // Best-effort per-id PATCH. Every id is attempted even if an earlier
+          // one failed; earlier successful PATCHes are REAL side effects and
+          // are not rolled back (§17). Callers classify integrity from the
+          // returned outcomes.
+          async function patchAllRuns({ token, owner, repo, ids, bodyFor }) {
+            const outcomes = [];
+            for (const id of ids) {
+              try { await updateCheckRun({ token, owner, repo, id, body: bodyFor(id) }); outcomes.push({ id, ok: true }); }
+              catch (e) { outcomes.push({ id, ok: false, error: e && e.message ? e.message : String(e) }); }
+            }
+            return outcomes;
+          }
+          module.exports = {
+            REQUIRED_AUTHORITY_FILES, CHECK_NAME, DUPLICATE_NAME_PREFIX, PROTECTED_PREFIXES, REJECTED_AUTHORITY_BASE_SHA,
+            MAX_EXACT_RUNS, MAX_PAGES, PAGE_SIZE,
+            sameRepositoryPolicy, preCheckEvent, externalIdFor,
+            isExactLogicalMatch, findAllExactRuns, partitionOutcomes,
+            duplicateNameFor, chooseCanonical, partitionCanonical,
+            idMetadataSignature, detectIdMetadataConflicts,
+            verifyTrustedA2, verifyRevocableSelectors, forbiddenPaths,
+            b64url, buildAppJwt, buildInProgressBody, buildCompletedBody, buildDuplicateFailureBody, concludeFromValidation,
+            listAllCheckRunsForRefWithFetcher,
+            mintInstallationToken, listAllCheckRunsForRef, createCheckRun, updateCheckRun, patchAllRuns,
+          };
+          LIB
+          echo "LIB_PATH=$RUNNER_TEMP/trusted-a2-lib.cjs" >> "$GITHUB_ENV"
+
+      # STEP 1: minimal immutable event validation (BEFORE App credential use).
+      - name: Pre-check (event + same-repository)
+        env:
+          EVENT_JSON: ${{ toJson(github.event) }}
+          GH_EVENT_NAME: ${{ github.event_name }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('fs');
+          const lib = require(process.env.LIB_PATH);
+          const ev = JSON.parse(process.env.EVENT_JSON);
+          const pre = lib.preCheckEvent({ eventName: process.env.GH_EVENT_NAME, repository: process.env.GH_REPOSITORY, pr: ev.pull_request });
+          if (!pre.ok) { console.error('TRUSTED-A2-AUTHORITY: PRECHECK FAIL — ' + pre.error); process.exit(1); }
+          fs.appendFileSync(process.env.GITHUB_ENV, 'PR_HEAD_LC=' + pre.headSha + '\n');
+          fs.appendFileSync(process.env.GITHUB_ENV, 'PR_NUMBER=' + pre.prNumber + '\n');
+          console.log('precheck OK: same-repo PR #' + pre.prNumber + ' head=' + pre.headSha);
+          NODE
+
+      # STEP 2: App auth + reset ALL exact logical trusted runs on the exact PR
+      # head to `in_progress` BEFORE any revocable validation.
+      - name: Reset/open ALL exact trusted head checks (in_progress)
+        env:
+          APP_ID: ${{ vars.PAGAMENOS_TRUSTED_GATE_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.PAGAMENOS_TRUSTED_GATE_APP_PRIVATE_KEY }}
+          GH_OWNER: ${{ github.repository_owner }}
+          GH_REPO: ${{ github.event.repository.name }}
+          GH_REPO_ID: ${{ github.event.repository.id }}
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('fs');
+          const lib = require(process.env.LIB_PATH);
+          (async () => {
+            const appId = process.env.APP_ID, key = process.env.APP_PRIVATE_KEY;
+            if (!appId || !key) { console.error('TRUSTED-A2-AUTHORITY: TRUSTED ISSUER AVAILABILITY FAILURE — trusted-a2-gate App credentials absent'); process.exit(1); }
+            const owner = process.env.GH_OWNER, repo = process.env.GH_REPO, repositoryId = process.env.GH_REPO_ID;
+            const headSha = process.env.PR_HEAD_LC, prNumber = Number(process.env.PR_NUMBER);
+            const externalId = lib.externalIdFor({ repositoryId, prNumber, headSha });
+            const token = await lib.mintInstallationToken({ appId, privateKey: key, owner, repo, repositoryId });
+
+            const allRuns = await lib.listAllCheckRunsForRef({ token, owner, repo, ref: headSha, checkName: lib.CHECK_NAME });
+            const exact = lib.findAllExactRuns({ runs: allRuns, appId, checkName: lib.CHECK_NAME, externalId, headSha });
+            if (exact.length > lib.MAX_EXACT_RUNS) {
+              console.error('TRUSTED-A2-AUTHORITY: TRUSTED ISSUER INTEGRITY FAILURE — exact-run count ' + exact.length + ' exceeds MAX_EXACT_RUNS=' + lib.MAX_EXACT_RUNS + ' (integrity anomaly)');
+              process.exit(1);
+            }
+            const startedAt = new Date().toISOString();
+            const inProgress = lib.buildInProgressBody({ name: lib.CHECK_NAME, headSha, externalId, startedAt, summary: 'Revalidating head-bound trusted authority; ' + exact.length + ' exact logical run(s) reset.' });
+
+            let activeIds = [];
+            if (exact.length === 0) {
+              const id = await lib.createCheckRun({ token, owner, repo, body: inProgress });
+              activeIds = [Number(id)];
+              console.log('created head-bound trusted run id=' + id + ' external_id=' + externalId);
+            } else {
+              const outcomes = await lib.patchAllRuns({ token, owner, repo, ids: exact.map((r) => Number(r.id)), bodyFor: () => inProgress });
+              const part = lib.partitionOutcomes(outcomes);
+              if (part.failed.length > 0) {
+                console.error('TRUSTED-A2-AUTHORITY: TRUSTED ISSUER INTEGRITY FAILURE — could not reset ' + part.failed.length + '/' + outcomes.length + ' exact runs: ' + JSON.stringify(part.failed));
+                console.error('ADMINISTRATIVE MERGE FREEZE APPLIES.');
+                process.exit(1);
+              }
+              activeIds = outcomes.map((o) => Number(o.id));
+              console.log('reset ' + activeIds.length + ' exact logical run(s) [' + activeIds.join(',') + '] external_id=' + externalId);
+            }
+            fs.appendFileSync(process.env.GITHUB_ENV, 'CHECK_RUN_IDS=' + activeIds.join(',') + '\n');
+            fs.appendFileSync(process.env.GITHUB_ENV, 'CHECK_EXTERNAL_ID=' + externalId + '\n');
+            fs.appendFileSync(process.env.GITHUB_ENV, 'APP_TOKEN=' + token + '\n');
+          })().catch((e) => { console.error('TRUSTED-A2-AUTHORITY: ' + e.message); process.exit(1); });
+          NODE
+
+      # STEP 3: revocable validation. Any exception is captured to WORK/validation.json.
+      - name: Revocable validation (routed through finalizer)
+        if: always() && env.CHECK_RUN_IDS != ''
+        env:
+          ACCEPTED_A2_HEAD: ${{ vars.PAGAMENOS_ACCEPTED_A2_HEAD_SHA }}
+          BASE_SHA: ${{ vars.PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          WORK="$(mktemp -d)"
+          echo "WORK=$WORK" >> "$GITHUB_ENV"
+          set +e
+          node - <<'NODE'
+          const fs = require('fs');
+          const { execFileSync } = require('child_process');
+          const lib = require(process.env.LIB_PATH);
+          const work = process.env.WORK;
+          function fail(err) { fs.writeFileSync(work + '/validation.json', JSON.stringify({ ok: false, error: err })); console.error('TRUSTED-A2-AUTHORITY: FAIL — ' + err); process.exit(0); }
+          try {
+            const headSha = process.env.PR_HEAD_LC;
+            const prBase = String(process.env.PR_BASE_SHA || '').toLowerCase();
+            const sel = lib.verifyRevocableSelectors({ prHeadSha: headSha, acceptedA2Head: process.env.ACCEPTED_A2_HEAD, acceptedAuthorityBaseSha: process.env.BASE_SHA });
+            if (!sel.ok) return fail(sel.error);
+            const baseSha = String(process.env.BASE_SHA).toLowerCase();
+            try { execFileSync('git', ['fetch', '--no-tags', 'origin', 'refs/pull/' + Number(process.env.PR_NUMBER) + '/head'], { stdio: 'inherit' }); } catch (e) { return fail('cannot fetch PR head ref'); }
+            const fetched = execFileSync('git', ['rev-parse', 'FETCH_HEAD'], { encoding: 'utf8' }).trim().toLowerCase();
+            if (fetched !== headSha) return fail('fetched PR head ' + fetched + ' != event head ' + headSha);
+            try { execFileSync('git', ['fetch', '--no-tags', 'origin', baseSha], { stdio: 'inherit' }); } catch (e) { return fail('cannot fetch authority base commit ' + baseSha + ' (unavailable)'); }
+
+            let mb;
+            try { mb = execFileSync('git', ['merge-base', prBase, headSha], { encoding: 'utf8' }).trim(); } catch (e) { return fail('cannot compute merge-base'); }
+            let changedBuf;
+            try { changedBuf = execFileSync('git', ['diff', '--no-renames', '--name-only', '-z', mb, headSha]); } catch (e) { return fail('cannot diff base..head'); }
+            const changed = changedBuf.toString('utf8').split('\0').filter(Boolean);
+            const forbid = lib.forbiddenPaths(changed);
+            if (forbid.length) return fail('A2 PR modifies protected trust paths (rename-safe): ' + forbid.join(', '));
+
+            const readAt = (sha, path) => { try { return execFileSync('git', ['show', sha + ':' + path], { encoding: 'utf8' }); } catch (e) { return null; } };
+            const runtimeText = readAt(headSha, 'src/study/runtime-corpus-authority.v1.json'); if (!runtimeText) return fail('runtime declaration missing at PR head');
+            const ledgerText = readAt(baseSha, 'authority/v1/CORPUS_RELEASE_LEDGER_V1.json'); if (!ledgerText) return fail('external ledger missing at authority base');
+            const manifestText = readAt(baseSha, 'authority/v1/AUTHORITY_BASELINE_MANIFEST_V1.json'); if (!manifestText) return fail('baseline manifest missing at authority base');
+            let runtime, ledger, manifest;
+            try { runtime = JSON.parse(runtimeText); } catch (e) { return fail('runtime declaration is not valid JSON'); }
+            try { ledger = JSON.parse(ledgerText); } catch (e) { return fail('external ledger is not valid JSON'); }
+            try { manifest = JSON.parse(manifestText); } catch (e) { return fail('baseline manifest is not valid JSON'); }
+
+            const r = lib.verifyTrustedA2({ runtime, ledger, manifest });
+            fs.writeFileSync(work + '/validation.json', JSON.stringify(r.ok ? { ok: true, corpusId: r.corpusId, digest: r.digest } : { ok: false, error: r.error }));
+            if (!r.ok) console.error('TRUSTED-A2-AUTHORITY: FAIL — ' + r.error);
+            else console.log('TRUSTED-A2-AUTHORITY: PASS — corpusId=' + r.corpusId + ' digest=' + r.digest);
+            process.exit(0);
+          } catch (e) {
+            return fail('validation exception: ' + (e && e.message ? e.message : String(e)));
+          }
+          NODE
+          set -e
+
+      # STEP 4: SINGLE FINALIZER with canonicalization (§3/§4/§6).
+      #
+      # On validation PASS:
+      #   1. Pick canonical = HIGHEST numeric active run id.
+      #   2. FIRST rename every noncanonical duplicate OUT of required context
+      #      (name = trusted-a2-authority/duplicate/<id>, status=completed,
+      #      conclusion=failure). Any failed rename => TRUSTED ISSUER INTEGRITY
+      #      FAILURE + ADMINISTRATIVE MERGE FREEZE; canonical is NOT promoted.
+      #   3. Only after every noncanonical rename returned OK, PATCH canonical
+      #      -> required-name success. If canonical PATCH fails => integrity
+      #      failure + merge freeze (no required-context success published).
+      #
+      # On validation FAIL:
+      #   PATCH every active exact run -> required-name completed/failure.
+      #   Any per-id failure => integrity failure + merge freeze; no success
+      #   is being published so name change is not required.
+      - name: Finalize ALL exact trusted head checks
+        if: always() && env.CHECK_RUN_IDS != ''
+        env:
+          GH_OWNER: ${{ github.repository_owner }}
+          GH_REPO: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('fs');
+          const lib = require(process.env.LIB_PATH);
+          (async () => {
+            let ok = false, detail = 'validation did not produce a result (fail closed)';
+            try { const r = JSON.parse(fs.readFileSync(process.env.WORK + '/validation.json', 'utf8')); ok = r.ok === true; detail = r.ok ? ('runtime declaration agrees with external ledger; scope boundary clean (corpusId=' + r.corpusId + ')') : r.error; } catch { /* stays failure */ }
+            const owner = process.env.GH_OWNER, repo = process.env.GH_REPO;
+            const headSha = process.env.PR_HEAD_LC, externalId = process.env.CHECK_EXTERNAL_ID;
+            const token = process.env.APP_TOKEN;
+            if (!token) { console.error('finalize: no App token — TRUSTED ISSUER AVAILABILITY FAILURE; exact runs remain in_progress. ADMINISTRATIVE MERGE FREEZE APPLIES.'); process.exit(1); }
+            const ids = String(process.env.CHECK_RUN_IDS).split(',').map((s) => Number(s.trim())).filter((n) => Number.isFinite(n) && n > 0);
+            if (ids.length === 0) { console.error('finalize: CHECK_RUN_IDS empty — integrity anomaly'); process.exit(1); }
+            const completedAt = new Date().toISOString();
+
+            if (!ok) {
+              // FAIL path (§7). All active exact runs -> required-name failure.
+              const body = lib.buildCompletedBody({ name: lib.CHECK_NAME, headSha, externalId, completedAt, conclusion: 'failure', title: 'Trusted A2 authority: FAIL', summary: detail + ' (exact logical runs finalized: ' + ids.length + ')' });
+              const outcomes = await lib.patchAllRuns({ token, owner, repo, ids, bodyFor: () => body });
+              const part = lib.partitionOutcomes(outcomes);
+              if (part.failed.length > 0) {
+                console.error('finalize: TRUSTED ISSUER INTEGRITY FAILURE — ' + part.failed.length + '/' + outcomes.length + ' exact runs could not be finalized: ' + JSON.stringify(part.failed));
+                console.error('ADMINISTRATIVE MERGE FREEZE APPLIES. Do NOT merge on any partial-finalization result.');
+                process.exit(1);
+              }
+              console.log('finalized ' + ids.length + ' exact logical run(s) [' + ids.join(',') + '] = failure');
+              process.exit(1);
+            }
+
+            // PASS path (§3/§6). Canonicalize.
+            const runsShim = ids.map((id) => ({ id }));
+            const part = lib.partitionCanonical(runsShim);
+            const canonical = part.canonical;
+            const duplicates = part.duplicates;
+            console.log('canonical run id = ' + canonical.id + '; noncanonical duplicates = [' + duplicates.map((r) => r.id).join(',') + ']');
+
+            // (a) Rename ALL noncanonical duplicates OUT of required context.
+            if (duplicates.length > 0) {
+              const dupIds = duplicates.map((r) => Number(r.id));
+              const dupOutcomes = await lib.patchAllRuns({
+                token, owner, repo, ids: dupIds,
+                bodyFor: (id) => lib.buildDuplicateFailureBody({ id, headSha, externalId, completedAt, canonicalId: canonical.id }),
+              });
+              const dupPart = lib.partitionOutcomes(dupOutcomes);
+              if (dupPart.failed.length > 0) {
+                console.error('finalize: TRUSTED ISSUER INTEGRITY FAILURE — ' + dupPart.failed.length + '/' + dupOutcomes.length + ' noncanonical duplicates could not be renamed OUT of required context: ' + JSON.stringify(dupPart.failed));
+                console.error('CANONICAL RUN NOT PROMOTED TO SUCCESS. ADMINISTRATIVE MERGE FREEZE APPLIES.');
+                process.exit(1);
+              }
+              console.log('renamed ' + dupIds.length + ' noncanonical duplicate(s) [' + dupIds.join(',') + '] OUT of required context');
+            }
+
+            // (b) ONLY NOW may canonical receive the required-name success.
+            const canonicalBody = lib.buildCompletedBody({ name: lib.CHECK_NAME, headSha, externalId, completedAt, conclusion: 'success', title: 'Trusted A2 authority: PASS', summary: detail + ' (canonical of ' + ids.length + ' exact logical run(s); ' + duplicates.length + ' duplicate(s) renamed OUT)' });
+            const canOutcome = await lib.patchAllRuns({ token, owner, repo, ids: [Number(canonical.id)], bodyFor: () => canonicalBody });
+            const canPart = lib.partitionOutcomes(canOutcome);
+            if (canPart.failed.length > 0) {
+              console.error('finalize: TRUSTED ISSUER INTEGRITY FAILURE — canonical success PATCH failed: ' + JSON.stringify(canPart.failed));
+              console.error('CANONICAL RUN NOT PROMOTED. ADMINISTRATIVE MERGE FREEZE APPLIES.');
+              process.exit(1);
+            }
+            console.log('canonical [' + canonical.id + '] promoted to required-context SUCCESS; equivalence class fully canonicalized');
+          })().catch((e) => { console.error('finalize error: ' + e.message); process.exit(1); });
+          NODE
