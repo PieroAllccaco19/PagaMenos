@@ -387,6 +387,44 @@ async function main() {
     pinOk ? '' : 'got ' + gotHash,
   );
 
+  // §L1 (work-propagation regression): STEP 3's shell block MUST export the
+  // mktemp'd WORK path so the same-step Node child (spawned from a heredoc)
+  // sees it via process.env — a $GITHUB_ENV write alone only propagates to
+  // LATER steps and leaves the current-step Node process with WORK=undefined,
+  // which is the exact live-activation failure this harness must guard
+  // against ("validation did not produce a result (fail closed)"). This is a
+  // workflow-source assertion, not an executable simulation: reproducing
+  // GitHub Actions' shell-vs-heredoc-child semantics inside JS would require
+  // spawning a real bash + node pair per test run, which broadens harness
+  // scope beyond the trusted-logic pin. If this row goes red, the fix is to
+  // add `export WORK` between the mktemp assignment and the heredoc node
+  // invocation in .github/workflows/trusted-a2-authority.yml.
+  const workflowText = readFileSync(WORKFLOW, 'utf8');
+  const step3 = (() => {
+    const m = workflowText.match(
+      /Revocable validation \(routed through finalizer\)[\s\S]*?node - <<'NODE'/,
+    );
+    return m ? m[0] : '';
+  })();
+  const step3HasMktempWork = /WORK="\$\(mktemp -d\)"/.test(step3);
+  const step3HasExportWork = /(^|\n)\s*export\s+WORK\b/.test(step3);
+  const step3HasGithubEnvWrite = /echo\s+"WORK=\$WORK"\s+>>\s+"\$GITHUB_ENV"/.test(step3);
+  checkRaw(
+    '§L1 STEP 3 mktemp WORK present in workflow',
+    step3HasMktempWork,
+    step3HasMktempWork ? '' : 'WORK="$(mktemp -d)" not found in STEP 3',
+  );
+  checkRaw(
+    '§L1 STEP 3 exports WORK before the same-step Node heredoc (same-step child sees WORK)',
+    step3HasExportWork,
+    step3HasExportWork ? '' : 'missing "export WORK" between mktemp and NODE heredoc',
+  );
+  checkRaw(
+    '§L1 STEP 3 still writes WORK to $GITHUB_ENV (STEP 4 finalizer still receives it)',
+    step3HasGithubEnvWrite,
+    step3HasGithubEnvWrite ? '' : '$GITHUB_ENV write for WORK removed — STEP 4 would lose it',
+  );
+
   const lib = loadTrustedLogic(regionRaw);
   const v = (r, l = goodLedger(), m = acceptedManifest()) =>
     lib.verifyTrustedA2({ runtime: r, ledger: l, manifest: m }).ok;

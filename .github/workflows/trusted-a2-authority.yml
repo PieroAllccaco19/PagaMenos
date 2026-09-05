@@ -517,6 +517,14 @@ jobs:
         run: |
           set -euo pipefail
           WORK="$(mktemp -d)"
+          # Export so the same-step Node child (below) sees WORK via
+          # process.env; the $GITHUB_ENV write above only propagates to
+          # LATER steps (STEP 4 finalizer). Without this export the Node
+          # process runs with WORK=undefined, crashes writing to
+          # 'undefined/validation.json', and STEP 4 legitimately falls
+          # back to the fail-closed default 'validation did not produce
+          # a result'. No hardcoded path; STEP 4 still receives WORK.
+          export WORK
           echo "WORK=$WORK" >> "$GITHUB_ENV"
           set +e
           node - <<'NODE'
