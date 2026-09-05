@@ -37,6 +37,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { createHash } from 'node:crypto';
+import { Script as VmScript } from 'node:vm';
 import process from 'node:process';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -387,42 +388,217 @@ async function main() {
     pinOk ? '' : 'got ' + gotHash,
   );
 
-  // §L1 (work-propagation regression): STEP 3's shell block MUST export the
-  // mktemp'd WORK path so the same-step Node child (spawned from a heredoc)
-  // sees it via process.env — a $GITHUB_ENV write alone only propagates to
-  // LATER steps and leaves the current-step Node process with WORK=undefined,
-  // which is the exact live-activation failure this harness must guard
-  // against ("validation did not produce a result (fail closed)"). This is a
-  // workflow-source assertion, not an executable simulation: reproducing
-  // GitHub Actions' shell-vs-heredoc-child semantics inside JS would require
-  // spawning a real bash + node pair per test run, which broadens harness
-  // scope beyond the trusted-logic pin. If this row goes red, the fix is to
-  // add `export WORK` between the mktemp assignment and the heredoc node
-  // invocation in .github/workflows/trusted-a2-authority.yml.
+  // §L1 (work-propagation regression + executable shell block scope hardening):
+  // STEP 3's EXECUTABLE SHELL BLOCK (run: | body) MUST export the mktemp'd
+  // WORK path so the same-step Node child (spawned from a heredoc) sees it via
+  // process.env. A $GITHUB_ENV write alone only propagates to LATER steps and
+  // leaves the current-step Node process with WORK=undefined — the exact live-
+  // activation failure this harness guards against ("validation did not produce
+  // a result (fail closed)").
+  //
+  // EXTRACTION: we scope to the executable `run: |` block of STEP 3, NOT the
+  // entire step (which includes the step name and `env:` section). The previous
+  // extraction started at the step name, allowing a multiline env-var value
+  // containing `export WORK` to falsely satisfy the check. Now we extract only
+  // the text between `run: |` and the closing `node - <<'NODE'` delimiter,
+  // which is the actual shell script that bash executes.
+  //
+  // ORDERING INVARIANT (within executable shell block, all indexes strictly
+  // ascending):
+  //   index(WORK="$(mktemp -d)") < index(export WORK) < index(node - <<'NODE')
+  //
+  // Also required: echo "WORK=$WORK" >> "$GITHUB_ENV" before the heredoc
+  // (STEP 4 finalizer receives WORK via $GITHUB_ENV).
   const workflowText = readFileSync(WORKFLOW, 'utf8');
-  const step3 = (() => {
-    const m = workflowText.match(
-      /Revocable validation \(routed through finalizer\)[\s\S]*?node - <<'NODE'/,
-    );
-    return m ? m[0] : '';
+
+  // Extract the STEP 3 executable shell block: from `run: |` (within the STEP 3
+  // step block) through the `node - <<'NODE'` line. We locate STEP 3 by its
+  // exact step name, then find the next `run: |` and capture from there.
+  const step3Shell = (() => {
+    // Find the line index of the STEP 3 step name (not inside the env: section).
+    const nameMarker = 'name: Revocable validation (routed through finalizer)';
+    const nameIdx = workflowText.indexOf(nameMarker);
+    if (nameIdx < 0) return '';
+    // From the step name, find the next `run: |` — this is the executable shell block.
+    const runMarker = 'run: |';
+    const runIdx = workflowText.indexOf(runMarker, nameIdx);
+    if (runIdx < 0) return '';
+    // Capture from `run: |` through (inclusive) `node - <<'NODE'`
+    const heredocMarker = "node - <<'NODE'";
+    const heredocIdx = workflowText.indexOf(heredocMarker, runIdx);
+    if (heredocIdx < 0) return '';
+    return workflowText.slice(runIdx, heredocIdx + heredocMarker.length);
   })();
-  const step3HasMktempWork = /WORK="\$\(mktemp -d\)"/.test(step3);
-  const step3HasExportWork = /(^|\n)\s*export\s+WORK\b/.test(step3);
-  const step3HasGithubEnvWrite = /echo\s+"WORK=\$WORK"\s+>>\s+"\$GITHUB_ENV"/.test(step3);
+
+  // Also extract the STEP 3 Node heredoc body (between `node - <<'NODE'` and
+  // the closing `NODE` sentinel) for the vm.Script syntax regression.
+  const step3HeredocBody = (() => {
+    const nameMarker = 'name: Revocable validation (routed through finalizer)';
+    const nameIdx = workflowText.indexOf(nameMarker);
+    if (nameIdx < 0) return '';
+    const openMarker = "node - <<'NODE'";
+    const openIdx = workflowText.indexOf(openMarker, nameIdx);
+    if (openIdx < 0) return '';
+    // Find the first occurrence of a bare `NODE` line after the open marker.
+    const afterOpen = workflowText.indexOf('\n', openIdx) + 1;
+    // Match `          NODE` (bare sentinel — indented, alone on its line).
+    const closeMatch = /^\s*NODE\s*$/m.exec(workflowText.slice(afterOpen));
+    if (!closeMatch) return '';
+    return workflowText.slice(afterOpen, afterOpen + closeMatch.index);
+  })();
+
+  // Ordering positions (all within the shell block, not the step name/env).
+  const idxMktemp = step3Shell.indexOf('WORK="$(mktemp -d)"');
+  const idxExport = step3Shell.indexOf('export WORK');
+  const idxHeredoc = step3Shell.indexOf("node - <<'NODE'");
+  const idxGithubEnv = step3Shell.indexOf('echo "WORK=$WORK" >> "$GITHUB_ENV"');
+
+  const step3HasMktempWork = idxMktemp >= 0;
+  const step3HasExportWork = idxExport >= 0;
+  const step3HasGithubEnvWrite = idxGithubEnv >= 0;
+  // Ordering: mktemp < export < heredoc (all positive and strictly ascending).
+  const step3OrderingCorrect =
+    idxMktemp >= 0 &&
+    idxExport >= 0 &&
+    idxHeredoc >= 0 &&
+    idxMktemp < idxExport &&
+    idxExport < idxHeredoc;
+  // GITHUB_ENV write must appear before the heredoc.
+  const step3GithubEnvBeforeHeredoc = idxGithubEnv >= 0 && idxGithubEnv < idxHeredoc;
+
   checkRaw(
-    '§L1 STEP 3 mktemp WORK present in workflow',
+    '§L1 STEP 3 executable shell block: mktemp WORK present',
     step3HasMktempWork,
-    step3HasMktempWork ? '' : 'WORK="$(mktemp -d)" not found in STEP 3',
+    step3HasMktempWork ? '' : 'WORK="$(mktemp -d)" not found in STEP 3 run: block',
   );
   checkRaw(
-    '§L1 STEP 3 exports WORK before the same-step Node heredoc (same-step child sees WORK)',
+    '§L1 STEP 3 executable shell block: export WORK present',
     step3HasExportWork,
-    step3HasExportWork ? '' : 'missing "export WORK" between mktemp and NODE heredoc',
+    step3HasExportWork ? '' : 'missing "export WORK" in STEP 3 run: block',
   );
   checkRaw(
-    '§L1 STEP 3 still writes WORK to $GITHUB_ENV (STEP 4 finalizer still receives it)',
+    '§L1 STEP 3 executable shell block: $GITHUB_ENV write present',
     step3HasGithubEnvWrite,
-    step3HasGithubEnvWrite ? '' : '$GITHUB_ENV write for WORK removed — STEP 4 would lose it',
+    step3HasGithubEnvWrite ? '' : '$GITHUB_ENV write for WORK not found in STEP 3 run: block',
+  );
+  checkRaw(
+    '§L1 STEP 3 ordering invariant: mktemp < export WORK < node heredoc (all in executable shell block)',
+    step3OrderingCorrect,
+    step3OrderingCorrect
+      ? ''
+      : 'ordering violated: mktemp@' +
+          idxMktemp +
+          ' export@' +
+          idxExport +
+          ' heredoc@' +
+          idxHeredoc,
+  );
+  checkRaw(
+    '§L1 STEP 3 $GITHUB_ENV write appears before node heredoc (STEP 4 finalizer receives WORK)',
+    step3GithubEnvBeforeHeredoc,
+    step3GithubEnvBeforeHeredoc
+      ? ''
+      : '$GITHUB_ENV write@' + idxGithubEnv + ' not before heredoc@' + idxHeredoc,
+  );
+
+  // §L1 MUTATION PROOFS — verify the extraction is scoped to the executable
+  // shell block and that the ordering invariant is structurally enforced.
+  // These tests operate on synthetic shell-block strings, not on the actual
+  // workflow file, so they cannot accidentally weaken a real passing check.
+  const syntheticShellPass =
+    'run: |\n  set -euo pipefail\n  WORK="$(mktemp -d)"\n  export WORK\n  echo "WORK=$WORK" >> "$GITHUB_ENV"\n  set +e\n  node - <<\'NODE\'';
+  const syntheticShellNoExport =
+    'run: |\n  set -euo pipefail\n  WORK="$(mktemp -d)"\n  echo "WORK=$WORK" >> "$GITHUB_ENV"\n  set +e\n  node - <<\'NODE\'';
+  const syntheticShellExportAfterHeredoc =
+    // export WORK appears AFTER the heredoc delimiter (illegal ordering)
+    'run: |\n  set -euo pipefail\n  WORK="$(mktemp -d)"\n  echo "WORK=$WORK" >> "$GITHUB_ENV"\n  set +e\n  node - <<\'NODE\'\n  export WORK';
+  const syntheticEnvOnlyExport =
+    // export WORK only in the env: section (step name/env text), NOT in the run: block
+    'name: Revocable validation\nenv:\n  WORK_NOTE: export WORK\nrun: |\n  WORK="$(mktemp -d)"\n  echo "WORK=$WORK" >> "$GITHUB_ENV"\n  node - <<\'NODE\'';
+
+  // Helper: check ordering invariant on an arbitrary shell-block string.
+  function checkOrdering(shellBlock) {
+    const mi = shellBlock.indexOf('WORK="$(mktemp -d)"');
+    const ei = shellBlock.indexOf('export WORK');
+    const hi = shellBlock.indexOf("node - <<'NODE'");
+    return mi >= 0 && ei >= 0 && hi >= 0 && mi < ei && ei < hi;
+  }
+  // Helper: check that `export WORK` appears in the `run:` block only, not
+  // in text before `run: |`.
+  function exportOnlyInRunBlock(fullText) {
+    const runIdx = fullText.indexOf('run: |');
+    if (runIdx < 0) return false;
+    const runBlock = fullText.slice(runIdx);
+    const beforeRun = fullText.slice(0, runIdx);
+    // No `export WORK` before run: |, but present in run block.
+    return !beforeRun.includes('export WORK') && runBlock.includes('export WORK');
+  }
+
+  checkRaw(
+    '§L1 mutation proof: correct shell block → ordering passes',
+    checkOrdering(syntheticShellPass),
+    'synthetic correct block should satisfy ordering invariant',
+  );
+  checkRaw(
+    '§L1 mutation proof: remove export WORK → ordering fails',
+    !checkOrdering(syntheticShellNoExport),
+    'removing export WORK must break the ordering invariant',
+  );
+  checkRaw(
+    '§L1 mutation proof: move export WORK after heredoc → ordering fails',
+    !checkOrdering(syntheticShellExportAfterHeredoc),
+    'export WORK after heredoc must break the ordering invariant',
+  );
+  checkRaw(
+    '§L1 mutation proof: export WORK only in env:/comment text → not in run: block → ordering fails',
+    !exportOnlyInRunBlock(syntheticEnvOnlyExport)
+      ? // env-only placement: no export in run block → ordering check on run block fails
+        !checkOrdering(syntheticEnvOnlyExport.slice(syntheticEnvOnlyExport.indexOf('run: |')))
+      : false,
+    'fake export WORK in env/comment must not satisfy run: block ordering invariant',
+  );
+
+  // §L2 STEP 3 HEREDOC SYNTAX REGRESSION — executable proof (syntax-only).
+  // Extracts the exact STEP 3 Node heredoc body and validates it via vm.Script,
+  // which uses the same parser as `node --check`. A SyntaxError here is the
+  // exact failure that the independent reviewer reproduced with `node -` and
+  // WORK explicitly set. This is a SYNTAX proof (not a behavior proof): it
+  // proves the script is parseable as a Node.js script (no top-level `return`,
+  // no illegal `await`, no malformed control flow). Behavior proof requires a
+  // live GitHub Actions runner with real git/App credentials.
+  const step3HeredocSyntaxOk = (() => {
+    if (!step3HeredocBody) return false;
+    try {
+      new VmScript(step3HeredocBody, { filename: 'step3-heredoc' });
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  checkRaw(
+    '§L2 STEP 3 heredoc syntax: vm.Script parse succeeds (no illegal return / SyntaxError)',
+    step3HeredocSyntaxOk,
+    step3HeredocSyntaxOk
+      ? 'syntax-only proof; behavior proof requires live runner'
+      : 'vm.Script threw SyntaxError on extracted STEP 3 heredoc body',
+  );
+
+  // §L2 MUTATION PROOF: verify the vm.Script test is structurally sensitive —
+  // a heredoc with a top-level return MUST fail.
+  const step3SyntaxMutationDetects = (() => {
+    try {
+      new VmScript('return 1;', { filename: 'mutation-probe' });
+      return false; // should have thrown
+    } catch (e) {
+      return e instanceof SyntaxError && /Illegal return/.test(e.message);
+    }
+  })();
+  checkRaw(
+    '§L2 mutation proof: vm.Script detects illegal top-level return (test is structurally sensitive)',
+    step3SyntaxMutationDetects,
+    step3SyntaxMutationDetects
+      ? ''
+      : 'vm.Script did NOT throw SyntaxError for "return 1;" — test insensitive',
   );
 
   const lib = loadTrustedLogic(regionRaw);
