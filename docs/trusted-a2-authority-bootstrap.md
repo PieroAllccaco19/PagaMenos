@@ -1,10 +1,107 @@
-# PRE-A2 Trusted Authority Bootstrap — v2 (bounded patch on ab1a449)
+# PRE-A2 Trusted Authority Bootstrap — v2 (bounded patch on 417eddf)
 
-Bounded corrective on top of `ab1a449` (preserved; not amended, not squashed),
-which itself sat on `e7fb49b` (preserved). Replacement chain descends from the
-earlier REJECTED `ec598b8` (also preserved as audit evidence). Security
-infrastructure only — no A2 application/domain/persistence/service/test code;
-`ci.yml` (`verify`, `authority-gate`) is byte-untouched.
+Bounded corrective on top of `417eddf` (preserved; not amended, not squashed),
+which itself sat on `ab1a449` and `e7fb49b` (preserved). Replacement chain
+descends from the earlier REJECTED `ec598b8` (also preserved as audit
+evidence). Security infrastructure only — no A2 application/domain/persistence/
+service/test code; `ci.yml` (`verify`, `authority-gate`) is byte-untouched.
+
+## Canonical single-required-name success invariant (this patch — §1–§13, §17, §19)
+
+On validation **PASS**, the finalizer no longer patches every exact logical run
+to `trusted-a2-authority/head` + `success`. GitHub's required-check semantics
+for duplicate same-App / same-name / same-head runs are not documented to
+guarantee a specific selection; a partial finalizer failure could leave an
+earlier duplicate exposing `success` while the intended canonical run is still
+`in_progress`. To close that:
+
+```
+canonical  = HIGHEST numeric active run id            (deterministic, §19)
+duplicates = all other active exact runs
+```
+
+Finalizer PASS sequence:
+
+```
+1. FOR EACH noncanonical duplicate:
+     PATCH  name       = trusted-a2-authority/duplicate/<id>
+            status     = completed
+            conclusion = failure
+2. VERIFY every duplicate PATCH returned OK.
+3. ONLY THEN:
+     PATCH  canonical: name = trusted-a2-authority/head,
+                       status = completed, conclusion = success.
+```
+
+Security invariant:
+
+```
+NO required-context SUCCESS is published
+UNTIL every known duplicate has left `trusted-a2-authority/head`.
+```
+
+The security property comes from the **NAME change** (§4/§5). GitHub treats
+`success`, `skipped`, and `neutral` as passing conclusions for required
+checks, so a non-success conclusion is not sufficient by itself; the renamed
+run cannot satisfy the required context because its name no longer matches.
+`failure` is chosen for the duplicate conclusion because it is unambiguously
+non-passing under all documented ruleset variations, and the run's output
+explicitly names the canonical id it was superseded by. `neutral` is
+deliberately not the security mechanism.
+
+Duplicate name: `trusted-a2-authority/duplicate/<checkRunId>`. Contains only
+the fixed trusted prefix and the numeric Check Run id — no candidate text.
+It is deterministic per id, distinct from `trusted-a2-authority/head`, and
+does not collide with any required context.
+
+### Partial-finalizer classification (§8–§12)
+
+* Any noncanonical rename PATCH failure ⇒ TRUSTED ISSUER INTEGRITY FAILURE.
+  Canonical is **not** promoted. Successful earlier rename PATCHes are real
+  side effects; they are not rolled back (§17). ADMINISTRATIVE MERGE FREEZE.
+* Canonical success PATCH failure ⇒ TRUSTED ISSUER INTEGRITY FAILURE.
+  Canonical remains non-success. No required-context success exists.
+  ADMINISTRATIVE MERGE FREEZE.
+* Sol's reproducer (canonical 202 success PATCH fails after duplicate 101
+  rename OK) is proved safe in the harness (§12A): 202 never becomes
+  success; 101 stays renamed OUT of the required context; integrity failure
+  classified; merge freeze applies.
+* Second Sol reproducer (canonical 303, duplicates=[101,202], rename 101 OK
+  then rename 202 fails) is proved safe (§12B): 303 is never promoted;
+  integrity failure emitted before any canonical success attempt.
+
+### Validation-FAIL sequence (§7/§11)
+
+On validation FAIL after all runs were reset, every active exact run is PATCHed
+to `completed / failure` with the original required name. No success is being
+published, so canonicalization is not required in this branch. Partial
+finalize failure still classifies TRUSTED ISSUER INTEGRITY FAILURE.
+
+### Future-rerun behavior (§15)
+
+Because exact identity includes the name (`trusted-a2-authority/head`), a
+successfully-canonicalized head enumerates as a **single-member equivalence
+class** on the next rerun — the renamed historical duplicates no longer match
+the required name. Verified in the harness.
+
+### ID-metadata conflict detection (§18)
+
+`findAllExactRuns` now detects a single `check_run` id returning with
+conflicting metadata across pages (name / external_id / head_sha / app.id /
+status / conclusion) and classifies that as TRUSTED ISSUER INTEGRITY FAILURE.
+Materially-identical duplicate rows dedupe silently. Verified in the harness.
+
+### Injectable paginator (§16)
+
+The paginator is now `listAllCheckRunsForRefWithFetcher(fetcher, {...})` —
+in-region, pure over an injected page fetcher. The production wrapper
+`listAllCheckRunsForRef` supplies `ghFetch` bound with the installation token.
+The harness exercises the real loop with fake fetchers for page 2 discovery,
+page 3 discovery, page-2 API failure, response-shape corruption, and raw-scan
+sanity ceiling. With current constants (`PAGE_SIZE=100`, `MAX_PAGES=100`,
+`MAX_EXACT_RUNS=512` ⇒ raw cap = 2048) the raw scan cap **dominates**
+`MAX_PAGES` — 21 full pages already cross 2048 — so `MAX_PAGES` is a
+structural upper bound; the raw cap fires first in every full-page load.
 
 ## Duplicate exact-run equivalence class (this patch — §1–§14, §19)
 
@@ -68,6 +165,9 @@ Do **not** merge the A2 PR while any of the following are true:
 * Exact logical runs cannot all be enumerated (paginator/response-shape/ceiling failure).
 * Any exact logical run cannot be reset to `in_progress`.
 * Any exact logical run cannot be finalized.
+* **Any noncanonical duplicate cannot be renamed OUT of the required context.**
+* **Canonical run cannot be PATCHed to required-context success.**
+* **A single `check_run` id is returned with conflicting metadata across pages.**
 * App source / ruleset expected-source identity cannot be verified.
 
 A previously successful App Check Run is **not** authorization to merge during
@@ -76,7 +176,9 @@ such an outage. Merging resumes only after:
 1. Issuer health is restored (App auth, token minting, list, PATCH all healthy).
 2. A complete trusted-gate rerun succeeds on the exact current head.
 3. The required App check on the exact current head is visibly current AND
-   `success` for the entire equivalence class.
+   `success` — **exactly one** required-context run in `success` state; every
+   other historical exact run for that head is renamed OUT of the required
+   context (`trusted-a2-authority/duplicate/<id>` + `completed / failure`).
 
 **This is an operational control.** The code can neutralize duplicate exact runs
 when the GitHub API is operational; it cannot guarantee invalidation of an old

@@ -1,21 +1,44 @@
-# PagaMenos · PRE-A2 TRUSTED AUTHORITY GATE — v2 (bounded patch on ab1a449)
+# PagaMenos · PRE-A2 TRUSTED AUTHORITY GATE — v2 (bounded patch on 417eddf)
 # =============================================================================
-# Bounded corrective for Sol's remaining finding on ab1a449 (not a redesign;
-# the trusted architecture itself passed). Closes the duplicate-exact-run
-# equivalence-class hole and formalizes issuer-outage semantics:
+# Bounded corrective for Sol's remaining finding on 417eddf (not a redesign;
+# duplicate-equivalence lifecycle otherwise accepted). Closes the "successful
+# duplicate finalization" hole and formalizes canonicalization semantics:
 #
-#   [HIGH]  All-exact enumeration + reset + finalize.
-#           A trusted logical check identity is the tuple (dedicated App id,
-#           name = trusted-a2-authority/head, external_id, exact head SHA).
-#           STEP 2 now paginates check runs (no silent stop at 100), enumerates
-#           EVERY exact logical match, and resets ALL of them to `in_progress`
-#           BEFORE any revocable validation. STEP 4 finalizes ALL exact runs to
-#           the SAME conclusion. If ANY reset or finalize call fails, this is a
-#           TRUSTED ISSUER INTEGRITY FAILURE and ADMINISTRATIVE MERGE FREEZE
-#           applies. This closes the "another completed/success duplicate could
-#           satisfy the required check" hole Sol reproduced against ab1a449.
+#   [HIGH]  Canonical single-required-name success invariant.
+#           On PASS the finalizer no longer patches every exact logical run to
+#           the required check name + success. It:
+#             (a) picks a deterministic canonical run — highest numeric id
+#                 (§3/§19);
+#             (b) FIRST renames every noncanonical duplicate OUT of the
+#                 required check name (`trusted-a2-authority/head`) into
+#                 `trusted-a2-authority/duplicate/<id>` and completes it as
+#                 `failure` (§4/§5). Security comes from the NAME change, not
+#                 the conclusion semantics — GitHub treats `neutral`/`skipped`
+#                 as passing for required checks, so we deliberately do not
+#                 rely on those;
+#             (c) VERIFIES every duplicate rename PATCH returned OK; ONLY THEN
+#                 promotes canonical to required-name success (§6).
+#           Any failure at any stage classifies TRUSTED ISSUER INTEGRITY
+#           FAILURE + ADMINISTRATIVE MERGE FREEZE (§8/§9). No required-context
+#           `success` can be published until every known duplicate has left
+#           that required context.
 #
-# (Retained history — do not regress; already accepted by Sol as of ab1a449:)
+#   [MED]   ID-metadata-conflict detection (§18).
+#           `findAllExactRuns` now detects a single check_run id returning with
+#           differing metadata across pages and classifies that as TRUSTED
+#           ISSUER INTEGRITY FAILURE (fail closed). Materially-identical
+#           duplicate rows across pages are still silently deduped.
+#
+#   [MED]   Injectable paginator (§16).
+#           `listAllCheckRunsForRefWithFetcher(fetcher, {...})` is now a pure
+#           in-region function driven by an injected page fetcher, so the local
+#           harness genuinely executes the pagination loop (page 2, page 3,
+#           MAX_PAGES limit, raw-scan cap, API failure) rather than merely
+#           inspecting constants. Production `listAllCheckRunsForRef` is a
+#           thin wrapper that supplies `ghFetch` as the fetcher.
+#
+# (Retained history — do not regress; already accepted by Sol as of 417eddf:)
+#   [HIGH 417eddf] All-exact enumeration + reset + finalize (equivalence class).
 #   [HIGH e7fb49b] STEP-order for stale-same-head-success cannot revert.
 #   [MED  e7fb49b] Same-repository policy before App credential use.
 #   [MED  e7fb49b] Deterministic external_id, App/name-scoped reuse.
@@ -79,6 +102,7 @@ jobs:
             'authority/v1/holiday-calendar/pagamenos.holiday.pe-lima-callao.private-commerce.v1.json',
           ];
           const CHECK_NAME = 'trusted-a2-authority/head';
+          const DUPLICATE_NAME_PREFIX = 'trusted-a2-authority/duplicate/';
           const PROTECTED_PREFIXES = ['src/corpus/', 'src/engine/', 'authority/', '.github/workflows/', 'scripts-trusted/'];
           const REJECTED_AUTHORITY_BASE_SHA = '68269bb5acad77bb6e8dc1644bb32d29ef485d31';
 
@@ -120,21 +144,18 @@ jobs:
           }
 
           // ---- Sanity ceilings (defensible; documented in the bootstrap doc) ----
-          // Distinct exact-logical trusted-App runs for one (repo, PR#, head) are
-          // expected to be 1 in normal operation. A very high ceiling still catches
-          // an API-shape anomaly without truncating repository history. Because we
-          // filter by exact (App, name, external_id, head), unrelated runs on the
-          // same commit do not count toward this ceiling.
           const MAX_EXACT_RUNS = 512;
           const MAX_PAGES = 100;      // ≤ MAX_PAGES * PAGE_SIZE = 10 000 raw rows scanned
           const PAGE_SIZE = 100;
 
+          // ---- Deterministic canonical / duplicate naming (§4/§19) ----
+          function duplicateNameFor(id) {
+            const n = Number(id);
+            if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) throw new Error('duplicateNameFor: id must be a positive integer');
+            return DUPLICATE_NAME_PREFIX + n;
+          }
+
           // ---- Exact logical trusted-check identity (§2/§E) ----
-          // A Check Run is an EXACT LOGICAL MATCH iff ALL of:
-          //   app.id === dedicated App id
-          //   name    === trusted-a2-authority/head
-          //   external_id === pagamenos:trusted-a2-authority:<repoId>:pr-<n>:<head>
-          //   head_sha (lowercased) === exact PR head
           function isExactLogicalMatch(run, want) {
             if (!isPlainObject(run)) return false;
             const owner = run && run.app && run.app.id;
@@ -145,11 +166,41 @@ jobs:
             return true;
           }
 
-          // Pure filter over a fully-enumerated list of pages; deterministic
-          // ordering by numeric id ascending so downstream logic is order-independent.
+          // §18: detect a single check_run id returning with conflicting metadata
+          // across pages. Materially-identical rows dedupe silently; any conflict
+          // in (name / external_id / head_sha / app.id / status / conclusion) is
+          // TRUSTED ISSUER INTEGRITY FAILURE. Operates on the RAW pre-filter list
+          // so an anomaly is not hidden by the exact-match filter.
+          function idMetadataSignature(r) {
+            return JSON.stringify({
+              name: r && r.name,
+              external_id: r && r.external_id,
+              head_sha: lc(r && r.head_sha),
+              appId: r && r.app && r.app.id != null ? String(r.app.id) : null,
+              status: r && r.status,
+              conclusion: r && r.conclusion,
+            });
+          }
+          function detectIdMetadataConflicts(runs) {
+            if (!Array.isArray(runs)) return;
+            const byId = new Map();
+            for (const r of runs) {
+              if (!isPlainObject(r)) continue;
+              const id = Number(r.id);
+              if (!Number.isFinite(id)) continue;
+              const sig = idMetadataSignature(r);
+              const prev = byId.get(id);
+              if (prev !== undefined && prev !== sig) {
+                throw new Error('TRUSTED ISSUER INTEGRITY FAILURE: check_run id ' + id + ' returned with conflicting metadata across pages');
+              }
+              byId.set(id, sig);
+            }
+          }
+
           function findAllExactRuns(input) {
             const { runs, appId, checkName, externalId, headSha } = input;
             if (!Array.isArray(runs)) return [];
+            detectIdMetadataConflicts(runs);
             const want = { appId, checkName, externalId, headSha };
             const hits = runs.filter((r) => isExactLogicalMatch(r, want));
             const seen = new Set();
@@ -164,8 +215,27 @@ jobs:
             return dedup;
           }
 
-          // Partition a set of PATCH outcomes into ok/failed lists (used by
-          // reset + finalize integrity accounting).
+          // Canonical = HIGHEST numeric id (§3/§19). Deterministic; not lexicographic.
+          function chooseCanonical(exactRuns) {
+            if (!Array.isArray(exactRuns) || exactRuns.length === 0) return null;
+            let max = null;
+            for (const r of exactRuns) {
+              const id = Number(r && r.id);
+              if (!Number.isFinite(id)) continue;
+              if (max === null || id > Number(max.id)) max = r;
+            }
+            return max;
+          }
+          function partitionCanonical(exactRuns) {
+            const canonical = chooseCanonical(exactRuns);
+            if (!canonical) return { canonical: null, duplicates: [] };
+            const dups = [];
+            for (const r of exactRuns) {
+              if (Number(r.id) !== Number(canonical.id)) dups.push(r);
+            }
+            return { canonical, duplicates: dups };
+          }
+
           function partitionOutcomes(outcomes) {
             const ok = [], failed = [];
             for (const o of outcomes) (o && o.ok ? ok : failed).push(o);
@@ -252,7 +322,53 @@ jobs:
           function buildCompletedBody(o) {
             return { name: o.name, head_sha: lc(o.headSha), external_id: o.externalId, status: 'completed', conclusion: o.conclusion, completed_at: o.completedAt, output: { title: o.title, summary: o.summary } };
           }
+          // §4/§5: rename a noncanonical duplicate OUT of the required context
+          // and complete it. The security invariant comes from the NAME change
+          // (`trusted-a2-authority/duplicate/<id>` cannot satisfy required
+          // context `trusted-a2-authority/head`), not from the conclusion
+          // semantics. `failure` is used because success/skipped/neutral all
+          // count as passing for required checks — so a non-passing conclusion
+          // makes intent unambiguous even under future ruleset changes.
+          function buildDuplicateFailureBody(o) {
+            return {
+              name: duplicateNameFor(o.id),
+              head_sha: lc(o.headSha),
+              external_id: o.externalId,
+              status: 'completed',
+              conclusion: 'failure',
+              completed_at: o.completedAt,
+              output: {
+                title: 'Superseded duplicate trusted check',
+                summary: 'Renamed OUT of required context "' + CHECK_NAME + '"; canonical run id = ' + Number(o.canonicalId) + '.',
+              },
+            };
+          }
           function concludeFromValidation(ok) { return ok ? 'success' : 'failure'; }
+
+          // ---- Pure paginator core (§16). Driven by an injected `fetcher(url)`
+          // returning `{ ok, status, json }`; used by the production wrapper and
+          // exercised in the harness with a fake fetcher that yields per-page
+          // canned responses. Semantics: fail closed on non-2xx, non-object,
+          // non-array shape, raw scan cap exceedance, or exceeding MAX_PAGES.
+          async function listAllCheckRunsForRefWithFetcher(fetcher, input) {
+            const { owner, repo, ref, checkName } = input;
+            const acc = [];
+            for (let page = 1; page <= MAX_PAGES; page++) {
+              const url = 'https://api.github.com/repos/' + owner + '/' + repo + '/commits/' + ref + '/check-runs?check_name=' + encodeURIComponent(checkName) + '&per_page=' + PAGE_SIZE + '&filter=all&page=' + page;
+              const res = await fetcher(url);
+              if (!res || !res.ok) throw new Error('TRUSTED ISSUER INTEGRITY FAILURE: check-runs list failed (status ' + (res && res.status) + ' on page ' + page + ')');
+              if (!isPlainObject(res.json) || !Array.isArray(res.json.check_runs)) {
+                throw new Error('TRUSTED ISSUER INTEGRITY FAILURE: unexpected check-runs response shape on page ' + page);
+              }
+              const chunk = res.json.check_runs;
+              acc.push(...chunk);
+              if (acc.length > MAX_EXACT_RUNS * 4) {
+                throw new Error('TRUSTED ISSUER INTEGRITY FAILURE: check-run scan exceeds sanity ceiling (' + acc.length + ')');
+              }
+              if (chunk.length < PAGE_SIZE) return acc;
+            }
+            throw new Error('TRUSTED ISSUER INTEGRITY FAILURE: check-runs pagination exceeded MAX_PAGES=' + MAX_PAGES);
+          }
 
           // ===END TRUSTED-A2 TRUSTED LOGIC===
 
@@ -270,36 +386,17 @@ jobs:
             const jwt = jwtParts.signingInput + '.' + sig;
             const inst = await ghFetch('https://api.github.com/repos/' + owner + '/' + repo + '/installation', { headers: { authorization: 'Bearer ' + jwt, accept: 'application/vnd.github+json', 'user-agent': 'trusted-a2-authority' } });
             if (!inst.ok || !inst.json.id) throw new Error('TRUSTED ISSUER AVAILABILITY FAILURE: cannot resolve App installation (status ' + inst.status + ')');
-            // Narrow the token to THIS repository only.
             const body = repositoryId ? JSON.stringify({ repository_ids: [Number(repositoryId)], permissions: { checks: 'write', metadata: 'read' } }) : undefined;
             const tok = await ghFetch('https://api.github.com/app/installations/' + inst.json.id + '/access_tokens', { method: 'POST', headers: { authorization: 'Bearer ' + jwt, accept: 'application/vnd.github+json', 'user-agent': 'trusted-a2-authority', 'content-type': 'application/json' }, body });
             if (!tok.ok || !tok.json.token) throw new Error('TRUSTED ISSUER AVAILABILITY FAILURE: cannot mint installation token (status ' + tok.status + ')');
             return tok.json.token;
           }
-          // Enumerate ALL check runs matching (ref, checkName) — every page, no
-          // silent stop at 100. Fails closed on pagination anomalies, unexpected
-          // response shape, or exceeding the sanity ceiling (§4). Only inspects
-          // the exact ref + check name in the URL; App / external_id / head-sha
-          // filtering happens in the pure findAllExactRuns.
+          // Production wrapper: supplies ghFetch with the installation token as
+          // the injected fetcher. All pagination logic lives in the in-region
+          // listAllCheckRunsForRefWithFetcher above.
           async function listAllCheckRunsForRef({ token, owner, repo, ref, checkName }) {
-            const acc = [];
-            for (let page = 1; page <= MAX_PAGES; page++) {
-              const url = 'https://api.github.com/repos/' + owner + '/' + repo + '/commits/' + ref + '/check-runs?check_name=' + encodeURIComponent(checkName) + '&per_page=' + PAGE_SIZE + '&filter=all&page=' + page;
-              const res = await ghFetch(url, { headers: { authorization: 'token ' + token, accept: 'application/vnd.github+json', 'user-agent': 'trusted-a2-authority' } });
-              if (!res.ok) throw new Error('TRUSTED ISSUER INTEGRITY FAILURE: check-runs list failed (status ' + res.status + ' on page ' + page + ')');
-              if (!isPlainObject(res.json) || !Array.isArray(res.json.check_runs)) {
-                throw new Error('TRUSTED ISSUER INTEGRITY FAILURE: unexpected check-runs response shape on page ' + page);
-              }
-              const chunk = res.json.check_runs;
-              acc.push(...chunk);
-              if (acc.length > MAX_EXACT_RUNS * 4) {
-                // raw scan cap; well above any plausible normal repo history for one commit+name
-                throw new Error('TRUSTED ISSUER INTEGRITY FAILURE: check-run scan exceeds sanity ceiling (' + acc.length + ')');
-              }
-              // Pagination termination: shorter-than-page-size chunk = last page.
-              if (chunk.length < PAGE_SIZE) return acc;
-            }
-            throw new Error('TRUSTED ISSUER INTEGRITY FAILURE: check-runs pagination exceeded MAX_PAGES=' + MAX_PAGES);
+            const fetcher = (url) => ghFetch(url, { headers: { authorization: 'token ' + token, accept: 'application/vnd.github+json', 'user-agent': 'trusted-a2-authority' } });
+            return listAllCheckRunsForRefWithFetcher(fetcher, { owner, repo, ref, checkName });
           }
           async function createCheckRun({ token, owner, repo, body }) {
             const res = await ghFetch('https://api.github.com/repos/' + owner + '/' + repo + '/check-runs', { method: 'POST', headers: { authorization: 'token ' + token, accept: 'application/vnd.github+json', 'user-agent': 'trusted-a2-authority', 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -311,9 +408,10 @@ jobs:
             if (!res.ok) throw new Error('TRUSTED ISSUER INTEGRITY FAILURE: check-run PATCH failed (status ' + res.status + ' on id ' + id + ')');
             return res.json.id;
           }
-          // Reset EVERY id to in_progress. Returns per-id outcomes so the caller
-          // can decide integrity classification. Best-effort neutralization: we
-          // attempt every id even if an earlier one fails.
+          // Best-effort per-id PATCH. Every id is attempted even if an earlier
+          // one failed; earlier successful PATCHes are REAL side effects and
+          // are not rolled back (§17). Callers classify integrity from the
+          // returned outcomes.
           async function patchAllRuns({ token, owner, repo, ids, bodyFor }) {
             const outcomes = [];
             for (const id of ids) {
@@ -323,20 +421,21 @@ jobs:
             return outcomes;
           }
           module.exports = {
-            REQUIRED_AUTHORITY_FILES, CHECK_NAME, PROTECTED_PREFIXES, REJECTED_AUTHORITY_BASE_SHA,
+            REQUIRED_AUTHORITY_FILES, CHECK_NAME, DUPLICATE_NAME_PREFIX, PROTECTED_PREFIXES, REJECTED_AUTHORITY_BASE_SHA,
             MAX_EXACT_RUNS, MAX_PAGES, PAGE_SIZE,
             sameRepositoryPolicy, preCheckEvent, externalIdFor,
             isExactLogicalMatch, findAllExactRuns, partitionOutcomes,
+            duplicateNameFor, chooseCanonical, partitionCanonical,
+            idMetadataSignature, detectIdMetadataConflicts,
             verifyTrustedA2, verifyRevocableSelectors, forbiddenPaths,
-            b64url, buildAppJwt, buildInProgressBody, buildCompletedBody, concludeFromValidation,
+            b64url, buildAppJwt, buildInProgressBody, buildCompletedBody, buildDuplicateFailureBody, concludeFromValidation,
+            listAllCheckRunsForRefWithFetcher,
             mintInstallationToken, listAllCheckRunsForRef, createCheckRun, updateCheckRun, patchAllRuns,
           };
           LIB
           echo "LIB_PATH=$RUNNER_TEMP/trusted-a2-lib.cjs" >> "$GITHUB_ENV"
 
       # STEP 1: minimal immutable event validation (BEFORE App credential use).
-      # Only checks: pull_request_target, PR number/head SHA well-formed, repository identity,
-      # and SAME-REPOSITORY policy. Fork PR is rejected here — no App API contact yet.
       - name: Pre-check (event + same-repository)
         env:
           EVENT_JSON: ${{ toJson(github.event) }}
@@ -356,10 +455,7 @@ jobs:
           NODE
 
       # STEP 2: App auth + reset ALL exact logical trusted runs on the exact PR
-      # head to `in_progress` BEFORE any revocable validation. If none exist,
-      # create one. If ANY reset fails, this is a TRUSTED ISSUER INTEGRITY
-      # FAILURE (§8) — do not proceed to revocable validation; the operator
-      # applies ADMINISTRATIVE MERGE FREEZE until issuer health is restored.
+      # head to `in_progress` BEFORE any revocable validation.
       - name: Reset/open ALL exact trusted head checks (in_progress)
         env:
           APP_ID: ${{ vars.PAGAMENOS_TRUSTED_GATE_APP_ID }}
@@ -380,7 +476,6 @@ jobs:
             const externalId = lib.externalIdFor({ repositoryId, prNumber, headSha });
             const token = await lib.mintInstallationToken({ appId, privateKey: key, owner, repo, repositoryId });
 
-            // Enumerate ALL relevant check runs (paginated, fail-closed on anomalies).
             const allRuns = await lib.listAllCheckRunsForRef({ token, owner, repo, ref: headSha, checkName: lib.CHECK_NAME });
             const exact = lib.findAllExactRuns({ runs: allRuns, appId, checkName: lib.CHECK_NAME, externalId, headSha });
             if (exact.length > lib.MAX_EXACT_RUNS) {
@@ -396,8 +491,6 @@ jobs:
               activeIds = [Number(id)];
               console.log('created head-bound trusted run id=' + id + ' external_id=' + externalId);
             } else {
-              // §5/§7: reset EVERY exact logical run. Best-effort: attempt every id
-              // so operators see the full failure picture, then classify integrity.
               const outcomes = await lib.patchAllRuns({ token, owner, repo, ids: exact.map((r) => Number(r.id)), bodyFor: () => inProgress });
               const part = lib.partitionOutcomes(outcomes);
               if (part.failed.length > 0) {
@@ -414,9 +507,7 @@ jobs:
           })().catch((e) => { console.error('TRUSTED-A2-AUTHORITY: ' + e.message); process.exit(1); });
           NODE
 
-      # STEP 3: revocable validation. Any exception here does NOT terminate the
-      # job silently — it is captured to WORK/validation.json and routed through
-      # the finalizer (next step) which concludes the SAME App check as failure.
+      # STEP 3: revocable validation. Any exception is captured to WORK/validation.json.
       - name: Revocable validation (routed through finalizer)
         if: always() && env.CHECK_RUN_IDS != ''
         env:
@@ -427,7 +518,6 @@ jobs:
           set -euo pipefail
           WORK="$(mktemp -d)"
           echo "WORK=$WORK" >> "$GITHUB_ENV"
-          # Capture any failure into validation.json; NEVER let this step abort the job before finalize runs.
           set +e
           node - <<'NODE'
           const fs = require('fs');
@@ -441,13 +531,11 @@ jobs:
             const sel = lib.verifyRevocableSelectors({ prHeadSha: headSha, acceptedA2Head: process.env.ACCEPTED_A2_HEAD, acceptedAuthorityBaseSha: process.env.BASE_SHA });
             if (!sel.ok) return fail(sel.error);
             const baseSha = String(process.env.BASE_SHA).toLowerCase();
-            // Fetch PR head + authority commit as data (no PR code executed).
             try { execFileSync('git', ['fetch', '--no-tags', 'origin', 'refs/pull/' + Number(process.env.PR_NUMBER) + '/head'], { stdio: 'inherit' }); } catch (e) { return fail('cannot fetch PR head ref'); }
             const fetched = execFileSync('git', ['rev-parse', 'FETCH_HEAD'], { encoding: 'utf8' }).trim().toLowerCase();
             if (fetched !== headSha) return fail('fetched PR head ' + fetched + ' != event head ' + headSha);
             try { execFileSync('git', ['fetch', '--no-tags', 'origin', baseSha], { stdio: 'inherit' }); } catch (e) { return fail('cannot fetch authority base commit ' + baseSha + ' (unavailable)'); }
 
-            // Rename-safe + NUL-safe protected-path enumeration
             let mb;
             try { mb = execFileSync('git', ['merge-base', prBase, headSha], { encoding: 'utf8' }).trim(); } catch (e) { return fail('cannot compute merge-base'); }
             let changedBuf;
@@ -456,7 +544,6 @@ jobs:
             const forbid = lib.forbiddenPaths(changed);
             if (forbid.length) return fail('A2 PR modifies protected trust paths (rename-safe): ' + forbid.join(', '));
 
-            // Inert JSON at fixed trusted paths
             const readAt = (sha, path) => { try { return execFileSync('git', ['show', sha + ':' + path], { encoding: 'utf8' }); } catch (e) { return null; } };
             const runtimeText = readAt(headSha, 'src/study/runtime-corpus-authority.v1.json'); if (!runtimeText) return fail('runtime declaration missing at PR head');
             const ledgerText = readAt(baseSha, 'authority/v1/CORPUS_RELEASE_LEDGER_V1.json'); if (!ledgerText) return fail('external ledger missing at authority base');
@@ -477,12 +564,22 @@ jobs:
           NODE
           set -e
 
-      # STEP 4: SINGLE FINALIZER — always runs when at least one exact check was
-      # opened; concludes EVERY active exact run with the SAME conclusion. If
-      # validation produced no verdict for any reason, that is `failure` (fail
-      # closed). If any run cannot be finalized, this is a TRUSTED ISSUER
-      # INTEGRITY FAILURE (§8/§9) — the job fails and ADMINISTRATIVE MERGE
-      # FREEZE applies until issuer health is restored and a full rerun succeeds.
+      # STEP 4: SINGLE FINALIZER with canonicalization (§3/§4/§6).
+      #
+      # On validation PASS:
+      #   1. Pick canonical = HIGHEST numeric active run id.
+      #   2. FIRST rename every noncanonical duplicate OUT of required context
+      #      (name = trusted-a2-authority/duplicate/<id>, status=completed,
+      #      conclusion=failure). Any failed rename => TRUSTED ISSUER INTEGRITY
+      #      FAILURE + ADMINISTRATIVE MERGE FREEZE; canonical is NOT promoted.
+      #   3. Only after every noncanonical rename returned OK, PATCH canonical
+      #      -> required-name success. If canonical PATCH fails => integrity
+      #      failure + merge freeze (no required-context success published).
+      #
+      # On validation FAIL:
+      #   PATCH every active exact run -> required-name completed/failure.
+      #   Any per-id failure => integrity failure + merge freeze; no success
+      #   is being published so name change is not required.
       - name: Finalize ALL exact trusted head checks
         if: always() && env.CHECK_RUN_IDS != ''
         env:
@@ -503,15 +600,53 @@ jobs:
             const ids = String(process.env.CHECK_RUN_IDS).split(',').map((s) => Number(s.trim())).filter((n) => Number.isFinite(n) && n > 0);
             if (ids.length === 0) { console.error('finalize: CHECK_RUN_IDS empty — integrity anomaly'); process.exit(1); }
             const completedAt = new Date().toISOString();
-            const body = lib.buildCompletedBody({ name: lib.CHECK_NAME, headSha, externalId, completedAt, conclusion: lib.concludeFromValidation(ok), title: ok ? 'Trusted A2 authority: PASS' : 'Trusted A2 authority: FAIL', summary: detail + ' (exact logical runs finalized: ' + ids.length + ')' });
-            const outcomes = await lib.patchAllRuns({ token, owner, repo, ids, bodyFor: () => body });
-            const part = lib.partitionOutcomes(outcomes);
-            if (part.failed.length > 0) {
-              console.error('finalize: TRUSTED ISSUER INTEGRITY FAILURE — ' + part.failed.length + '/' + outcomes.length + ' exact runs could not be finalized: ' + JSON.stringify(part.failed));
-              console.error('ADMINISTRATIVE MERGE FREEZE APPLIES. Do NOT merge on any partial-finalization result.');
+
+            if (!ok) {
+              // FAIL path (§7). All active exact runs -> required-name failure.
+              const body = lib.buildCompletedBody({ name: lib.CHECK_NAME, headSha, externalId, completedAt, conclusion: 'failure', title: 'Trusted A2 authority: FAIL', summary: detail + ' (exact logical runs finalized: ' + ids.length + ')' });
+              const outcomes = await lib.patchAllRuns({ token, owner, repo, ids, bodyFor: () => body });
+              const part = lib.partitionOutcomes(outcomes);
+              if (part.failed.length > 0) {
+                console.error('finalize: TRUSTED ISSUER INTEGRITY FAILURE — ' + part.failed.length + '/' + outcomes.length + ' exact runs could not be finalized: ' + JSON.stringify(part.failed));
+                console.error('ADMINISTRATIVE MERGE FREEZE APPLIES. Do NOT merge on any partial-finalization result.');
+                process.exit(1);
+              }
+              console.log('finalized ' + ids.length + ' exact logical run(s) [' + ids.join(',') + '] = failure');
               process.exit(1);
             }
-            console.log('finalized ' + ids.length + ' exact logical run(s) [' + ids.join(',') + '] = ' + lib.concludeFromValidation(ok));
-            if (!ok) process.exit(1);
+
+            // PASS path (§3/§6). Canonicalize.
+            const runsShim = ids.map((id) => ({ id }));
+            const part = lib.partitionCanonical(runsShim);
+            const canonical = part.canonical;
+            const duplicates = part.duplicates;
+            console.log('canonical run id = ' + canonical.id + '; noncanonical duplicates = [' + duplicates.map((r) => r.id).join(',') + ']');
+
+            // (a) Rename ALL noncanonical duplicates OUT of required context.
+            if (duplicates.length > 0) {
+              const dupIds = duplicates.map((r) => Number(r.id));
+              const dupOutcomes = await lib.patchAllRuns({
+                token, owner, repo, ids: dupIds,
+                bodyFor: (id) => lib.buildDuplicateFailureBody({ id, headSha, externalId, completedAt, canonicalId: canonical.id }),
+              });
+              const dupPart = lib.partitionOutcomes(dupOutcomes);
+              if (dupPart.failed.length > 0) {
+                console.error('finalize: TRUSTED ISSUER INTEGRITY FAILURE — ' + dupPart.failed.length + '/' + dupOutcomes.length + ' noncanonical duplicates could not be renamed OUT of required context: ' + JSON.stringify(dupPart.failed));
+                console.error('CANONICAL RUN NOT PROMOTED TO SUCCESS. ADMINISTRATIVE MERGE FREEZE APPLIES.');
+                process.exit(1);
+              }
+              console.log('renamed ' + dupIds.length + ' noncanonical duplicate(s) [' + dupIds.join(',') + '] OUT of required context');
+            }
+
+            // (b) ONLY NOW may canonical receive the required-name success.
+            const canonicalBody = lib.buildCompletedBody({ name: lib.CHECK_NAME, headSha, externalId, completedAt, conclusion: 'success', title: 'Trusted A2 authority: PASS', summary: detail + ' (canonical of ' + ids.length + ' exact logical run(s); ' + duplicates.length + ' duplicate(s) renamed OUT)' });
+            const canOutcome = await lib.patchAllRuns({ token, owner, repo, ids: [Number(canonical.id)], bodyFor: () => canonicalBody });
+            const canPart = lib.partitionOutcomes(canOutcome);
+            if (canPart.failed.length > 0) {
+              console.error('finalize: TRUSTED ISSUER INTEGRITY FAILURE — canonical success PATCH failed: ' + JSON.stringify(canPart.failed));
+              console.error('CANONICAL RUN NOT PROMOTED. ADMINISTRATIVE MERGE FREEZE APPLIES.');
+              process.exit(1);
+            }
+            console.log('canonical [' + canonical.id + '] promoted to required-context SUCCESS; equivalence class fully canonicalized');
           })().catch((e) => { console.error('finalize error: ' + e.message); process.exit(1); });
           NODE

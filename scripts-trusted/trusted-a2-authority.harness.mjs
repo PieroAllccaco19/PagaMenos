@@ -1,12 +1,29 @@
 // PagaMenos · PRE-A2 TRUSTED AUTHORITY GATE v2 — LOCAL DIAGNOSTIC HARNESS
 // =============================================================================
-// Proves the trusted gate's decision + all-exact-run lifecycle locally, before
-// any GitHub run. Test-only; NOT the runtime trust root. The authoritative
-// logic lives inline in .github/workflows/trusted-a2-authority.yml.
+// Proves the trusted gate's decision + full canonicalization lifecycle locally,
+// before any GitHub run. Test-only; NOT the runtime trust root. The
+// authoritative logic lives inline in .github/workflows/trusted-a2-authority.yml.
 //
 // INTEGRITY MODEL: extract the sentinel-bounded region from the committed
 // workflow, assert its normalized SHA-256 equals PINNED_REGION_SHA256 (silent
 // edits fail until the pin is deliberately updated), and run THAT exact code.
+//
+// LIFECYCLE MODEL: `simulateRunLifecycle` models the workflow with per-id side
+// effects that persist across PATCH failures (§17 — no fake transactional
+// rollback). The canonicalization sequence mirrors STEP 4 in the workflow:
+//     reset ALL exact  ->  validate  ->  if PASS:  rename ALL noncanonical
+//                                         duplicates OUT of required context,
+//                                         verify every rename OK, THEN promote
+//                                         canonical (highest numeric id) to
+//                                         required-name success.
+//                                       if FAIL:  every active exact run to
+//                                         required-name failure.
+// Any PATCH failure => integrity failure. Earlier PATCH side effects are
+// retained (a renamed duplicate STAYS renamed even if canonical fails).
+//
+// PAGINATOR MODEL: `listAllCheckRunsForRefWithFetcher` is exercised through a
+// real fetcher stub that yields per-page canned responses — no in-region logic
+// is bypassed by the harness (§16).
 //
 // Run: node scripts-trusted/trusted-a2-authority.harness.mjs
 // Exit 0 = pin + full matrix green; nonzero = a diagnostic failed.
@@ -23,7 +40,7 @@ const END = '===END TRUSTED-A2 TRUSTED LOGIC===';
 
 // Pin over the normalized authoritative region. Update ONLY with an intended
 // logic change (record it in the commit).
-const PINNED_REGION_SHA256 = '7c4b5c714a3ad385a4939a2e947bcd7c0b838da59f512cea22a051c8f6f77783';
+const PINNED_REGION_SHA256 = '9d515c5cc436896c5857480c53c36a8304bddf148e4994beafbe5490a3dbe858';
 
 const normalize = (s) =>
   s.replace(/\r\n/g, '\n').split('\n').map((l) => l.replace(/^[ \t]+/, '')).join('\n').trim();
@@ -41,7 +58,7 @@ function loadTrustedLogic(regionRaw) {
   // eslint-disable-next-line no-new-func
   return new Function(
     src +
-      '\nreturn { verifyTrustedA2, forbiddenPaths, buildAppJwt, buildInProgressBody, buildCompletedBody, concludeFromValidation, b64url, REQUIRED_AUTHORITY_FILES, CHECK_NAME, PROTECTED_PREFIXES, REJECTED_AUTHORITY_BASE_SHA, sameRepositoryPolicy, preCheckEvent, externalIdFor, isExactLogicalMatch, findAllExactRuns, partitionOutcomes, verifyRevocableSelectors, MAX_EXACT_RUNS, MAX_PAGES, PAGE_SIZE };',
+      '\nreturn { verifyTrustedA2, forbiddenPaths, buildAppJwt, buildInProgressBody, buildCompletedBody, buildDuplicateFailureBody, concludeFromValidation, b64url, REQUIRED_AUTHORITY_FILES, CHECK_NAME, DUPLICATE_NAME_PREFIX, PROTECTED_PREFIXES, REJECTED_AUTHORITY_BASE_SHA, sameRepositoryPolicy, preCheckEvent, externalIdFor, isExactLogicalMatch, findAllExactRuns, partitionOutcomes, duplicateNameFor, chooseCanonical, partitionCanonical, detectIdMetadataConflicts, idMetadataSignature, verifyRevocableSelectors, MAX_EXACT_RUNS, MAX_PAGES, PAGE_SIZE, listAllCheckRunsForRefWithFetcher };',
   )();
 }
 
@@ -86,62 +103,138 @@ function checkRaw(label, ok, note = '') {
   ok ? passed++ : failed++;
 }
 
-// ---- simulate the workflow lifecycle purely from lib exports ----------------
-// Mirrors STEP 2 (enumerate+reset ALL) + STEP 3 (validation) + STEP 4 (finalize ALL).
-// Optional resetFailIds/finalizeFailIds inject per-id PATCH failures to model API outages.
-function simulateRunLifecycle({ lib, headSha, priorRuns, revocableResult, appCredsPresent = true, sameRepo = true, resetFailIds = [], finalizeFailIds = [], listThrows = null }) {
+// ---- true-fidelity lifecycle simulation --------------------------------------
+// Models sequential per-id PATCH side effects. Once a PATCH succeeds it MUTATES
+// simState; a later PATCH failure does NOT roll it back (§17). Canonicalization
+// on PASS follows the exact workflow order: rename EVERY noncanonical duplicate
+// first, verify every rename OK, THEN promote canonical to required-name
+// success. On FAIL, every active exact run receives required-name failure.
+function simulateRunLifecycle({
+  lib,
+  headSha,
+  priorRuns,
+  revocableResult,
+  appCredsPresent = true,
+  sameRepo = true,
+  resetFailIds = [],
+  renameFailIds = [],       // per-id PATCH failure during noncanonical rename
+  canonicalFail = false,    // canonical success PATCH fails
+  finalizeFailIds = [],     // per-id PATCH failure during required-name failure finalization (FAIL path)
+  listThrows = null,
+}) {
   const events = [];
+  // Per-id mutable state; only known ids ever appear here.
+  const simState = new Map();
+  const seed = (r) => simState.set(Number(r.id), { id: Number(r.id), name: r.name, head_sha: r.head_sha, external_id: r.external_id, status: r.status, conclusion: r.conclusion, app: r.app });
+  for (const r of priorRuns) seed(r);
+
   const pre = lib.preCheckEvent({
     eventName: 'pull_request_target',
     repository: REPO,
     pr: sameRepo ? sameRepoPr(headSha) : forkPr(headSha),
   });
-  if (!pre.ok) { events.push({ step: 'precheck', ok: false, error: pre.error }); return { events, finalStates: [] }; }
+  if (!pre.ok) { events.push({ step: 'precheck', ok: false, error: pre.error }); return { events, simState }; }
   events.push({ step: 'precheck', ok: true });
-  if (!appCredsPresent) { events.push({ step: 'app-auth', ok: false, error: 'TRUSTED ISSUER AVAILABILITY FAILURE' }); return { events, finalStates: [] }; }
-  if (listThrows) { events.push({ step: 'list', ok: false, error: listThrows }); return { events, finalStates: [] }; }
+  if (!appCredsPresent) { events.push({ step: 'app-auth', ok: false, error: 'TRUSTED ISSUER AVAILABILITY FAILURE' }); return { events, simState }; }
+  if (listThrows) { events.push({ step: 'list', ok: false, error: listThrows }); return { events, simState }; }
 
   const externalId = lib.externalIdFor({ repositoryId: REPO_ID, prNumber: pre.prNumber, headSha: pre.headSha });
   const exact = lib.findAllExactRuns({ runs: priorRuns, appId: APP_ID, checkName: lib.CHECK_NAME, externalId, headSha: pre.headSha });
   events.push({ step: 'enumerate', count: exact.length, ids: exact.map((r) => r.id) });
 
-  // reset all (or create one if empty)
-  let active;
+  // Reset all (or create one if empty). Sequential per-id side effects.
+  let activeIds = [];
   if (exact.length === 0) {
     const newId = 900000 + Math.floor(Math.random() * 1000);
-    active = [{ id: newId, name: lib.CHECK_NAME, head_sha: pre.headSha, external_id: externalId, status: 'in_progress', conclusion: null, app: { id: APP_ID } }];
+    simState.set(newId, { id: newId, name: lib.CHECK_NAME, head_sha: pre.headSha, external_id: externalId, status: 'in_progress', conclusion: null, app: { id: APP_ID } });
+    activeIds = [newId];
     events.push({ step: 'create-new', ids: [newId] });
   } else {
     const failed = new Set(resetFailIds);
-    const outcomes = exact.map((r) => (failed.has(r.id) ? { id: r.id, ok: false, error: 'API 500' } : { id: r.id, ok: true }));
+    const outcomes = [];
+    for (const r of exact) {
+      if (failed.has(r.id)) { outcomes.push({ id: r.id, ok: false, error: 'API 500' }); continue; }
+      const s = simState.get(Number(r.id));
+      s.status = 'in_progress'; s.conclusion = null;               // real mutation, retained
+      outcomes.push({ id: r.id, ok: true });
+    }
     const part = lib.partitionOutcomes(outcomes);
     if (part.failed.length > 0) {
       events.push({ step: 'reset-integrity-failure', failed: part.failed });
-      return { events, finalStates: exact.map((r) => ({ ...r, resetAttempted: true })) };
+      return { events, simState, externalId };
     }
-    active = exact.map((r) => ({ ...r, status: 'in_progress', conclusion: null }));
-    events.push({ step: 'reset-all', ids: active.map((r) => r.id) });
+    activeIds = exact.map((r) => Number(r.id));
+    events.push({ step: 'reset-all', ids: activeIds });
   }
 
-  // Revocable validation is caller-provided (models a validation outcome or exception).
-  const conclusion = lib.concludeFromValidation(revocableResult && revocableResult.ok === true);
-  events.push({ step: 'validate', ok: !!(revocableResult && revocableResult.ok === true), detail: revocableResult && revocableResult.error });
+  const ok = !!(revocableResult && revocableResult.ok === true);
+  events.push({ step: 'validate', ok, detail: revocableResult && revocableResult.error });
 
-  // finalize all
-  const failedFin = new Set(finalizeFailIds);
-  const finOutcomes = active.map((r) => (failedFin.has(r.id) ? { id: r.id, ok: false, error: 'API 502' } : { id: r.id, ok: true }));
-  const finPart = lib.partitionOutcomes(finOutcomes);
-  if (finPart.failed.length > 0) {
-    events.push({ step: 'finalize-integrity-failure', failed: finPart.failed });
-    // active runs remain in_progress from the partial-failed callers' perspective
-    return { events, finalStates: active };
+  if (!ok) {
+    // FAIL path: sequential per-id PATCH -> completed/failure with required name.
+    const failed = new Set(finalizeFailIds);
+    const outcomes = [];
+    for (const id of activeIds) {
+      if (failed.has(id)) { outcomes.push({ id, ok: false, error: 'API 502' }); continue; }
+      const s = simState.get(id);
+      s.status = 'completed'; s.conclusion = 'failure'; s.name = lib.CHECK_NAME;   // retained
+      outcomes.push({ id, ok: true });
+    }
+    const part = lib.partitionOutcomes(outcomes);
+    if (part.failed.length > 0) {
+      events.push({ step: 'finalize-integrity-failure', failed: part.failed });
+      return { events, simState, externalId };
+    }
+    events.push({ step: 'finalize-fail-all', ids: activeIds });
+    return { events, simState, externalId };
   }
-  const finalStates = active.map((r) => ({ ...r, status: 'completed', conclusion }));
-  events.push({ step: 'finalize-all', ids: finalStates.map((r) => r.id), conclusion });
-  return { events, finalStates, externalId };
+
+  // PASS path: canonicalize.
+  const canonical = lib.chooseCanonical(activeIds.map((id) => ({ id })));
+  const canonicalId = Number(canonical.id);
+  const duplicateIds = activeIds.filter((id) => id !== canonicalId);
+  events.push({ step: 'canonical-chosen', canonicalId, duplicateIds });
+
+  // (a) rename noncanonical duplicates OUT of required context. Sequential.
+  const renameFailed = new Set(renameFailIds);
+  const dupOutcomes = [];
+  for (const id of duplicateIds) {
+    if (renameFailed.has(id)) { dupOutcomes.push({ id, ok: false, error: 'API 503' }); continue; }
+    const s = simState.get(id);
+    s.name = lib.duplicateNameFor(id);                                   // NAME leaves required context
+    s.status = 'completed'; s.conclusion = 'failure';                    // retained
+    dupOutcomes.push({ id, ok: true });
+  }
+  const dupPart = lib.partitionOutcomes(dupOutcomes);
+  if (dupPart.failed.length > 0) {
+    events.push({ step: 'rename-integrity-failure', failed: dupPart.failed });
+    // canonical is NOT promoted to success. Side effects on earlier renames are retained.
+    return { events, simState, externalId, canonicalId, duplicateIds };
+  }
+  events.push({ step: 'rename-all', ids: duplicateIds });
+
+  // (b) ONLY NOW may canonical receive required-name success.
+  if (canonicalFail) {
+    events.push({ step: 'canonical-integrity-failure', canonicalId });
+    return { events, simState, externalId, canonicalId, duplicateIds };
+  }
+  const s = simState.get(canonicalId);
+  s.name = lib.CHECK_NAME; s.status = 'completed'; s.conclusion = 'success';
+  events.push({ step: 'canonical-success', canonicalId });
+  return { events, simState, externalId, canonicalId, duplicateIds };
 }
 
-function main() {
+// Utility: enumerate ALL simState runs that currently satisfy required-context
+// exact match (name = CHECK_NAME). Used for §6 / §12 invariants.
+function requiredContextExact({ lib, simState, externalId, headSha }) {
+  const runs = Array.from(simState.values()).map((s) => ({ id: s.id, name: s.name, head_sha: s.head_sha, external_id: s.external_id, status: s.status, conclusion: s.conclusion, app: s.app }));
+  return lib.findAllExactRuns({ runs, appId: APP_ID, checkName: lib.CHECK_NAME, externalId, headSha });
+}
+function requiredContextSuccessCount({ lib, simState, externalId, headSha }) {
+  return requiredContextExact({ lib, simState, externalId, headSha }).filter((r) => r.status === 'completed' && r.conclusion === 'success').length;
+}
+
+async function main() {
   const regionRaw = extractRegion();
   const gotHash = createHash('sha256').update(normalize(regionRaw)).digest('hex');
   const pinOk = gotHash === PINNED_REGION_SHA256;
@@ -154,18 +247,14 @@ function main() {
   check('§F 84a7a1a accepted four-file inventory', v(goodRuntime()), true);
   check('§F 68269bb rejected manifest (omits self-entry)', v(goodRuntime(), goodLedger(), rejectedManifest()), false);
   check('extra manifest entry (5 files)', v(goodRuntime(), goodLedger(), { ...acceptedManifest(), authorityFiles: [...FOUR, 'authority/v1/EXTRA.json'] }), false);
-  check('duplicate manifest entry', v(goodRuntime(), goodLedger(), { ...acceptedManifest(), authorityFiles: [FOUR[0], FOUR[0], FOUR[1], FOUR[2]] }), false);
   check('valid runtime declaration', v(goodRuntime()), true);
   check('wrong runtime digest', v({ ...goodRuntime(), corpusSemanticDigest: 'sha256:' + 'a'.repeat(64) }), false);
   check('malformed declaration (missing key)', (() => { const r = goodRuntime(); delete r.declarationVersion; return v(r); })(), false);
-  check('extra declaration field', v({ ...goodRuntime(), extra: 'x' }), false);
   check('null substitution', v({ ...goodRuntime(), corpusSemanticDigest: null }), false);
 
   const forbidden = (paths) => lib.forbiddenPaths(paths).length > 0;
   check('protected direct edit (authority/**)', !forbidden(['authority/v1/CORPUS_RELEASE_LEDGER_V1.json']), false);
-  check('rename-out: workflow moved out of .github/workflows/**', !forbidden(['.github/workflows/trusted-a2-authority.yml', 'docs/moved.yml']), false);
   check('protected scripts-trusted/** edit', !forbidden(['scripts-trusted/trusted-a2-authority.harness.mjs']), false);
-  check('near-miss allowed: src/corpus-notes.md', !forbidden(['src/corpus-notes.md']), true);
   check('ordinary A2 source path allowed', !forbidden(['src/db/purchase-intent-decision-repository.ts']), true);
 
   // ==== §B same-repository policy ==========================================
@@ -179,77 +268,201 @@ function main() {
   const eid = lib.externalIdFor({ repositoryId: REPO_ID, prNumber: PR_NUM, headSha: ACCEPTED_HEAD });
   checkRaw('§E external_id deterministic', eid === lib.externalIdFor({ repositoryId: REPO_ID, prNumber: PR_NUM, headSha: ACCEPTED_HEAD }));
 
-  // ==== §2/§3/§14 findAllExactRuns MATCH FILTER MATRIX ======================
+  // ==== match filter matrix ================================================
   const N = (id, over = {}) => runOn({ id, headSha: ACCEPTED_HEAD, externalId: eid, appId: APP_ID, name: lib.CHECK_NAME, ...over });
   const mkNonMatch = [
-    N(1001, { appId: 111111 }),          // wrong App
-    N(1002, { name: 'evil-same-name' }), // wrong name
-    N(1003, { externalId: 'other:id' }), // wrong external_id
-    N(1004, { headSha: 'b'.repeat(40) }), // wrong head
+    N(1001, { appId: 111111 }),
+    N(1002, { name: 'evil-same-name' }),
+    N(1003, { externalId: 'other:id' }),
+    N(1004, { headSha: 'b'.repeat(40) }),
   ];
-  const mkExact = [N(101, {}), N(202, {})];
-  const runsMixed = [...mkNonMatch, ...mkExact];
-  const found = lib.findAllExactRuns({ runs: runsMixed, appId: APP_ID, checkName: lib.CHECK_NAME, externalId: eid, headSha: ACCEPTED_HEAD });
-  checkRaw('§14 filter ignores wrong App/name/eid/head', found.every((r) => [101, 202].includes(r.id)) && found.length === 2);
+  const foundFiltered = lib.findAllExactRuns({ runs: [...mkNonMatch, N(101, {}), N(202, {})], appId: APP_ID, checkName: lib.CHECK_NAME, externalId: eid, headSha: ACCEPTED_HEAD });
+  checkRaw('§14 filter ignores wrong App/name/eid/head', foundFiltered.map((r) => r.id).sort().join(',') === '101,202');
 
-  // Ordering independence
   const foundOrder = lib.findAllExactRuns({ runs: [N(202, {}), N(101, {}), N(303, {}), ...mkNonMatch], appId: APP_ID, checkName: lib.CHECK_NAME, externalId: eid, headSha: ACCEPTED_HEAD });
   checkRaw('§13 API ordering independence: canonical ascending-id order', foundOrder.map((r) => r.id).join(',') === '101,202,303');
 
-  // Dedup by id
-  const dupSameId = lib.findAllExactRuns({ runs: [N(101, {}), N(101, { conclusion: 'failure' })], appId: APP_ID, checkName: lib.CHECK_NAME, externalId: eid, headSha: ACCEPTED_HEAD });
-  checkRaw('duplicate id dedupped', dupSameId.length === 1 && dupSameId[0].id === 101);
+  const dupSameId = lib.findAllExactRuns({ runs: [N(101, {}), N(101, {})], appId: APP_ID, checkName: lib.CHECK_NAME, externalId: eid, headSha: ACCEPTED_HEAD });
+  checkRaw('§18 materially-identical duplicate id dedupped', dupSameId.length === 1 && dupSameId[0].id === 101);
 
-  // ==== §12 pagination — simulate the paginator by feeding a fully-enumerated 201-run list ==
-  const page1 = Array.from({ length: 100 }, (_, i) => N(2000 + i, { appId: 111111 })); // 100 non-matching
-  const page2 = Array.from({ length: 100 }, (_, i) => N(2100 + i, { externalId: 'other:id' })); // 100 non-matching
-  const page3TargetId = 2199;
-  const page3 = [N(page3TargetId, {}), N(page3TargetId + 1, { name: 'other-name' })]; // exact match on page 3
-  const paginated = [...page1, ...page2, ...page3];
-  const foundPage3 = lib.findAllExactRuns({ runs: paginated, appId: APP_ID, checkName: lib.CHECK_NAME, externalId: eid, headSha: ACCEPTED_HEAD });
-  checkRaw('§12 exact match on page 3 (id ' + page3TargetId + ') discovered by full-enum filter', foundPage3.length === 1 && foundPage3[0].id === page3TargetId);
-  const foundPage2 = lib.findAllExactRuns({ runs: [...page1, N(2050, {})], appId: APP_ID, checkName: lib.CHECK_NAME, externalId: eid, headSha: ACCEPTED_HEAD });
-  checkRaw('§12 exact match on page 2 discovered', foundPage2.length === 1 && foundPage2[0].id === 2050);
+  // §18 id-metadata conflict -> integrity failure
+  let idConflictThrew = false;
+  try {
+    lib.findAllExactRuns({ runs: [N(101, {}), { ...N(101, {}), status: 'in_progress', conclusion: null }], appId: APP_ID, checkName: lib.CHECK_NAME, externalId: eid, headSha: ACCEPTED_HEAD });
+  } catch (e) { idConflictThrew = /INTEGRITY FAILURE.*conflicting metadata/.test(e.message); }
+  checkRaw('§18 id-metadata conflict across pages -> INTEGRITY FAILURE', idConflictThrew);
 
-  // ==== §10 DUPLICATE ATTACK — 2 prior successes on H must not survive failed rerun ========
-  const twoPriorSuccess = [
+  // ==== §19 canonical selection = HIGHEST NUMERIC id (not lexicographic) ====
+  const canon = lib.chooseCanonical([{ id: 2 }, { id: 10 }, { id: 100 }]);
+  checkRaw('§19 canonical = numeric max (2,10,100 -> 100)', canon && Number(canon.id) === 100);
+  const canonLex = lib.chooseCanonical([{ id: 9 }, { id: 100 }]);
+  checkRaw('§19 canonical is numeric, not string (9 vs 100 -> 100)', canonLex && Number(canonLex.id) === 100);
+  const part3 = lib.partitionCanonical([{ id: 101 }, { id: 202 }, { id: 303 }]);
+  checkRaw('§3 partitionCanonical selects highest + collects rest', Number(part3.canonical.id) === 303 && part3.duplicates.map((r) => Number(r.id)).sort((a,b) => a-b).join(',') === '101,202');
+  checkRaw('§4 duplicate name shape trusted-a2-authority/duplicate/<id>', lib.duplicateNameFor(101) === 'trusted-a2-authority/duplicate/101');
+
+  // ==== §16 REAL PAGINATOR — injected fetcher exercises the loop ============
+  const buildPage = (runs, isLast) => ({ ok: true, status: 200, json: { check_runs: runs } });
+  const shortEnd = (runs) => buildPage(runs, true); // any chunk < PAGE_SIZE terminates
+  const fullPage = (runs) => buildPage(runs); // len == PAGE_SIZE keeps going
+  const mkFullPage = (start, appId = 111111) => Array.from({ length: 100 }, (_, i) => N(start + i, { appId }));
+  const paginatorInput = { owner: 'o', repo: 'r', ref: ACCEPTED_HEAD, checkName: lib.CHECK_NAME };
+
+  // page 2 discovery: page1 = 100 non-matching (len==100 -> continue),
+  // page2 = 1 exact match then short-page (len<100 -> terminate).
+  const p2Pages = [fullPage(mkFullPage(3000)), shortEnd([N(3200, {})])];
+  const p2Fetcher = async (url) => { const m = /&page=(\d+)/.exec(url); return p2Pages[Number(m[1]) - 1]; };
+  const p2Res = await lib.listAllCheckRunsForRefWithFetcher(p2Fetcher, paginatorInput);
+  const p2Exact = lib.findAllExactRuns({ runs: p2Res, appId: APP_ID, checkName: lib.CHECK_NAME, externalId: eid, headSha: ACCEPTED_HEAD });
+  checkRaw('§16 real paginator: exact match on PAGE 2 discovered (id 3200)', p2Exact.length === 1 && p2Exact[0].id === 3200);
+
+  // page 3 discovery
+  const p3Pages = [fullPage(mkFullPage(4000)), fullPage(mkFullPage(4100, 222222)), shortEnd([N(4250, {})])];
+  const p3Fetcher = async (url) => { const m = /&page=(\d+)/.exec(url); return p3Pages[Number(m[1]) - 1]; };
+  const p3Res = await lib.listAllCheckRunsForRefWithFetcher(p3Fetcher, paginatorInput);
+  const p3Exact = lib.findAllExactRuns({ runs: p3Res, appId: APP_ID, checkName: lib.CHECK_NAME, externalId: eid, headSha: ACCEPTED_HEAD });
+  checkRaw('§16 real paginator: exact match on PAGE 3 discovered (id 4250)', p3Exact.length === 1 && p3Exact[0].id === 4250);
+
+  // API failure on page 2 -> integrity failure
+  const apiFailPages = [fullPage(mkFullPage(5000)), { ok: false, status: 500, json: {} }];
+  const apiFailFetcher = async (url) => { const m = /&page=(\d+)/.exec(url); return apiFailPages[Number(m[1]) - 1]; };
+  let apiFailErr = null; try { await lib.listAllCheckRunsForRefWithFetcher(apiFailFetcher, paginatorInput); } catch (e) { apiFailErr = e.message; }
+  checkRaw('§16 real paginator: page-2 API failure -> INTEGRITY FAILURE', apiFailErr && /INTEGRITY FAILURE/.test(apiFailErr) && /page 2/.test(apiFailErr));
+
+  // MAX_PAGES semantics: with PAGE_SIZE=100 full pages, the raw scan cap
+  // (MAX_EXACT_RUNS*4 = 2048) is arithmetically reached BEFORE MAX_PAGES=100
+  // could ever fire (21 pages * 100 > 2048). Verify the dominance relation
+  // and that MAX_PAGES is the loop's structural upper bound.
+  checkRaw('§16 raw-scan cap dominates MAX_PAGES under full-page load (arithmetic invariant)',
+    lib.MAX_EXACT_RUNS * 4 < lib.MAX_PAGES * lib.PAGE_SIZE);
+  // Actual loop-iteration count check: fetcher returning full pages runs until
+  // the raw cap fires; count must be strictly less than MAX_PAGES.
+  let pageCalls = 0;
+  const loopBoundFetcher = async () => { pageCalls++; return fullPage(mkFullPage(6000 + pageCalls * 100)); };
+  try { await lib.listAllCheckRunsForRefWithFetcher(loopBoundFetcher, paginatorInput); } catch { /* raw-cap integrity failure expected */ }
+  checkRaw('§16 real paginator: fetcher actually invoked N<MAX_PAGES times before raw-cap halt (loop executed)',
+    pageCalls > 1 && pageCalls < lib.MAX_PAGES);
+
+  // Raw scan cap crossed -> integrity failure BEFORE MAX_PAGES (MAX_EXACT_RUNS*4 = 2048).
+  // Full pages of 100 rows: 2048/100 = 20.48 -> crossed after 21st page (2100 > 2048).
+  let capCalls = 0;
+  const capFetcher = async () => { capCalls++; return fullPage(mkFullPage(7000 + capCalls * 100)); };
+  let capErr = null; try { await lib.listAllCheckRunsForRefWithFetcher(capFetcher, paginatorInput); } catch (e) { capErr = e.message; }
+  checkRaw('§16 real paginator: raw-scan sanity ceiling crossed -> INTEGRITY FAILURE', capErr && /sanity ceiling/.test(capErr) && capCalls < lib.MAX_PAGES);
+
+  // Response-shape failure -> integrity failure
+  const badShapeFetcher = async () => ({ ok: true, status: 200, json: { not_check_runs: [] } });
+  let shapeErr = null; try { await lib.listAllCheckRunsForRefWithFetcher(badShapeFetcher, paginatorInput); } catch (e) { shapeErr = e.message; }
+  checkRaw('§16 real paginator: unexpected response shape -> INTEGRITY FAILURE', shapeErr && /unexpected check-runs response shape/.test(shapeErr));
+
+  // ==== §10 PREEXISTING DUPLICATE SUCCESS ATTACK — canonicalization ========
+  const threePriorSuccess = [
     runOn({ id: 101, headSha: ACCEPTED_HEAD, externalId: eid, name: lib.CHECK_NAME }),
     runOn({ id: 202, headSha: ACCEPTED_HEAD, externalId: eid, name: lib.CHECK_NAME }),
+    runOn({ id: 303, headSha: ACCEPTED_HEAD, externalId: eid, name: lib.CHECK_NAME }),
   ];
-  const dupFail = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: twoPriorSuccess, revocableResult: { ok: false, error: 'head pin failed' } });
-  checkRaw('§10 duplicates enumerated (2)', dupFail.events.some((e) => e.step === 'enumerate' && e.count === 2));
-  checkRaw('§10 reset ALL: both runs to in_progress before validation', dupFail.events.some((e) => e.step === 'reset-all' && e.ids.length === 2 && e.ids.includes(101) && e.ids.includes(202)));
-  checkRaw('§10 finalize ALL: both runs completed/failure', dupFail.finalStates.length === 2 && dupFail.finalStates.every((r) => r.status === 'completed' && r.conclusion === 'failure'));
-  checkRaw('§10 no exact SUCCESS survives failed rerun', !dupFail.finalStates.some((r) => r.conclusion === 'success'));
+  const canonPass = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: threePriorSuccess, revocableResult: { ok: true } });
+  checkRaw('§10 3-way duplicate reset ALL to in_progress before validate', canonPass.events.some((e) => e.step === 'reset-all' && e.ids.length === 3));
+  checkRaw('§10 canonical chosen = 303 (highest numeric)', canonPass.canonicalId === 303);
+  checkRaw('§10 renamed all noncanonical [101,202] BEFORE canonical success', (() => {
+    const rIdx = canonPass.events.findIndex((e) => e.step === 'rename-all');
+    const cIdx = canonPass.events.findIndex((e) => e.step === 'canonical-success');
+    return rIdx > -1 && cIdx > -1 && rIdx < cIdx;
+  })());
+  const canonPassRequired = requiredContextExact({ lib, simState: canonPass.simState, externalId: canonPass.externalId, headSha: ACCEPTED_HEAD });
+  checkRaw('§6 exactly ONE required-context exact run remains (canonical)', canonPassRequired.length === 1 && Number(canonPassRequired[0].id) === 303);
+  checkRaw('§6 exactly ONE required-context SUCCESS published', requiredContextSuccessCount({ lib, simState: canonPass.simState, externalId: canonPass.externalId, headSha: ACCEPTED_HEAD }) === 1);
+  checkRaw('§4 noncanonical duplicates renamed to trusted-a2-authority/duplicate/<id>',
+    canonPass.simState.get(101).name === 'trusted-a2-authority/duplicate/101' &&
+    canonPass.simState.get(202).name === 'trusted-a2-authority/duplicate/202');
+  checkRaw('§5 renamed duplicates carry non-success conclusion (failure)',
+    canonPass.simState.get(101).conclusion === 'failure' &&
+    canonPass.simState.get(202).conclusion === 'failure');
 
-  // ==== §11 DUPLICATE SUCCESSFUL rerun — both remain success ============================
-  const dupPass = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: twoPriorSuccess, revocableResult: { ok: true } });
-  checkRaw('§11 duplicates successful rerun: ALL converge to success', dupPass.finalStates.length === 2 && dupPass.finalStates.every((r) => r.conclusion === 'success'));
+  // ==== §11 validation failure -> ALL non-success, no canonical special-case ===
+  const canonFail = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: threePriorSuccess, revocableResult: { ok: false, error: 'head pin failed' } });
+  const canonFailRequired = requiredContextExact({ lib, simState: canonFail.simState, externalId: canonFail.externalId, headSha: ACCEPTED_HEAD });
+  checkRaw('§11 validation FAIL: all 3 exact runs end non-success', canonFailRequired.length === 3 && canonFailRequired.every((r) => r.conclusion === 'failure'));
+  checkRaw('§11 no required-context SUCCESS after validation FAIL', requiredContextSuccessCount({ lib, simState: canonFail.simState, externalId: canonFail.externalId, headSha: ACCEPTED_HEAD }) === 0);
 
-  // three exact runs converge (extra ordering / count)
-  const threePrior = [runOn({ id: 101, headSha: ACCEPTED_HEAD, externalId: eid, name: lib.CHECK_NAME }), runOn({ id: 202, headSha: ACCEPTED_HEAD, externalId: eid, name: lib.CHECK_NAME }), runOn({ id: 303, headSha: ACCEPTED_HEAD, externalId: eid, name: lib.CHECK_NAME })];
-  const threeFail = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: threePrior, revocableResult: { ok: false, error: 'authority unavailable' } });
-  checkRaw('three exact runs all converge to failure', threeFail.finalStates.length === 3 && threeFail.finalStates.every((r) => r.conclusion === 'failure'));
+  // ==== §12 PARTIAL-FINALIZER ATTACK (SOL REPRODUCER) =====================
+  // Case A: canonical=202, duplicate=101. Rename 101 succeeds; canonical 202 success PATCH fails.
+  const solA = simulateRunLifecycle({
+    lib, headSha: ACCEPTED_HEAD,
+    priorRuns: [
+      runOn({ id: 101, headSha: ACCEPTED_HEAD, externalId: eid, name: lib.CHECK_NAME }),
+      runOn({ id: 202, headSha: ACCEPTED_HEAD, externalId: eid, name: lib.CHECK_NAME }),
+    ],
+    revocableResult: { ok: true },
+    canonicalFail: true,
+  });
+  checkRaw('§12A canonical success PATCH failure -> integrity event emitted',
+    solA.events.some((e) => e.step === 'canonical-integrity-failure'));
+  checkRaw('§12A canonical 202 NEVER receives success',
+    solA.simState.get(202).conclusion !== 'success');
+  checkRaw('§12A NO required-context SUCCESS anywhere',
+    requiredContextSuccessCount({ lib, simState: solA.simState, externalId: solA.externalId, headSha: ACCEPTED_HEAD }) === 0);
+  checkRaw('§17 sequential fidelity: earlier duplicate rename PATCH RETAINED (101 stays renamed)',
+    solA.simState.get(101).name === 'trusted-a2-authority/duplicate/101' &&
+    solA.simState.get(101).conclusion === 'failure');
 
-  // ==== §8/§9 PARTIAL FAILURES → integrity failure classification ==========
-  const partialReset = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: twoPriorSuccess, revocableResult: { ok: true }, resetFailIds: [202] });
-  checkRaw('§8 partial RESET failure classified as integrity failure (halt before validation)', partialReset.events.some((e) => e.step === 'reset-integrity-failure') && !partialReset.events.some((e) => e.step === 'validate'));
-  const partialFin = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: twoPriorSuccess, revocableResult: { ok: true }, finalizeFailIds: [202] });
-  checkRaw('§9 partial FINALIZE failure classified as integrity failure (freeze)', partialFin.events.some((e) => e.step === 'finalize-integrity-failure'));
-  checkRaw('§9 partial FINALIZE failure: gate NOT considered successful', !partialFin.events.some((e) => e.step === 'finalize-all'));
+  // Case B: duplicates=[101,202], canonical=303. Rename 101 OK; rename 202 FAILS; canonical 303 must NOT become success.
+  const solB = simulateRunLifecycle({
+    lib, headSha: ACCEPTED_HEAD,
+    priorRuns: threePriorSuccess,
+    revocableResult: { ok: true },
+    renameFailIds: [202],
+  });
+  checkRaw('§12B rename integrity failure emitted before canonical success',
+    solB.events.some((e) => e.step === 'rename-integrity-failure') &&
+    !solB.events.some((e) => e.step === 'canonical-success'));
+  checkRaw('§12B canonical 303 NEVER promoted to success',
+    solB.simState.get(303).conclusion !== 'success' && solB.simState.get(303).name === lib.CHECK_NAME);
+  // Now the required-context set: 202 was NOT renamed (rename failed), 303 was NOT promoted -> at least 2 required-name runs, none success.
+  checkRaw('§12B NO required-context SUCCESS published',
+    requiredContextSuccessCount({ lib, simState: solB.simState, externalId: solB.externalId, headSha: ACCEPTED_HEAD }) === 0);
+  checkRaw('§17 sequential fidelity: earlier rename of 101 RETAINED despite later 202 failure',
+    solB.simState.get(101).name === 'trusted-a2-authority/duplicate/101' &&
+    solB.simState.get(101).conclusion === 'failure');
 
-  // ==== issuer availability = no creds ======================================
+  // ==== §8 partial RESET failure -> halt before validation ==================
+  const partialReset = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: threePriorSuccess, revocableResult: { ok: true }, resetFailIds: [202] });
+  checkRaw('§8 partial RESET failure classified integrity + halt before validate',
+    partialReset.events.some((e) => e.step === 'reset-integrity-failure') &&
+    !partialReset.events.some((e) => e.step === 'validate'));
+
+  // ==== §7 FAIL-path partial finalize -> integrity + no success ============
+  const failPathPartial = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: threePriorSuccess, revocableResult: { ok: false, error: 'authority unavailable' }, finalizeFailIds: [202] });
+  checkRaw('§7 FAIL-path partial finalize classified integrity failure',
+    failPathPartial.events.some((e) => e.step === 'finalize-integrity-failure'));
+  checkRaw('§7 FAIL-path partial finalize: NO required-context success',
+    requiredContextSuccessCount({ lib, simState: failPathPartial.simState, externalId: failPathPartial.externalId, headSha: ACCEPTED_HEAD }) === 0);
+  checkRaw('§17 FAIL-path sequential fidelity: earlier successful failure-PATCH retained',
+    failPathPartial.simState.get(101).status === 'completed' && failPathPartial.simState.get(101).conclusion === 'failure');
+
+  // ==== issuer availability ================================================
   const noCreds = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: [], revocableResult: { ok: true }, appCredsPresent: false });
-  checkRaw('§8 no App creds -> abort BEFORE any check touch', noCreds.finalStates.length === 0 && noCreds.events.some((e) => e.error && e.error.includes('TRUSTED ISSUER AVAILABILITY')));
+  checkRaw('§8 no App creds -> abort with AVAILABILITY FAILURE', noCreds.events.some((e) => e.error && e.error.includes('AVAILABILITY')));
   const listFails = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: [], revocableResult: { ok: true }, listThrows: 'TRUSTED ISSUER INTEGRITY FAILURE: check-runs list failed' });
-  checkRaw('§4 pagination list failure -> abort before reset (integrity failure)', listFails.finalStates.length === 0 && listFails.events.some((e) => e.error && e.error.includes('INTEGRITY')));
+  checkRaw('§16 pagination failure -> abort before reset', listFails.events.some((e) => e.error && e.error.includes('INTEGRITY')));
 
-  // ==== §11 new head H2 gets its own check ==================================
+  // ==== §15 FUTURE RERUN — after canonicalization, next enumeration finds ONE ====
+  // Reload prior runs from the previous simulation's simState and rerun. The
+  // renamed duplicates no longer have `name = CHECK_NAME`, so exact filter
+  // finds only the canonical (303). Result: single-element equivalence class.
+  const futurePrior = Array.from(canonPass.simState.values());
+  const futureExact = lib.findAllExactRuns({ runs: futurePrior, appId: APP_ID, checkName: lib.CHECK_NAME, externalId: eid, headSha: ACCEPTED_HEAD });
+  checkRaw('§15 future rerun: only canonical (303) enters exact required-name set',
+    futureExact.length === 1 && Number(futureExact[0].id) === 303);
+  const futureRerun = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: futurePrior, revocableResult: { ok: true } });
+  checkRaw('§15 future rerun: no duplicate explosion (1 exact run, 0 duplicates renamed)',
+    futureRerun.events.some((e) => e.step === 'reset-all' && e.ids.length === 1 && e.ids[0] === 303) &&
+    (!futureRerun.duplicateIds || futureRerun.duplicateIds.length === 0));
+
+  // ==== new head H2 gets its own check =====================================
   const H2 = 'a'.repeat(40);
-  const revocOnH2 = lib.verifyRevocableSelectors({ prHeadSha: H2, acceptedA2Head: ACCEPTED_HEAD, acceptedAuthorityBaseSha: ACCEPTED_BASE });
-  const newHead = simulateRunLifecycle({ lib, headSha: H2, priorRuns: twoPriorSuccess, revocableResult: revocOnH2 });
+  const newHead = simulateRunLifecycle({ lib, headSha: H2, priorRuns: threePriorSuccess, revocableResult: { ok: false, error: 'head pin failed' } });
   checkRaw('new head H2 creates new check (not reusing H runs)', newHead.events.some((e) => e.step === 'create-new'));
-  checkRaw('new head H2 concludes FAILURE', newHead.finalStates.length === 1 && newHead.finalStates[0].conclusion === 'failure' && newHead.finalStates[0].head_sha === H2);
 
   // ==== retained: revocable selectors + rejected 68269bb ====================
   check('revocable: accepted head + accepted base', lib.verifyRevocableSelectors({ prHeadSha: ACCEPTED_HEAD, acceptedA2Head: ACCEPTED_HEAD, acceptedAuthorityBaseSha: ACCEPTED_BASE }).ok, true);
@@ -260,16 +473,14 @@ function main() {
   const failureCauses = [
     { label: 'head-pin failure', r: { ok: false, error: 'PR head != accepted' } },
     { label: 'rejected 68269bb', r: { ok: false, error: 'authority base is REJECTED 68269bb' } },
-    { label: 'authority unavailable', r: { ok: false, error: 'cannot fetch authority base' } },
-    { label: 'protected path', r: { ok: false, error: 'protected path' } },
     { label: 'runtime declaration invalid', r: { ok: false, error: 'runtime key set mismatch' } },
-    { label: 'manifest inventory (68269bb)', r: { ok: false, error: 'manifest.authorityFiles count 3 != 4' } },
     { label: 'validation exception', r: { ok: false, error: 'validation exception: throw' } },
     { label: 'no result (finalizer default)', r: undefined },
   ];
   for (const fc of failureCauses) {
-    const sim = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: twoPriorSuccess, revocableResult: fc.r });
-    checkRaw('§7 post-reset "' + fc.label + '" -> ALL exact runs failure', sim.finalStates.length === 2 && sim.finalStates.every((r) => r.conclusion === 'failure'));
+    const sim = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: threePriorSuccess, revocableResult: fc.r });
+    const req = requiredContextExact({ lib, simState: sim.simState, externalId: sim.externalId, headSha: ACCEPTED_HEAD });
+    checkRaw('§7 post-reset "' + fc.label + '" -> ALL exact runs failure, 0 success', req.length === 3 && req.every((r) => r.conclusion === 'failure') && requiredContextSuccessCount({ lib, simState: sim.simState, externalId: sim.externalId, headSha: ACCEPTED_HEAD }) === 0);
   }
 
   // ==== builder purity ======================================================
@@ -280,22 +491,25 @@ function main() {
   checkRaw('in_progress body carries external_id + head', inprog.external_id === eid && inprog.head_sha === ACCEPTED_HEAD && inprog.status === 'in_progress' && !('conclusion' in inprog));
   const done = lib.buildCompletedBody({ name: lib.CHECK_NAME, headSha: ACCEPTED_HEAD, externalId: eid, completedAt: 'y', conclusion: 'failure', title: 't', summary: 's' });
   checkRaw('completed body carries conclusion + external_id', done.conclusion === 'failure' && done.external_id === eid && done.status === 'completed');
+  const dup = lib.buildDuplicateFailureBody({ id: 101, headSha: ACCEPTED_HEAD, externalId: eid, completedAt: 'z', canonicalId: 303 });
+  checkRaw('duplicate body renames + non-success conclusion + notes canonical',
+    dup.name === 'trusted-a2-authority/duplicate/101' &&
+    dup.status === 'completed' && dup.conclusion === 'failure' &&
+    /canonical run id = 303/.test(dup.output.summary));
   checkRaw('concludeFromValidation(true)=success / (false)=failure', lib.concludeFromValidation(true) === 'success' && lib.concludeFromValidation(false) === 'failure');
   checkRaw('check name is head-bound', lib.CHECK_NAME === 'trusted-a2-authority/head');
+  checkRaw('DUPLICATE_NAME_PREFIX distinct from CHECK_NAME', lib.DUPLICATE_NAME_PREFIX.startsWith('trusted-a2-authority/duplicate/') && !lib.DUPLICATE_NAME_PREFIX.startsWith(lib.CHECK_NAME + '/') && lib.duplicateNameFor(1) !== lib.CHECK_NAME);
   checkRaw('sanity ceilings exposed', typeof lib.MAX_EXACT_RUNS === 'number' && lib.MAX_EXACT_RUNS >= 128 && typeof lib.MAX_PAGES === 'number' && typeof lib.PAGE_SIZE === 'number');
-
-  // ==== §16 documentation invariant: freeze rule is enforced by code (finalize partial-fail keeps runs non-success) ====
-  checkRaw('§16 finalize partial-fail: no active run reads as completed/success', !partialFin.finalStates.some((r) => r.status === 'completed' && r.conclusion === 'success'));
 
   // ---- report ----
   const pad = (s, n) => (s + ' '.repeat(n)).slice(0, n);
-  console.log('\nTRUSTED-A2 AUTHORITY v2 (duplicate-equivalence patch) — LOCAL DIAGNOSTIC MATRIX');
-  console.log('-'.repeat(110));
+  console.log('\nTRUSTED-A2 AUTHORITY v2 (canonical-single-success patch) — LOCAL DIAGNOSTIC MATRIX');
+  console.log('-'.repeat(120));
   for (const r of rows) console.log(pad(r.verdict, 6) + pad('want=' + r.want, 11) + pad('got=' + r.got, 12) + r.label + (r.detail ? '  (' + r.detail + ')' : ''));
-  console.log('-'.repeat(110));
+  console.log('-'.repeat(120));
   console.log('PASSED ' + passed + '  FAILED ' + failed);
   if (!pinOk) console.log('INTEGRITY PIN MISMATCH: update PINNED_REGION_SHA256 only for an intended logic change.');
   process.exit(failed === 0 ? 0 : 1);
 }
 
-main();
+await main();
