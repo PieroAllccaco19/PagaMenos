@@ -517,6 +517,14 @@ jobs:
         run: |
           set -euo pipefail
           WORK="$(mktemp -d)"
+          # Export so the same-step Node child (below) sees WORK via
+          # process.env; the $GITHUB_ENV write above only propagates to
+          # LATER steps (STEP 4 finalizer). Without this export the Node
+          # process runs with WORK=undefined, crashes writing to
+          # 'undefined/validation.json', and STEP 4 legitimately falls
+          # back to the fail-closed default 'validation did not produce
+          # a result'. No hardcoded path; STEP 4 still receives WORK.
+          export WORK
           echo "WORK=$WORK" >> "$GITHUB_ENV"
           set +e
           node - <<'NODE'
@@ -525,42 +533,49 @@ jobs:
           const lib = require(process.env.LIB_PATH);
           const work = process.env.WORK;
           function fail(err) { fs.writeFileSync(work + '/validation.json', JSON.stringify({ ok: false, error: err })); console.error('TRUSTED-A2-AUTHORITY: FAIL — ' + err); process.exit(0); }
-          try {
-            const headSha = process.env.PR_HEAD_LC;
-            const prBase = String(process.env.PR_BASE_SHA || '').toLowerCase();
-            const sel = lib.verifyRevocableSelectors({ prHeadSha: headSha, acceptedA2Head: process.env.ACCEPTED_A2_HEAD, acceptedAuthorityBaseSha: process.env.BASE_SHA });
-            if (!sel.ok) return fail(sel.error);
-            const baseSha = String(process.env.BASE_SHA).toLowerCase();
-            try { execFileSync('git', ['fetch', '--no-tags', 'origin', 'refs/pull/' + Number(process.env.PR_NUMBER) + '/head'], { stdio: 'inherit' }); } catch (e) { return fail('cannot fetch PR head ref'); }
-            const fetched = execFileSync('git', ['rev-parse', 'FETCH_HEAD'], { encoding: 'utf8' }).trim().toLowerCase();
-            if (fetched !== headSha) return fail('fetched PR head ' + fetched + ' != event head ' + headSha);
-            try { execFileSync('git', ['fetch', '--no-tags', 'origin', baseSha], { stdio: 'inherit' }); } catch (e) { return fail('cannot fetch authority base commit ' + baseSha + ' (unavailable)'); }
+          // Wrap validation body in main() so all early `return fail(...)` calls are
+          // legal inside function scope. Running via `node -` (script mode) forbids
+          // top-level return; an IIFE/function wrapper is the minimal correct fix.
+          // fail() always calls process.exit(0), so no async wrapper is required.
+          function main() {
+            try {
+              const headSha = process.env.PR_HEAD_LC;
+              const prBase = String(process.env.PR_BASE_SHA || '').toLowerCase();
+              const sel = lib.verifyRevocableSelectors({ prHeadSha: headSha, acceptedA2Head: process.env.ACCEPTED_A2_HEAD, acceptedAuthorityBaseSha: process.env.BASE_SHA });
+              if (!sel.ok) return fail(sel.error);
+              const baseSha = String(process.env.BASE_SHA).toLowerCase();
+              try { execFileSync('git', ['fetch', '--no-tags', 'origin', 'refs/pull/' + Number(process.env.PR_NUMBER) + '/head'], { stdio: 'inherit' }); } catch (e) { return fail('cannot fetch PR head ref'); }
+              const fetched = execFileSync('git', ['rev-parse', 'FETCH_HEAD'], { encoding: 'utf8' }).trim().toLowerCase();
+              if (fetched !== headSha) return fail('fetched PR head ' + fetched + ' != event head ' + headSha);
+              try { execFileSync('git', ['fetch', '--no-tags', 'origin', baseSha], { stdio: 'inherit' }); } catch (e) { return fail('cannot fetch authority base commit ' + baseSha + ' (unavailable)'); }
 
-            let mb;
-            try { mb = execFileSync('git', ['merge-base', prBase, headSha], { encoding: 'utf8' }).trim(); } catch (e) { return fail('cannot compute merge-base'); }
-            let changedBuf;
-            try { changedBuf = execFileSync('git', ['diff', '--no-renames', '--name-only', '-z', mb, headSha]); } catch (e) { return fail('cannot diff base..head'); }
-            const changed = changedBuf.toString('utf8').split('\0').filter(Boolean);
-            const forbid = lib.forbiddenPaths(changed);
-            if (forbid.length) return fail('A2 PR modifies protected trust paths (rename-safe): ' + forbid.join(', '));
+              let mb;
+              try { mb = execFileSync('git', ['merge-base', prBase, headSha], { encoding: 'utf8' }).trim(); } catch (e) { return fail('cannot compute merge-base'); }
+              let changedBuf;
+              try { changedBuf = execFileSync('git', ['diff', '--no-renames', '--name-only', '-z', mb, headSha]); } catch (e) { return fail('cannot diff base..head'); }
+              const changed = changedBuf.toString('utf8').split('\0').filter(Boolean);
+              const forbid = lib.forbiddenPaths(changed);
+              if (forbid.length) return fail('A2 PR modifies protected trust paths (rename-safe): ' + forbid.join(', '));
 
-            const readAt = (sha, path) => { try { return execFileSync('git', ['show', sha + ':' + path], { encoding: 'utf8' }); } catch (e) { return null; } };
-            const runtimeText = readAt(headSha, 'src/study/runtime-corpus-authority.v1.json'); if (!runtimeText) return fail('runtime declaration missing at PR head');
-            const ledgerText = readAt(baseSha, 'authority/v1/CORPUS_RELEASE_LEDGER_V1.json'); if (!ledgerText) return fail('external ledger missing at authority base');
-            const manifestText = readAt(baseSha, 'authority/v1/AUTHORITY_BASELINE_MANIFEST_V1.json'); if (!manifestText) return fail('baseline manifest missing at authority base');
-            let runtime, ledger, manifest;
-            try { runtime = JSON.parse(runtimeText); } catch (e) { return fail('runtime declaration is not valid JSON'); }
-            try { ledger = JSON.parse(ledgerText); } catch (e) { return fail('external ledger is not valid JSON'); }
-            try { manifest = JSON.parse(manifestText); } catch (e) { return fail('baseline manifest is not valid JSON'); }
+              const readAt = (sha, path) => { try { return execFileSync('git', ['show', sha + ':' + path], { encoding: 'utf8' }); } catch (e) { return null; } };
+              const runtimeText = readAt(headSha, 'src/study/runtime-corpus-authority.v1.json'); if (!runtimeText) return fail('runtime declaration missing at PR head');
+              const ledgerText = readAt(baseSha, 'authority/v1/CORPUS_RELEASE_LEDGER_V1.json'); if (!ledgerText) return fail('external ledger missing at authority base');
+              const manifestText = readAt(baseSha, 'authority/v1/AUTHORITY_BASELINE_MANIFEST_V1.json'); if (!manifestText) return fail('baseline manifest missing at authority base');
+              let runtime, ledger, manifest;
+              try { runtime = JSON.parse(runtimeText); } catch (e) { return fail('runtime declaration is not valid JSON'); }
+              try { ledger = JSON.parse(ledgerText); } catch (e) { return fail('external ledger is not valid JSON'); }
+              try { manifest = JSON.parse(manifestText); } catch (e) { return fail('baseline manifest is not valid JSON'); }
 
-            const r = lib.verifyTrustedA2({ runtime, ledger, manifest });
-            fs.writeFileSync(work + '/validation.json', JSON.stringify(r.ok ? { ok: true, corpusId: r.corpusId, digest: r.digest } : { ok: false, error: r.error }));
-            if (!r.ok) console.error('TRUSTED-A2-AUTHORITY: FAIL — ' + r.error);
-            else console.log('TRUSTED-A2-AUTHORITY: PASS — corpusId=' + r.corpusId + ' digest=' + r.digest);
-            process.exit(0);
-          } catch (e) {
-            return fail('validation exception: ' + (e && e.message ? e.message : String(e)));
+              const r = lib.verifyTrustedA2({ runtime, ledger, manifest });
+              fs.writeFileSync(work + '/validation.json', JSON.stringify(r.ok ? { ok: true, corpusId: r.corpusId, digest: r.digest } : { ok: false, error: r.error }));
+              if (!r.ok) console.error('TRUSTED-A2-AUTHORITY: FAIL — ' + r.error);
+              else console.log('TRUSTED-A2-AUTHORITY: PASS — corpusId=' + r.corpusId + ' digest=' + r.digest);
+              process.exit(0);
+            } catch (e) {
+              return fail('validation exception: ' + (e && e.message ? e.message : String(e)));
+            }
           }
+          main();
           NODE
           set -e
 
