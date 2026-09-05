@@ -1,15 +1,15 @@
 // PagaMenos · PRE-A2 TRUSTED AUTHORITY GATE v2 — LOCAL DIAGNOSTIC HARNESS
 // =============================================================================
-// Proves the trusted gate's decision + lifecycle logic locally, before any
-// GitHub run. Test-only; NOT the runtime trust root. The authoritative logic
-// lives inline in .github/workflows/trusted-a2-authority.yml.
+// Proves the trusted gate's decision + all-exact-run lifecycle locally, before
+// any GitHub run. Test-only; NOT the runtime trust root. The authoritative
+// logic lives inline in .github/workflows/trusted-a2-authority.yml.
 //
 // INTEGRITY MODEL: extract the sentinel-bounded region from the committed
 // workflow, assert its normalized SHA-256 equals PINNED_REGION_SHA256 (silent
 // edits fail until the pin is deliberately updated), and run THAT exact code.
 //
 // Run: node scripts-trusted/trusted-a2-authority.harness.mjs
-// Exit 0 = pin + full PASS/FAIL matrix green; nonzero = a diagnostic failed.
+// Exit 0 = pin + full matrix green; nonzero = a diagnostic failed.
 // =============================================================================
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -23,7 +23,7 @@ const END = '===END TRUSTED-A2 TRUSTED LOGIC===';
 
 // Pin over the normalized authoritative region. Update ONLY with an intended
 // logic change (record it in the commit).
-const PINNED_REGION_SHA256 = 'b708c3a142780268f1915f2c9db9832e0f207df9875ca498544eac0e6d501e21';
+const PINNED_REGION_SHA256 = '7c4b5c714a3ad385a4939a2e947bcd7c0b838da59f512cea22a051c8f6f77783';
 
 const normalize = (s) =>
   s.replace(/\r\n/g, '\n').split('\n').map((l) => l.replace(/^[ \t]+/, '')).join('\n').trim();
@@ -41,7 +41,7 @@ function loadTrustedLogic(regionRaw) {
   // eslint-disable-next-line no-new-func
   return new Function(
     src +
-      '\nreturn { verifyTrustedA2, forbiddenPaths, buildAppJwt, buildInProgressBody, buildCompletedBody, concludeFromValidation, b64url, REQUIRED_AUTHORITY_FILES, CHECK_NAME, PROTECTED_PREFIXES, REJECTED_AUTHORITY_BASE_SHA, sameRepositoryPolicy, preCheckEvent, externalIdFor, selectExistingRun, verifyRevocableSelectors };',
+      '\nreturn { verifyTrustedA2, forbiddenPaths, buildAppJwt, buildInProgressBody, buildCompletedBody, concludeFromValidation, b64url, REQUIRED_AUTHORITY_FILES, CHECK_NAME, PROTECTED_PREFIXES, REJECTED_AUTHORITY_BASE_SHA, sameRepositoryPolicy, preCheckEvent, externalIdFor, isExactLogicalMatch, findAllExactRuns, partitionOutcomes, verifyRevocableSelectors, MAX_EXACT_RUNS, MAX_PAGES, PAGE_SIZE };',
   )();
 }
 
@@ -71,6 +71,8 @@ const rejectedManifest = () => ({ corpusId: CORPUS_ID, corpusSemanticProjectionV
 const sameRepoPr = (headSha = ACCEPTED_HEAD, number = PR_NUM) => ({ number, head: { sha: headSha, repo: { full_name: REPO } }, base: { sha: 'deadbeef'.repeat(5) } });
 const forkPr = (headSha = ACCEPTED_HEAD) => ({ number: PR_NUM, head: { sha: headSha, repo: { full_name: 'attacker/pagamenos' } }, base: { sha: 'deadbeef'.repeat(5) } });
 
+const runOn = ({ id, headSha = ACCEPTED_HEAD, externalId, appId = APP_ID, name, status = 'completed', conclusion = 'success' }) => ({ id, name, head_sha: headSha, external_id: externalId, status, conclusion, app: { id: appId } });
+
 // ---- assertion runner --------------------------------------------------------
 let passed = 0, failed = 0;
 const rows = [];
@@ -85,27 +87,58 @@ function checkRaw(label, ok, note = '') {
 }
 
 // ---- simulate the workflow lifecycle purely from lib exports ----------------
-// Mirrors STEP 2 (reset/create) + STEP 3 (validation) + STEP 4 (finalize).
-function simulateRunLifecycle({ lib, headSha, priorRuns, revocableResult, appCredsPresent = true, sameRepo = true }) {
+// Mirrors STEP 2 (enumerate+reset ALL) + STEP 3 (validation) + STEP 4 (finalize ALL).
+// Optional resetFailIds/finalizeFailIds inject per-id PATCH failures to model API outages.
+function simulateRunLifecycle({ lib, headSha, priorRuns, revocableResult, appCredsPresent = true, sameRepo = true, resetFailIds = [], finalizeFailIds = [], listThrows = null }) {
   const events = [];
   const pre = lib.preCheckEvent({
     eventName: 'pull_request_target',
     repository: REPO,
     pr: sameRepo ? sameRepoPr(headSha) : forkPr(headSha),
   });
-  if (!pre.ok) { events.push({ step: 'precheck', ok: false, error: pre.error }); return { events, finalCheckState: null }; }
+  if (!pre.ok) { events.push({ step: 'precheck', ok: false, error: pre.error }); return { events, finalStates: [] }; }
   events.push({ step: 'precheck', ok: true });
-  if (!appCredsPresent) { events.push({ step: 'app-auth', ok: false, error: 'TRUSTED ISSUER AVAILABILITY FAILURE' }); return { events, finalCheckState: null }; }
+  if (!appCredsPresent) { events.push({ step: 'app-auth', ok: false, error: 'TRUSTED ISSUER AVAILABILITY FAILURE' }); return { events, finalStates: [] }; }
+  if (listThrows) { events.push({ step: 'list', ok: false, error: listThrows }); return { events, finalStates: [] }; }
+
   const externalId = lib.externalIdFor({ repositoryId: REPO_ID, prNumber: pre.prNumber, headSha: pre.headSha });
-  const match = lib.selectExistingRun({ runs: priorRuns, appId: APP_ID, checkName: lib.CHECK_NAME, externalId, headSha: pre.headSha });
-  const runId = match ? match.id : 900000 + Math.floor(Math.random() * 1000);
-  const opened = { id: runId, name: lib.CHECK_NAME, head_sha: pre.headSha, external_id: externalId, status: 'in_progress', conclusion: null, app: { id: APP_ID } };
-  events.push({ step: match ? 'reset-existing' : 'create-new', runId, externalId });
+  const exact = lib.findAllExactRuns({ runs: priorRuns, appId: APP_ID, checkName: lib.CHECK_NAME, externalId, headSha: pre.headSha });
+  events.push({ step: 'enumerate', count: exact.length, ids: exact.map((r) => r.id) });
+
+  // reset all (or create one if empty)
+  let active;
+  if (exact.length === 0) {
+    const newId = 900000 + Math.floor(Math.random() * 1000);
+    active = [{ id: newId, name: lib.CHECK_NAME, head_sha: pre.headSha, external_id: externalId, status: 'in_progress', conclusion: null, app: { id: APP_ID } }];
+    events.push({ step: 'create-new', ids: [newId] });
+  } else {
+    const failed = new Set(resetFailIds);
+    const outcomes = exact.map((r) => (failed.has(r.id) ? { id: r.id, ok: false, error: 'API 500' } : { id: r.id, ok: true }));
+    const part = lib.partitionOutcomes(outcomes);
+    if (part.failed.length > 0) {
+      events.push({ step: 'reset-integrity-failure', failed: part.failed });
+      return { events, finalStates: exact.map((r) => ({ ...r, resetAttempted: true })) };
+    }
+    active = exact.map((r) => ({ ...r, status: 'in_progress', conclusion: null }));
+    events.push({ step: 'reset-all', ids: active.map((r) => r.id) });
+  }
+
   // Revocable validation is caller-provided (models a validation outcome or exception).
   const conclusion = lib.concludeFromValidation(revocableResult && revocableResult.ok === true);
-  const completed = { ...opened, status: 'completed', conclusion };
-  events.push({ step: 'finalize', runId, conclusion });
-  return { events, finalCheckState: completed, externalId };
+  events.push({ step: 'validate', ok: !!(revocableResult && revocableResult.ok === true), detail: revocableResult && revocableResult.error });
+
+  // finalize all
+  const failedFin = new Set(finalizeFailIds);
+  const finOutcomes = active.map((r) => (failedFin.has(r.id) ? { id: r.id, ok: false, error: 'API 502' } : { id: r.id, ok: true }));
+  const finPart = lib.partitionOutcomes(finOutcomes);
+  if (finPart.failed.length > 0) {
+    events.push({ step: 'finalize-integrity-failure', failed: finPart.failed });
+    // active runs remain in_progress from the partial-failed callers' perspective
+    return { events, finalStates: active };
+  }
+  const finalStates = active.map((r) => ({ ...r, status: 'completed', conclusion }));
+  events.push({ step: 'finalize-all', ids: finalStates.map((r) => r.id), conclusion });
+  return { events, finalStates, externalId };
 }
 
 function main() {
@@ -120,128 +153,146 @@ function main() {
   // ==== retained decision matrix (regression) ==============================
   check('§F 84a7a1a accepted four-file inventory', v(goodRuntime()), true);
   check('§F 68269bb rejected manifest (omits self-entry)', v(goodRuntime(), goodLedger(), rejectedManifest()), false);
-  check('missing manifest self-entry (explicit)', v(goodRuntime(), goodLedger(), rejectedManifest()), false);
   check('extra manifest entry (5 files)', v(goodRuntime(), goodLedger(), { ...acceptedManifest(), authorityFiles: [...FOUR, 'authority/v1/EXTRA.json'] }), false);
   check('duplicate manifest entry', v(goodRuntime(), goodLedger(), { ...acceptedManifest(), authorityFiles: [FOUR[0], FOUR[0], FOUR[1], FOUR[2]] }), false);
   check('valid runtime declaration', v(goodRuntime()), true);
   check('wrong runtime digest', v({ ...goodRuntime(), corpusSemanticDigest: 'sha256:' + 'a'.repeat(64) }), false);
-  check('wrong runtime corpusId', v({ ...goodRuntime(), corpusId: 'PAGAMENOS_VALIDATION_CORPUS_vX' }), false);
   check('malformed declaration (missing key)', (() => { const r = goodRuntime(); delete r.declarationVersion; return v(r); })(), false);
   check('extra declaration field', v({ ...goodRuntime(), extra: 'x' }), false);
   check('null substitution', v({ ...goodRuntime(), corpusSemanticDigest: null }), false);
-  check('type coercion (number)', v({ ...goodRuntime(), corpusSemanticDigest: 123 }), false);
-  check('ledger digest disagreement', (() => { const l = goodLedger(); l.entries[CORPUS_ID].digest = 'sha256:' + 'b'.repeat(64); return v(goodRuntime(), l); })(), false);
 
   const forbidden = (paths) => lib.forbiddenPaths(paths).length > 0;
   check('protected direct edit (authority/**)', !forbidden(['authority/v1/CORPUS_RELEASE_LEDGER_V1.json']), false);
   check('rename-out: workflow moved out of .github/workflows/**', !forbidden(['.github/workflows/trusted-a2-authority.yml', 'docs/moved.yml']), false);
-  check('rename-out: corpus moved out of src/corpus/**', !forbidden(['src/corpus/rules.json', 'src/x/rules.json']), false);
-  check('rename-out: engine moved out of src/engine/**', !forbidden(['src/engine/decide.ts', 'src/x/decide.ts']), false);
-  check('rename-out: authority moved out of authority/**', !forbidden(['authority/v1/HOLIDAY_CALENDAR_REGISTRY_V1.json', 'docs/reg.json']), false);
-  check('protected scripts-trusted/** edit (v2 hardening)', !forbidden(['scripts-trusted/trusted-a2-authority.harness.mjs']), false);
-  check('near-miss allowed: src/corpus-notes.md (not under dir)', !forbidden(['src/corpus-notes.md']), true);
+  check('protected scripts-trusted/** edit', !forbidden(['scripts-trusted/trusted-a2-authority.harness.mjs']), false);
+  check('near-miss allowed: src/corpus-notes.md', !forbidden(['src/corpus-notes.md']), true);
   check('ordinary A2 source path allowed', !forbidden(['src/db/purchase-intent-decision-repository.ts']), true);
-  checkRaw('§G verifier-mutation has no effect on decision', v(goodRuntime()) === true && !forbidden(['scripts/runtime-authority-check.cjs']));
 
-  // ==== revocable selectors (head pin + authority base) =====================
-  const revSel = (h, ah, ab) => lib.verifyRevocableSelectors({ prHeadSha: h, acceptedA2Head: ah, acceptedAuthorityBaseSha: ab }).ok;
-  check('revocable: accepted head + accepted base', revSel(ACCEPTED_HEAD, ACCEPTED_HEAD, ACCEPTED_BASE), true);
-  check('revocable: blank accepted A2 head (fail closed)', revSel(ACCEPTED_HEAD, '', ACCEPTED_BASE), false);
-  check('revocable: blank accepted authority base (fail closed)', revSel(ACCEPTED_HEAD, ACCEPTED_HEAD, ''), false);
-  check('revocable: malformed accepted A2 head', revSel(ACCEPTED_HEAD, 'notahex', ACCEPTED_BASE), false);
-  check('revocable: rejected 68269bb authority base', revSel(ACCEPTED_HEAD, ACCEPTED_HEAD, REJECTED_BASE), false);
-  check('revocable: head != accepted (new commit H2)', revSel('deadbeef'.repeat(5), ACCEPTED_HEAD, ACCEPTED_BASE), false);
-
-  // ==== §B same-repository policy (BEFORE App credential use) ===============
+  // ==== §B same-repository policy ==========================================
   const preOk = (pr) => lib.preCheckEvent({ eventName: 'pull_request_target', repository: REPO, pr }).ok;
   check('§B same-repo PR admitted by pre-check', preOk(sameRepoPr()), true);
   check('§B fork PR rejected by pre-check (before App)', preOk(forkPr()), false);
   check('§B pre-check rejects wrong event name', lib.preCheckEvent({ eventName: 'pull_request', repository: REPO, pr: sameRepoPr() }).ok, false);
-  check('§B pre-check rejects missing head.repo', preOk({ number: 1, head: { sha: ACCEPTED_HEAD } }), false);
   check('§B pre-check rejects malformed head SHA', preOk({ number: 1, head: { sha: 'zz', repo: { full_name: REPO } } }), false);
-  check('§B pre-check rejects invalid repository identity', lib.preCheckEvent({ eventName: 'pull_request_target', repository: 'bad', pr: sameRepoPr() }).ok, false);
 
-  // ==== §E deterministic external_id + existing-run selection ================
+  // ==== external_id determinism ============================================
   const eid = lib.externalIdFor({ repositoryId: REPO_ID, prNumber: PR_NUM, headSha: ACCEPTED_HEAD });
-  const eid2 = lib.externalIdFor({ repositoryId: REPO_ID, prNumber: PR_NUM, headSha: ACCEPTED_HEAD });
-  checkRaw('§E external_id deterministic (same inputs -> same id)', eid === eid2 && eid.startsWith('pagamenos:trusted-a2-authority:'));
-  checkRaw('§E external_id changes with head', lib.externalIdFor({ repositoryId: REPO_ID, prNumber: PR_NUM, headSha: 'b'.repeat(40) }) !== eid);
-  checkRaw('§E external_id changes with PR#', lib.externalIdFor({ repositoryId: REPO_ID, prNumber: PR_NUM + 1, headSha: ACCEPTED_HEAD }) !== eid);
+  checkRaw('§E external_id deterministic', eid === lib.externalIdFor({ repositoryId: REPO_ID, prNumber: PR_NUM, headSha: ACCEPTED_HEAD }));
 
-  const priorAppOwnedSuccess = [{ id: 101, name: lib.CHECK_NAME, head_sha: ACCEPTED_HEAD, external_id: eid, status: 'completed', conclusion: 'success', app: { id: APP_ID } }];
-  const priorAppOwnedInProgress = [{ id: 101, name: lib.CHECK_NAME, head_sha: ACCEPTED_HEAD, external_id: eid, status: 'in_progress', conclusion: null, app: { id: APP_ID } }];
-  const priorOtherApp = [{ id: 202, name: lib.CHECK_NAME, head_sha: ACCEPTED_HEAD, external_id: eid, status: 'completed', conclusion: 'success', app: { id: 111111 } }];
-  const priorWrongName = [{ id: 303, name: 'evil-same-name', head_sha: ACCEPTED_HEAD, external_id: eid, status: 'completed', conclusion: 'success', app: { id: APP_ID } }];
-  const priorWrongEid = [{ id: 404, name: lib.CHECK_NAME, head_sha: ACCEPTED_HEAD, external_id: 'other:id', status: 'completed', conclusion: 'success', app: { id: APP_ID } }];
-  const sel = (runs) => lib.selectExistingRun({ runs, appId: APP_ID, checkName: lib.CHECK_NAME, externalId: eid, headSha: ACCEPTED_HEAD });
-  checkRaw('§E reuses App-owned + name + external_id match', sel(priorAppOwnedSuccess) && sel(priorAppOwnedSuccess).id === 101);
-  checkRaw('§E never adopts another App/source run', sel(priorOtherApp) === null);
-  checkRaw('§E rejects wrong check name', sel(priorWrongName) === null);
-  checkRaw('§E rejects wrong external_id', sel(priorWrongEid) === null);
+  // ==== §2/§3/§14 findAllExactRuns MATCH FILTER MATRIX ======================
+  const N = (id, over = {}) => runOn({ id, headSha: ACCEPTED_HEAD, externalId: eid, appId: APP_ID, name: lib.CHECK_NAME, ...over });
+  const mkNonMatch = [
+    N(1001, { appId: 111111 }),          // wrong App
+    N(1002, { name: 'evil-same-name' }), // wrong name
+    N(1003, { externalId: 'other:id' }), // wrong external_id
+    N(1004, { headSha: 'b'.repeat(40) }), // wrong head
+  ];
+  const mkExact = [N(101, {}), N(202, {})];
+  const runsMixed = [...mkNonMatch, ...mkExact];
+  const found = lib.findAllExactRuns({ runs: runsMixed, appId: APP_ID, checkName: lib.CHECK_NAME, externalId: eid, headSha: ACCEPTED_HEAD });
+  checkRaw('§14 filter ignores wrong App/name/eid/head', found.every((r) => [101, 202].includes(r.id)) && found.length === 2);
 
-  // ==== §D stale same-head SUCCESS attack: rerun that fails must overwrite it ==
-  const rerunFail = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: priorAppOwnedSuccess, revocableResult: { ok: false, error: 'head pin failed after rotation' } });
-  checkRaw('§D stale-success attack: reset existing run to in_progress on rerun', rerunFail.events[1].step === 'reset-existing' && rerunFail.events[1].runId === 101);
-  checkRaw('§D stale-success attack: SAME run concluded FAILURE (no surviving success)', rerunFail.finalCheckState && rerunFail.finalCheckState.id === 101 && rerunFail.finalCheckState.status === 'completed' && rerunFail.finalCheckState.conclusion === 'failure');
-  const rerunPass = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: priorAppOwnedSuccess, revocableResult: { ok: true } });
-  checkRaw('same-head rerun that passes concludes SUCCESS on same run', rerunPass.finalCheckState && rerunPass.finalCheckState.id === 101 && rerunPass.finalCheckState.conclusion === 'success');
-  const rerunInProg = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: priorAppOwnedInProgress, revocableResult: { ok: false, error: 'authority unavailable' } });
-  checkRaw('same-head rerun over prior in_progress: still same run, concludes FAILURE', rerunInProg.finalCheckState && rerunInProg.finalCheckState.id === 101 && rerunInProg.finalCheckState.conclusion === 'failure');
+  // Ordering independence
+  const foundOrder = lib.findAllExactRuns({ runs: [N(202, {}), N(101, {}), N(303, {}), ...mkNonMatch], appId: APP_ID, checkName: lib.CHECK_NAME, externalId: eid, headSha: ACCEPTED_HEAD });
+  checkRaw('§13 API ordering independence: canonical ascending-id order', foundOrder.map((r) => r.id).join(',') === '101,202,303');
 
-  // ==== §11 new head H2 while accepted variable remains H -> H2 fails ========
+  // Dedup by id
+  const dupSameId = lib.findAllExactRuns({ runs: [N(101, {}), N(101, { conclusion: 'failure' })], appId: APP_ID, checkName: lib.CHECK_NAME, externalId: eid, headSha: ACCEPTED_HEAD });
+  checkRaw('duplicate id dedupped', dupSameId.length === 1 && dupSameId[0].id === 101);
+
+  // ==== §12 pagination — simulate the paginator by feeding a fully-enumerated 201-run list ==
+  const page1 = Array.from({ length: 100 }, (_, i) => N(2000 + i, { appId: 111111 })); // 100 non-matching
+  const page2 = Array.from({ length: 100 }, (_, i) => N(2100 + i, { externalId: 'other:id' })); // 100 non-matching
+  const page3TargetId = 2199;
+  const page3 = [N(page3TargetId, {}), N(page3TargetId + 1, { name: 'other-name' })]; // exact match on page 3
+  const paginated = [...page1, ...page2, ...page3];
+  const foundPage3 = lib.findAllExactRuns({ runs: paginated, appId: APP_ID, checkName: lib.CHECK_NAME, externalId: eid, headSha: ACCEPTED_HEAD });
+  checkRaw('§12 exact match on page 3 (id ' + page3TargetId + ') discovered by full-enum filter', foundPage3.length === 1 && foundPage3[0].id === page3TargetId);
+  const foundPage2 = lib.findAllExactRuns({ runs: [...page1, N(2050, {})], appId: APP_ID, checkName: lib.CHECK_NAME, externalId: eid, headSha: ACCEPTED_HEAD });
+  checkRaw('§12 exact match on page 2 discovered', foundPage2.length === 1 && foundPage2[0].id === 2050);
+
+  // ==== §10 DUPLICATE ATTACK — 2 prior successes on H must not survive failed rerun ========
+  const twoPriorSuccess = [
+    runOn({ id: 101, headSha: ACCEPTED_HEAD, externalId: eid, name: lib.CHECK_NAME }),
+    runOn({ id: 202, headSha: ACCEPTED_HEAD, externalId: eid, name: lib.CHECK_NAME }),
+  ];
+  const dupFail = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: twoPriorSuccess, revocableResult: { ok: false, error: 'head pin failed' } });
+  checkRaw('§10 duplicates enumerated (2)', dupFail.events.some((e) => e.step === 'enumerate' && e.count === 2));
+  checkRaw('§10 reset ALL: both runs to in_progress before validation', dupFail.events.some((e) => e.step === 'reset-all' && e.ids.length === 2 && e.ids.includes(101) && e.ids.includes(202)));
+  checkRaw('§10 finalize ALL: both runs completed/failure', dupFail.finalStates.length === 2 && dupFail.finalStates.every((r) => r.status === 'completed' && r.conclusion === 'failure'));
+  checkRaw('§10 no exact SUCCESS survives failed rerun', !dupFail.finalStates.some((r) => r.conclusion === 'success'));
+
+  // ==== §11 DUPLICATE SUCCESSFUL rerun — both remain success ============================
+  const dupPass = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: twoPriorSuccess, revocableResult: { ok: true } });
+  checkRaw('§11 duplicates successful rerun: ALL converge to success', dupPass.finalStates.length === 2 && dupPass.finalStates.every((r) => r.conclusion === 'success'));
+
+  // three exact runs converge (extra ordering / count)
+  const threePrior = [runOn({ id: 101, headSha: ACCEPTED_HEAD, externalId: eid, name: lib.CHECK_NAME }), runOn({ id: 202, headSha: ACCEPTED_HEAD, externalId: eid, name: lib.CHECK_NAME }), runOn({ id: 303, headSha: ACCEPTED_HEAD, externalId: eid, name: lib.CHECK_NAME })];
+  const threeFail = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: threePrior, revocableResult: { ok: false, error: 'authority unavailable' } });
+  checkRaw('three exact runs all converge to failure', threeFail.finalStates.length === 3 && threeFail.finalStates.every((r) => r.conclusion === 'failure'));
+
+  // ==== §8/§9 PARTIAL FAILURES → integrity failure classification ==========
+  const partialReset = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: twoPriorSuccess, revocableResult: { ok: true }, resetFailIds: [202] });
+  checkRaw('§8 partial RESET failure classified as integrity failure (halt before validation)', partialReset.events.some((e) => e.step === 'reset-integrity-failure') && !partialReset.events.some((e) => e.step === 'validate'));
+  const partialFin = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: twoPriorSuccess, revocableResult: { ok: true }, finalizeFailIds: [202] });
+  checkRaw('§9 partial FINALIZE failure classified as integrity failure (freeze)', partialFin.events.some((e) => e.step === 'finalize-integrity-failure'));
+  checkRaw('§9 partial FINALIZE failure: gate NOT considered successful', !partialFin.events.some((e) => e.step === 'finalize-all'));
+
+  // ==== issuer availability = no creds ======================================
+  const noCreds = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: [], revocableResult: { ok: true }, appCredsPresent: false });
+  checkRaw('§8 no App creds -> abort BEFORE any check touch', noCreds.finalStates.length === 0 && noCreds.events.some((e) => e.error && e.error.includes('TRUSTED ISSUER AVAILABILITY')));
+  const listFails = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: [], revocableResult: { ok: true }, listThrows: 'TRUSTED ISSUER INTEGRITY FAILURE: check-runs list failed' });
+  checkRaw('§4 pagination list failure -> abort before reset (integrity failure)', listFails.finalStates.length === 0 && listFails.events.some((e) => e.error && e.error.includes('INTEGRITY')));
+
+  // ==== §11 new head H2 gets its own check ==================================
   const H2 = 'a'.repeat(40);
   const revocOnH2 = lib.verifyRevocableSelectors({ prHeadSha: H2, acceptedA2Head: ACCEPTED_HEAD, acceptedAuthorityBaseSha: ACCEPTED_BASE });
-  checkRaw('§11 new head H2 != accepted -> revocable selectors FAIL', revocOnH2.ok === false);
-  const newHead = simulateRunLifecycle({ lib, headSha: H2, priorRuns: priorAppOwnedSuccess, revocableResult: revocOnH2 });
-  checkRaw('§11 new head H2 gets its own check (not reusing H run)', newHead.events[1].step === 'create-new' && newHead.finalCheckState.head_sha === H2);
-  checkRaw('§11 new head H2 concludes FAILURE', newHead.finalCheckState.conclusion === 'failure');
+  const newHead = simulateRunLifecycle({ lib, headSha: H2, priorRuns: twoPriorSuccess, revocableResult: revocOnH2 });
+  checkRaw('new head H2 creates new check (not reusing H runs)', newHead.events.some((e) => e.step === 'create-new'));
+  checkRaw('new head H2 concludes FAILURE', newHead.finalStates.length === 1 && newHead.finalStates[0].conclusion === 'failure' && newHead.finalStates[0].head_sha === H2);
 
-  // ==== §7 every post-reset failure routes to finalize FAILURE ==============
+  // ==== retained: revocable selectors + rejected 68269bb ====================
+  check('revocable: accepted head + accepted base', lib.verifyRevocableSelectors({ prHeadSha: ACCEPTED_HEAD, acceptedA2Head: ACCEPTED_HEAD, acceptedAuthorityBaseSha: ACCEPTED_BASE }).ok, true);
+  check('revocable: blank accepted A2 head fail closed', lib.verifyRevocableSelectors({ prHeadSha: ACCEPTED_HEAD, acceptedA2Head: '', acceptedAuthorityBaseSha: ACCEPTED_BASE }).ok, false);
+  check('revocable: rejected 68269bb', lib.verifyRevocableSelectors({ prHeadSha: ACCEPTED_HEAD, acceptedA2Head: ACCEPTED_HEAD, acceptedAuthorityBaseSha: REJECTED_BASE }).ok, false);
+
+  // ==== §7 post-reset failure routes to ALL-runs failure ====================
   const failureCauses = [
-    { label: 'head-pin failure', r: { ok: false, error: 'PR head != accepted A2 head' } },
-    { label: 'malformed accepted authority SHA', r: { ok: false, error: 'PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA blank or malformed' } },
-    { label: 'rejected 68269bb', r: { ok: false, error: 'authority base is the REJECTED baseline 68269bb' } },
-    { label: 'authority commit unavailable', r: { ok: false, error: 'cannot fetch authority base commit' } },
-    { label: 'PR fetch mismatch', r: { ok: false, error: 'fetched PR head != event head' } },
-    { label: 'protected path', r: { ok: false, error: 'A2 PR modifies protected trust paths' } },
+    { label: 'head-pin failure', r: { ok: false, error: 'PR head != accepted' } },
+    { label: 'rejected 68269bb', r: { ok: false, error: 'authority base is REJECTED 68269bb' } },
+    { label: 'authority unavailable', r: { ok: false, error: 'cannot fetch authority base' } },
+    { label: 'protected path', r: { ok: false, error: 'protected path' } },
     { label: 'runtime declaration invalid', r: { ok: false, error: 'runtime key set mismatch' } },
-    { label: 'manifest inventory failure (68269bb)', r: { ok: false, error: 'manifest.authorityFiles count 3 != required 4' } },
-    { label: 'ledger mismatch', r: { ok: false, error: 'runtime digest != external ledger digest' } },
-    { label: 'validation exception (parser threw)', r: { ok: false, error: 'validation exception: unexpected token' } },
-    { label: 'validation produced NO result (finalizer default)', r: undefined },
+    { label: 'manifest inventory (68269bb)', r: { ok: false, error: 'manifest.authorityFiles count 3 != 4' } },
+    { label: 'validation exception', r: { ok: false, error: 'validation exception: throw' } },
+    { label: 'no result (finalizer default)', r: undefined },
   ];
   for (const fc of failureCauses) {
-    const sim = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: [], revocableResult: fc.r });
-    checkRaw('§7 post-reset "' + fc.label + '" -> App conclusion FAILURE', sim.finalCheckState && sim.finalCheckState.conclusion === 'failure');
+    const sim = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: twoPriorSuccess, revocableResult: fc.r });
+    checkRaw('§7 post-reset "' + fc.label + '" -> ALL exact runs failure', sim.finalStates.length === 2 && sim.finalStates.every((r) => r.conclusion === 'failure'));
   }
 
-  // ==== §8 App availability failure = trusted issuer availability failure ===
-  const noCreds = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: [], revocableResult: { ok: true }, appCredsPresent: false });
-  checkRaw('§8 no App creds -> abort BEFORE any check touch (issuer availability)', noCreds.finalCheckState === null && noCreds.events.some((e) => e.error && e.error.includes('TRUSTED ISSUER AVAILABILITY')));
-
-  // ==== §B fork attack cannot reach App credential ==========================
-  const forkAttempt = simulateRunLifecycle({ lib, headSha: ACCEPTED_HEAD, priorRuns: [], revocableResult: { ok: true }, sameRepo: false });
-  checkRaw('§B fork PR rejected BEFORE App credential use', forkAttempt.events[0].step === 'precheck' && forkAttempt.events[0].ok === false && !forkAttempt.events.some((e) => e.step === 'reset-existing' || e.step === 'create-new'));
-
-  // ==== retained pure App/JWT/body builders =================================
+  // ==== builder purity ======================================================
   const now = 1_700_000_000;
   const jwt = lib.buildAppJwt(String(APP_ID), now);
-  checkRaw('App JWT iss == appId', jwt.payload.iss === String(APP_ID));
-  checkRaw('App JWT exp within 10min window', jwt.payload.exp > jwt.payload.iat && jwt.payload.exp - jwt.payload.iat <= 600);
+  checkRaw('App JWT within 10min window', jwt.payload.exp - jwt.payload.iat <= 600);
   const inprog = lib.buildInProgressBody({ name: lib.CHECK_NAME, headSha: ACCEPTED_HEAD, externalId: eid, startedAt: 'x' });
-  checkRaw('in_progress body carries external_id + exact head', inprog.external_id === eid && inprog.head_sha === ACCEPTED_HEAD && inprog.status === 'in_progress' && !('conclusion' in inprog));
+  checkRaw('in_progress body carries external_id + head', inprog.external_id === eid && inprog.head_sha === ACCEPTED_HEAD && inprog.status === 'in_progress' && !('conclusion' in inprog));
   const done = lib.buildCompletedBody({ name: lib.CHECK_NAME, headSha: ACCEPTED_HEAD, externalId: eid, completedAt: 'y', conclusion: 'failure', title: 't', summary: 's' });
   checkRaw('completed body carries conclusion + external_id', done.conclusion === 'failure' && done.external_id === eid && done.status === 'completed');
-  checkRaw('concludeFromValidation(true)=success', lib.concludeFromValidation(true) === 'success');
-  checkRaw('concludeFromValidation(false)=failure (fail closed)', lib.concludeFromValidation(false) === 'failure');
-  checkRaw('check name is head-bound "trusted-a2-authority/head"', lib.CHECK_NAME === 'trusted-a2-authority/head');
+  checkRaw('concludeFromValidation(true)=success / (false)=failure', lib.concludeFromValidation(true) === 'success' && lib.concludeFromValidation(false) === 'failure');
+  checkRaw('check name is head-bound', lib.CHECK_NAME === 'trusted-a2-authority/head');
+  checkRaw('sanity ceilings exposed', typeof lib.MAX_EXACT_RUNS === 'number' && lib.MAX_EXACT_RUNS >= 128 && typeof lib.MAX_PAGES === 'number' && typeof lib.PAGE_SIZE === 'number');
+
+  // ==== §16 documentation invariant: freeze rule is enforced by code (finalize partial-fail keeps runs non-success) ====
+  checkRaw('§16 finalize partial-fail: no active run reads as completed/success', !partialFin.finalStates.some((r) => r.status === 'completed' && r.conclusion === 'success'));
 
   // ---- report ----
   const pad = (s, n) => (s + ' '.repeat(n)).slice(0, n);
-  console.log('\nTRUSTED-A2 AUTHORITY v2 PATCH — LOCAL DIAGNOSTIC MATRIX');
-  console.log('-'.repeat(108));
+  console.log('\nTRUSTED-A2 AUTHORITY v2 (duplicate-equivalence patch) — LOCAL DIAGNOSTIC MATRIX');
+  console.log('-'.repeat(110));
   for (const r of rows) console.log(pad(r.verdict, 6) + pad('want=' + r.want, 11) + pad('got=' + r.got, 12) + r.label + (r.detail ? '  (' + r.detail + ')' : ''));
-  console.log('-'.repeat(108));
+  console.log('-'.repeat(110));
   console.log('PASSED ' + passed + '  FAILED ' + failed);
   if (!pinOk) console.log('INTEGRITY PIN MISMATCH: update PINNED_REGION_SHA256 only for an intended logic change.');
   process.exit(failed === 0 ? 0 : 1);

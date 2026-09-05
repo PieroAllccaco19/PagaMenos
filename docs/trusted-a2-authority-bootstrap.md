@@ -1,9 +1,89 @@
-# PRE-A2 Trusted Authority Bootstrap — v2 (bounded patch on e7fb49b)
+# PRE-A2 Trusted Authority Bootstrap — v2 (bounded patch on ab1a449)
 
-Bounded corrective on top of `e7fb49b` (preserved; not amended, not squashed).
-Replacement of the earlier REJECTED `ec598b8` (also preserved as audit evidence).
-Security infrastructure only — no A2 application/domain/persistence/service/test
-code; `ci.yml` (`verify`, `authority-gate`) is byte-untouched.
+Bounded corrective on top of `ab1a449` (preserved; not amended, not squashed),
+which itself sat on `e7fb49b` (preserved). Replacement chain descends from the
+earlier REJECTED `ec598b8` (also preserved as audit evidence). Security
+infrastructure only — no A2 application/domain/persistence/service/test code;
+`ci.yml` (`verify`, `authority-gate`) is byte-untouched.
+
+## Duplicate exact-run equivalence class (this patch — §1–§14, §19)
+
+A trusted logical check identity is the tuple:
+
+```
+dedicated App id  +  name = trusted-a2-authority/head
++  external_id = pagamenos:trusted-a2-authority:<repositoryId>:pr-<n>:<headSha>
++  exact head SHA
+```
+
+All Check Runs matching all four properties are members of the **same logical
+trusted-check identity**. STEP 2 now enumerates **every** exact match (paginated,
+no silent stop at 100; fail-closed on API anomalies), resets **ALL of them** to
+`in_progress` before any revocable validation, and STEP 4 finalizes **ALL of
+them** to the same conclusion. Duplicate exact runs are treated as an integrity
+anomaly and reconciled as one equivalence class — no exact `success` can survive
+a failed rerun; no partial success/failure divergence is possible on a
+completed gate execution.
+
+Post-reset invariant:
+```
+FOR ALL exact logical trusted runs on the exact head SHA:
+    status == in_progress   (before ANY revocable validation runs)
+```
+Finalize invariant:
+```
+validation PASS  =>  FOR ALL active exact runs: completed / success
+validation FAIL  =>  FOR ALL active exact runs: completed / failure
+```
+
+If any reset or finalize call fails, the run is classified as
+**TRUSTED ISSUER INTEGRITY FAILURE** and the operator applies **ADMINISTRATIVE
+MERGE FREEZE** (see below).
+
+### Sanity ceilings (documented; §4)
+
+* `PAGE_SIZE = 100` (GitHub max), `MAX_PAGES = 100` — up to 10 000 raw rows
+  scanned per PR head + check name. This is far above any plausible normal
+  repository history for one commit + one check name and is not truncating.
+* `MAX_EXACT_RUNS = 512` — cap on the equivalence class itself. Exceeded ⇒
+  integrity failure (this would be a GitHub-side anomaly, not normal use).
+* Raw scan hard cap: `MAX_EXACT_RUNS * 4 = 2048` accumulated rows before we
+  refuse further pages. If the paginator's next-page fetch fails, the response
+  shape is unexpected, or either ceiling is exceeded, we fail closed with
+  `TRUSTED ISSUER INTEGRITY FAILURE`.
+
+## ADMINISTRATIVE MERGE FREEZE (§16 — operational rule)
+
+```
+TRUSTED ISSUER AVAILABILITY FAILURE
+    OR
+TRUSTED ISSUER INTEGRITY FAILURE
+    ==>  ADMINISTRATIVE MERGE FREEZE
+```
+
+Do **not** merge the A2 PR while any of the following are true:
+
+* App authentication fails.
+* Installation token cannot be minted (or cannot be narrowed to this repo).
+* Exact logical runs cannot all be enumerated (paginator/response-shape/ceiling failure).
+* Any exact logical run cannot be reset to `in_progress`.
+* Any exact logical run cannot be finalized.
+* App source / ruleset expected-source identity cannot be verified.
+
+A previously successful App Check Run is **not** authorization to merge during
+such an outage. Merging resumes only after:
+
+1. Issuer health is restored (App auth, token minting, list, PATCH all healthy).
+2. A complete trusted-gate rerun succeeds on the exact current head.
+3. The required App check on the exact current head is visibly current AND
+   `success` for the entire equivalence class.
+
+**This is an operational control.** The code can neutralize duplicate exact runs
+when the GitHub API is operational; it cannot guarantee invalidation of an old
+success when the trusted App/API is unavailable, because an unavailable issuer
+cannot mutate old GitHub state. Availability/integrity outage therefore requires
+administrative merge freeze — this is deliberately **not** called automatic
+fail-closed (§17).
 
 ## What this patch fixes
 
