@@ -1,41 +1,30 @@
-# PagaMenos · PRE-A2 TRUSTED AUTHORITY GATE — v2 (replacement)
+# PagaMenos · PRE-A2 TRUSTED AUTHORITY GATE — v2 (bounded patch on e7fb49b)
 # =============================================================================
-# Replacement for the REJECTED bootstrap ec598b8. Trust root for merging an
-# M3.5B-A2 candidate into `m3.5b-a2-integration`, candidate-independent.
+# Bounded corrective for Sol MEDIUM/HIGH findings on e7fb49b (not a redesign;
+# the trusted architecture itself passed). Fixes only:
 #
-# WHAT v1 GOT WRONG (fixed here):
-#   1. v1 implied its own `pull_request_target` Actions job could be used as an
-#      ordinary PR-head required status check. It cannot: a pull_request_target
-#      job's check is associated with the trusted/default-branch context, not the
-#      PR head, so it does not enforce head-bound merge protection. v2 publishes a
-#      SEPARATE head-bound check run (`trusted-a2-authority/head`) via a dedicated
-#      GitHub App on the EXACT accepted PR head.
-#   2. v1 used `git diff --name-only` (rename-blind): renaming a protected file
-#      OUT of a protected dir slipped past the boundary. v2 uses
-#      `git diff --no-renames --name-only -z` (rename-safe + NUL-safe) so a rename
-#      surfaces the old protected path as a delete.
-#   3. v1's authority check compared only ledger/digest, so the rejected baseline
-#      68269bb (identical ledger, but manifest.authorityFiles omits the manifest
-#      self-entry) passed. v2 enforces the exact accepted four-file manifest
-#      inventory, so 84a7a1a PASSES and 68269bb FAILS.
+#   [HIGH]  Stale same-head SUCCESS survived a failed rerun because head/authority/
+#           path validation ran BEFORE the trusted App check was reset. Now:
+#           minimal immutable event validation -> App auth -> reset/open the
+#           head-bound trusted check on the exact PR head to `in_progress` FIRST,
+#           and only then run all revocable validation. A single `finalize` step
+#           always concludes the same check `success` or `failure` (fail-closed).
+#   [MED]   Same-repository policy is now explicit and enforced BEFORE the App
+#           credential is used: `pull_request.head.repo.full_name == repository`.
+#           Fork PRs are rejected fail-closed, before any App/API access.
+#   [MED]   Ambiguous duplicate check runs on rerun: we now look up the existing
+#           App-owned run by exact check name + deterministic `external_id`
+#           (`pagamenos:trusted-a2-authority:<repoId>:pr-<n>:<headSha>`) and RESET
+#           that same run to `in_progress`. Only if no matching App-owned run
+#           exists is a new one created. We never adopt a same-name run owned by
+#           another App/source.
 #
-# SECURITY MODEL (unchanged sound parts of v1):
-#   * pull_request_target -> this definition comes from the DEFAULT branch, not
-#     the PR. The candidate cannot supply the code that judges it.
-#   * PR content is inspected ONLY AS DATA (git show <headSHA>:<fixed path>,
-#     JSON.parse). No pnpm/npm, no require()/import of candidate JS/TS, no call to
-#     the candidate verifier, no candidate Actions/shell/Makefiles.
-#   * The trusted comparison logic is materialized ONCE from inline workflow
-#     content into $RUNNER_TEMP (never a repo file a candidate could touch) and is
-#     drift-checked by the local harness.
-#   * All PR/protected values pass through env: and are validated as exact
-#     40-hex / integer before any git use. No ${{ }} into shell/node/paths.
-#
-# OPERATIONAL (user, out of band — see docs/trusted-a2-authority-bootstrap.md):
-#   default branch must become m3.5b-a2-integration; a dedicated GitHub App must
-#   be installed; environment `trusted-a2-gate` holds the App key; the ruleset
-#   requires the head-bound App check `trusted-a2-authority/head` from that App as
-#   the expected source, alongside `verify` and `authority-gate`.
+# Retained (do not regress):
+#   pull_request_target from default-branch definition; no candidate code
+#   execution; PR content read only as inert JSON via `git show <headSHA>:<fixed
+#   path>`; strict runtime declaration; four-file authority-manifest inventory;
+#   structural 68269bb rejection; exact A2 head pin; rename/NUL-safe protected-
+#   path diff (with scripts-trusted/**); GitHub App head-bound Check Run.
 # =============================================================================
 name: trusted-a2-authority
 
@@ -45,7 +34,7 @@ on:
     branches: [m3.5b-a2-integration]
 
 permissions:
-  contents: read # ordinary Git reads only; the head-bound check is minted by the App, not this token.
+  contents: read # Git reads only; the head-bound check is minted by the App, not this token.
 
 concurrency:
   group: trusted-a2-authority-${{ github.event.pull_request.number }}
@@ -54,11 +43,6 @@ concurrency:
 jobs:
   trusted-a2-authority:
     runs-on: ubuntu-latest
-    # Environment gates access to the App private key. For pull_request_target,
-    # github.ref is the BASE branch ref (the PR target = m3.5b-a2-integration),
-    # NOT the PR head — so an environment branch policy restricted to
-    # m3.5b-a2-integration admits only the trusted base context. Configure the
-    # environment's deployment branch rule accordingly (see docs).
     environment: trusted-a2-gate
     steps:
       - name: Checkout trusted base tree (no PR code)
@@ -68,10 +52,10 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      # --- (15) Materialize the trusted comparison library ONCE from inline
-      # workflow content. This file originates entirely from the trusted default
-      # branch workflow; it is never read from the PR. The local harness mirrors
-      # and drift-checks the sentinel-bounded region below.
+      # (15/§D) Materialize the trusted logic ONCE from inline workflow content.
+      # This file originates from the trusted default-branch workflow; it is
+      # never read from the PR. The local harness extracts and hash-pins the
+      # sentinel-bounded region below so silent drift fails.
       - name: Materialize trusted library
         run: |
           set -euo pipefail
@@ -84,9 +68,8 @@ jobs:
           const LEDGER_SCHEMA_VERSION = 'pagamenos.corpus-release-ledger.v1';
           const DIGEST_RE = /^sha256:[0-9a-f]{64}$/;
           const CORPUS_ID_RE = /^PAGAMENOS_VALIDATION_CORPUS_[0-9A-Za-z._:+-]+$/;
+          const SHA40_RE = /^[0-9a-f]{40}$/;
           const RUNTIME_KEYS = ['corpusId', 'corpusSemanticDigest', 'corpusSemanticProjectionVersion', 'declarationVersion'];
-          // Exact accepted authority inventory (manifest self-entry INCLUDED). This is
-          // what makes 68269bb (which omits the manifest self-entry) FAIL.
           const REQUIRED_AUTHORITY_FILES = [
             'authority/v1/AUTHORITY_BASELINE_MANIFEST_V1.json',
             'authority/v1/CORPUS_RELEASE_LEDGER_V1.json',
@@ -95,13 +78,65 @@ jobs:
           ];
           const CHECK_NAME = 'trusted-a2-authority/head';
           const PROTECTED_PREFIXES = ['src/corpus/', 'src/engine/', 'authority/', '.github/workflows/', 'scripts-trusted/'];
+          const REJECTED_AUTHORITY_BASE_SHA = '68269bb5acad77bb6e8dc1644bb32d29ef485d31';
 
           const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
+          const lc = (s) => (typeof s === 'string' ? s.toLowerCase() : '');
 
+          // ---- SAME-REPOSITORY policy (§B; runs BEFORE any App-credential use) ----
+          function sameRepositoryPolicy(input) {
+            const { pr, repository } = input;
+            if (!isPlainObject(pr)) return { ok: false, error: 'event has no pull_request' };
+            if (typeof repository !== 'string' || repository.length === 0) return { ok: false, error: 'github.repository missing' };
+            const head = pr.head;
+            if (!isPlainObject(head) || !isPlainObject(head.repo)) return { ok: false, error: 'pr.head.repo missing (fork or malformed event)' };
+            if (typeof head.repo.full_name !== 'string' || head.repo.full_name.length === 0) return { ok: false, error: 'pr.head.repo.full_name missing' };
+            if (head.repo.full_name !== repository) return { ok: false, error: 'FORK PR REJECTED: head.repo.full_name ' + head.repo.full_name + ' != github.repository ' + repository };
+            return { ok: true };
+          }
+
+          // ---- Minimal immutable pre-check validation (§C; before App auth) ----
+          function preCheckEvent(input) {
+            const { eventName, repository, pr } = input;
+            if (eventName !== 'pull_request_target') return { ok: false, error: 'event is not pull_request_target' };
+            if (!isPlainObject(pr)) return { ok: false, error: 'event has no pull_request' };
+            if (typeof pr.number !== 'number' || !Number.isInteger(pr.number) || pr.number <= 0) return { ok: false, error: 'PR number invalid' };
+            if (!isPlainObject(pr.head) || !SHA40_RE.test(lc(pr.head.sha))) return { ok: false, error: 'PR head SHA malformed' };
+            if (typeof repository !== 'string' || !/^[^/]+\/[^/]+$/.test(repository)) return { ok: false, error: 'repository identity invalid' };
+            const same = sameRepositoryPolicy({ pr, repository });
+            if (!same.ok) return same;
+            return { ok: true, headSha: lc(pr.head.sha), prNumber: pr.number, repository };
+          }
+
+          // ---- Deterministic external_id for the head-bound trusted check (§E) ----
+          function externalIdFor(input) {
+            const { repositoryId, prNumber, headSha } = input;
+            if (typeof repositoryId !== 'number' && typeof repositoryId !== 'string') throw new Error('repositoryId required');
+            if (!Number.isInteger(prNumber) || prNumber <= 0) throw new Error('prNumber invalid');
+            if (typeof headSha !== 'string' || !SHA40_RE.test(lc(headSha))) throw new Error('headSha malformed');
+            return 'pagamenos:trusted-a2-authority:' + String(repositoryId) + ':pr-' + prNumber + ':' + lc(headSha);
+          }
+
+          // ---- Existing-check-run selector (§E): only App-owned + name + external_id match ----
+          function selectExistingRun(input) {
+            const { runs, appId, checkName, externalId, headSha } = input;
+            if (!Array.isArray(runs)) return null;
+            const wantSha = lc(headSha);
+            for (const r of runs) {
+              if (!isPlainObject(r)) continue;
+              const owner = r && r.app && r.app.id;
+              if (owner == null || String(owner) !== String(appId)) continue; // never adopt another App/source
+              if (r.name !== checkName) continue;
+              if (r.external_id !== externalId) continue;
+              if (lc(r.head_sha) !== wantSha) continue;
+              return r;
+            }
+            return null;
+          }
+
+          // ---- Strict runtime + ledger + manifest inventory ----
           function verifyTrustedA2(input) {
             const { runtime, ledger, manifest } = input;
-
-            // STRICT runtime-declaration schema: exact key SET, exact string types, no coercion.
             if (!isPlainObject(runtime)) return { ok: false, error: 'runtime declaration is not a JSON object' };
             const keys = Object.keys(runtime).sort();
             if (keys.length !== RUNTIME_KEYS.length || keys.some((k, i) => k !== RUNTIME_KEYS[i])) {
@@ -118,7 +153,6 @@ jobs:
             if (runtime.corpusSemanticProjectionVersion !== REQUIRED_PROJECTION_VERSION) return { ok: false, error: 'projection version != ' + REQUIRED_PROJECTION_VERSION };
             if (!DIGEST_RE.test(runtime.corpusSemanticDigest)) return { ok: false, error: 'digest fails sha256:<64-hex> grammar' };
 
-            // External ORACLE = historical ledger selected by the protected BASE_SHA.
             if (!isPlainObject(ledger)) return { ok: false, error: 'external ledger is not a JSON object' };
             if (ledger.schemaVersion !== LEDGER_SCHEMA_VERSION) return { ok: false, error: 'ledger schemaVersion mismatch' };
             if (!isPlainObject(ledger.entries)) return { ok: false, error: 'ledger has no entries object' };
@@ -129,7 +163,6 @@ jobs:
             if (runtime.corpusSemanticDigest !== entry.digest) return { ok: false, error: 'runtime digest ' + runtime.corpusSemanticDigest + ' != external ledger digest ' + entry.digest };
             if (runtime.corpusSemanticProjectionVersion !== entry.semanticProjectionVersion) return { ok: false, error: 'runtime projection version != external ledger ' + entry.semanticProjectionVersion };
 
-            // STRUCTURAL authority-manifest inventory (this rejects 68269bb).
             if (!isPlainObject(manifest)) return { ok: false, error: 'baseline manifest is not a JSON object' };
             if (manifest.corpusId !== runtime.corpusId) return { ok: false, error: 'manifest corpusId != runtime corpusId' };
             if (manifest.corpusSemanticDigest !== entry.digest) return { ok: false, error: 'manifest digest != external ledger digest' };
@@ -144,12 +177,21 @@ jobs:
             for (let i = 0; i < want.length; i++) {
               if (got[i] !== want[i]) return { ok: false, error: 'manifest.authorityFiles set mismatch (missing/extra); e.g. ' + (got[i] || '<none>') + ' != ' + want[i] };
             }
-
             return { ok: true, corpusId: runtime.corpusId, digest: entry.digest };
           }
 
-          // Rename-safe protected-path predicate. Callers feed the OLD path of any
-          // rename (produced by `git diff --no-renames`), so a rename-out is caught.
+          // ---- Head-pin + accepted authority selector validation (revocable) ----
+          function verifyRevocableSelectors(input) {
+            const { prHeadSha, acceptedA2Head, acceptedAuthorityBaseSha } = input;
+            if (!SHA40_RE.test(lc(prHeadSha))) return { ok: false, error: 'PR head SHA malformed (revalidation)' };
+            if (typeof acceptedA2Head !== 'string' || !SHA40_RE.test(lc(acceptedA2Head))) return { ok: false, error: 'PAGAMENOS_ACCEPTED_A2_HEAD_SHA blank or malformed (fail closed)' };
+            if (typeof acceptedAuthorityBaseSha !== 'string' || !SHA40_RE.test(lc(acceptedAuthorityBaseSha))) return { ok: false, error: 'PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA blank or malformed (fail closed)' };
+            if (lc(acceptedAuthorityBaseSha) === REJECTED_AUTHORITY_BASE_SHA) return { ok: false, error: 'authority base is the REJECTED baseline 68269bb' };
+            if (lc(prHeadSha) !== lc(acceptedA2Head)) return { ok: false, error: 'PR head ' + lc(prHeadSha) + ' != accepted A2 head ' + lc(acceptedA2Head) };
+            return { ok: true };
+          }
+
+          // ---- Rename-safe protected-path predicate ----
           function forbiddenPaths(changedPaths) {
             const hits = [];
             for (const p of changedPaths) {
@@ -159,27 +201,24 @@ jobs:
             return hits;
           }
 
-          // --- Pure GitHub App / check-run request builders (no network; unit-testable) ---
-          function b64url(buf) {
-            return Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-          }
+          // ---- Pure GitHub App / check-run request builders (no network) ----
+          function b64url(buf) { return Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
           function buildAppJwt(appId, nowSec) {
-            // Backdate iat 60s for clock skew; exp <= 10min per GitHub App JWT rules.
             const header = { alg: 'RS256', typ: 'JWT' };
             const payload = { iat: nowSec - 60, exp: nowSec + 9 * 60, iss: String(appId) };
-            const signingInput = b64url(JSON.stringify(header)) + '.' + b64url(JSON.stringify(payload));
-            return { header, payload, signingInput };
+            return { header, payload, signingInput: b64url(JSON.stringify(header)) + '.' + b64url(JSON.stringify(payload)) };
           }
-          function buildCheckRunBody(o) {
-            const body = { name: o.name, head_sha: o.headSha, status: o.status };
-            if (o.status === 'completed') body.conclusion = o.conclusion;
-            body.output = { title: o.title, summary: o.summary };
-            return body;
+          function buildInProgressBody(o) {
+            return { name: o.name, head_sha: lc(o.headSha), external_id: o.externalId, status: 'in_progress', started_at: o.startedAt, output: { title: 'Trusted A2 authority (running)', summary: o.summary || 'Head-bound trusted validation in progress.' } };
+          }
+          function buildCompletedBody(o) {
+            return { name: o.name, head_sha: lc(o.headSha), external_id: o.externalId, status: 'completed', conclusion: o.conclusion, completed_at: o.completedAt, output: { title: o.title, summary: o.summary } };
           }
           function concludeFromValidation(ok) { return ok ? 'success' : 'failure'; }
+
           // ===END TRUSTED-A2 TRUSTED LOGIC===
 
-          // --- Network layer (executed ONLY in the trusted workflow; not unit-tested) ---
+          // --- Network layer (executed ONLY in the trusted workflow) ---
           const crypto = require('crypto');
           async function ghFetch(url, opts) {
             const res = await fetch(url, opts);
@@ -187,158 +226,176 @@ jobs:
             let json; try { json = text ? JSON.parse(text) : {}; } catch { json = { raw: text }; }
             return { status: res.status, ok: res.ok, json };
           }
-          async function mintInstallationToken({ appId, privateKey, owner, repo }) {
+          async function mintInstallationToken({ appId, privateKey, owner, repo, repositoryId }) {
             const jwtParts = buildAppJwt(appId, Math.floor(Date.now() / 1000));
             const sig = b64url(crypto.sign('RSA-SHA256', Buffer.from(jwtParts.signingInput), privateKey));
             const jwt = jwtParts.signingInput + '.' + sig;
-            const inst = await ghFetch('https://api.github.com/repos/' + owner + '/' + repo + '/installation', {
-              headers: { authorization: 'Bearer ' + jwt, accept: 'application/vnd.github+json', 'user-agent': 'trusted-a2-authority' },
-            });
-            if (!inst.ok || !inst.json.id) throw new Error('cannot resolve App installation (status ' + inst.status + ')');
-            const tok = await ghFetch('https://api.github.com/app/installations/' + inst.json.id + '/access_tokens', {
-              method: 'POST',
-              headers: { authorization: 'Bearer ' + jwt, accept: 'application/vnd.github+json', 'user-agent': 'trusted-a2-authority' },
-            });
-            if (!tok.ok || !tok.json.token) throw new Error('cannot mint installation token (status ' + tok.status + ')');
+            const inst = await ghFetch('https://api.github.com/repos/' + owner + '/' + repo + '/installation', { headers: { authorization: 'Bearer ' + jwt, accept: 'application/vnd.github+json', 'user-agent': 'trusted-a2-authority' } });
+            if (!inst.ok || !inst.json.id) throw new Error('TRUSTED ISSUER AVAILABILITY FAILURE: cannot resolve App installation (status ' + inst.status + ')');
+            // Narrow the token to THIS repository only.
+            const body = repositoryId ? JSON.stringify({ repository_ids: [Number(repositoryId)], permissions: { checks: 'write', metadata: 'read' } }) : undefined;
+            const tok = await ghFetch('https://api.github.com/app/installations/' + inst.json.id + '/access_tokens', { method: 'POST', headers: { authorization: 'Bearer ' + jwt, accept: 'application/vnd.github+json', 'user-agent': 'trusted-a2-authority', 'content-type': 'application/json' }, body });
+            if (!tok.ok || !tok.json.token) throw new Error('TRUSTED ISSUER AVAILABILITY FAILURE: cannot mint installation token (status ' + tok.status + ')');
             return tok.json.token;
           }
-          async function postCheckRun({ token, owner, repo, body }) {
-            const res = await ghFetch('https://api.github.com/repos/' + owner + '/' + repo + '/check-runs', {
-              method: 'POST',
-              headers: { authorization: 'token ' + token, accept: 'application/vnd.github+json', 'user-agent': 'trusted-a2-authority', 'content-type': 'application/json' },
-              body: JSON.stringify(body),
-            });
-            if (!res.ok) throw new Error('check-run POST failed (status ' + res.status + '): ' + JSON.stringify(res.json));
+          async function listCheckRunsForRef({ token, owner, repo, ref, checkName }) {
+            const url = 'https://api.github.com/repos/' + owner + '/' + repo + '/commits/' + ref + '/check-runs?check_name=' + encodeURIComponent(checkName) + '&per_page=100&filter=all';
+            const res = await ghFetch(url, { headers: { authorization: 'token ' + token, accept: 'application/vnd.github+json', 'user-agent': 'trusted-a2-authority' } });
+            if (!res.ok) throw new Error('TRUSTED ISSUER AVAILABILITY FAILURE: check-runs list failed (status ' + res.status + ')');
+            return Array.isArray(res.json.check_runs) ? res.json.check_runs : [];
+          }
+          async function createCheckRun({ token, owner, repo, body }) {
+            const res = await ghFetch('https://api.github.com/repos/' + owner + '/' + repo + '/check-runs', { method: 'POST', headers: { authorization: 'token ' + token, accept: 'application/vnd.github+json', 'user-agent': 'trusted-a2-authority', 'content-type': 'application/json' }, body: JSON.stringify(body) });
+            if (!res.ok) throw new Error('TRUSTED ISSUER AVAILABILITY FAILURE: check-run POST failed (status ' + res.status + ')');
             return res.json.id;
           }
-          async function patchCheckRun({ token, owner, repo, id, body }) {
-            const res = await ghFetch('https://api.github.com/repos/' + owner + '/' + repo + '/check-runs/' + id, {
-              method: 'PATCH',
-              headers: { authorization: 'token ' + token, accept: 'application/vnd.github+json', 'user-agent': 'trusted-a2-authority', 'content-type': 'application/json' },
-              body: JSON.stringify(body),
-            });
-            if (!res.ok) throw new Error('check-run PATCH failed (status ' + res.status + ')');
+          async function updateCheckRun({ token, owner, repo, id, body }) {
+            const res = await ghFetch('https://api.github.com/repos/' + owner + '/' + repo + '/check-runs/' + id, { method: 'PATCH', headers: { authorization: 'token ' + token, accept: 'application/vnd.github+json', 'user-agent': 'trusted-a2-authority', 'content-type': 'application/json' }, body: JSON.stringify(body) });
+            if (!res.ok) throw new Error('TRUSTED ISSUER AVAILABILITY FAILURE: check-run PATCH failed (status ' + res.status + ')');
             return res.json.id;
           }
-
           module.exports = {
-            REQUIRED_AUTHORITY_FILES, CHECK_NAME, PROTECTED_PREFIXES,
-            verifyTrustedA2, forbiddenPaths,
-            b64url, buildAppJwt, buildCheckRunBody, concludeFromValidation,
-            mintInstallationToken, postCheckRun, patchCheckRun,
+            REQUIRED_AUTHORITY_FILES, CHECK_NAME, PROTECTED_PREFIXES, REJECTED_AUTHORITY_BASE_SHA,
+            sameRepositoryPolicy, preCheckEvent, externalIdFor, selectExistingRun,
+            verifyTrustedA2, verifyRevocableSelectors, forbiddenPaths,
+            b64url, buildAppJwt, buildInProgressBody, buildCompletedBody, concludeFromValidation,
+            mintInstallationToken, listCheckRunsForRef, createCheckRun, updateCheckRun,
           };
           LIB
           echo "LIB_PATH=$RUNNER_TEMP/trusted-a2-lib.cjs" >> "$GITHUB_ENV"
 
-      # --- (13) Validate event + extract PR/authority content AS DATA. No PR code runs.
-      - name: Extract candidate + authority data (inert)
+      # STEP 1: minimal immutable event validation (BEFORE App credential use).
+      # Only checks: pull_request_target, PR number/head SHA well-formed, repository identity,
+      # and SAME-REPOSITORY policy. Fork PR is rejected here — no App API contact yet.
+      - name: Pre-check (event + same-repository)
+        env:
+          EVENT_JSON: ${{ toJson(github.event) }}
+          GH_EVENT_NAME: ${{ github.event_name }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('fs');
+          const lib = require(process.env.LIB_PATH);
+          const ev = JSON.parse(process.env.EVENT_JSON);
+          const pre = lib.preCheckEvent({ eventName: process.env.GH_EVENT_NAME, repository: process.env.GH_REPOSITORY, pr: ev.pull_request });
+          if (!pre.ok) { console.error('TRUSTED-A2-AUTHORITY: PRECHECK FAIL — ' + pre.error); process.exit(1); }
+          fs.appendFileSync(process.env.GITHUB_ENV, 'PR_HEAD_LC=' + pre.headSha + '\n');
+          fs.appendFileSync(process.env.GITHUB_ENV, 'PR_NUMBER=' + pre.prNumber + '\n');
+          console.log('precheck OK: same-repo PR #' + pre.prNumber + ' head=' + pre.headSha);
+          NODE
+
+      # STEP 2: App auth + reset-or-create the head-bound trusted check on the
+      # EXACT PR head, BEFORE any revocable validation. Uses deterministic
+      # external_id + App identity + check name to reuse the exact prior run,
+      # or creates a new one if none matches. Immediately writes it in_progress.
+      - name: Reset/open trusted head check (in_progress)
+        env:
+          APP_ID: ${{ vars.PAGAMENOS_TRUSTED_GATE_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.PAGAMENOS_TRUSTED_GATE_APP_PRIVATE_KEY }}
+          GH_OWNER: ${{ github.repository_owner }}
+          GH_REPO: ${{ github.event.repository.name }}
+          GH_REPO_ID: ${{ github.event.repository.id }}
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('fs');
+          const lib = require(process.env.LIB_PATH);
+          (async () => {
+            const appId = process.env.APP_ID, key = process.env.APP_PRIVATE_KEY;
+            if (!appId || !key) { console.error('TRUSTED-A2-AUTHORITY: TRUSTED ISSUER AVAILABILITY FAILURE — trusted-a2-gate App credentials absent'); process.exit(1); }
+            const owner = process.env.GH_OWNER, repo = process.env.GH_REPO, repositoryId = process.env.GH_REPO_ID;
+            const headSha = process.env.PR_HEAD_LC, prNumber = Number(process.env.PR_NUMBER);
+            const externalId = lib.externalIdFor({ repositoryId, prNumber, headSha });
+            const token = await lib.mintInstallationToken({ appId, privateKey: key, owner, repo, repositoryId });
+            const existing = await lib.listCheckRunsForRef({ token, owner, repo, ref: headSha, checkName: lib.CHECK_NAME });
+            const match = lib.selectExistingRun({ runs: existing, appId, checkName: lib.CHECK_NAME, externalId, headSha });
+            const startedAt = new Date().toISOString();
+            const inProgress = lib.buildInProgressBody({ name: lib.CHECK_NAME, headSha, externalId, startedAt, summary: 'Revalidating head-bound trusted authority for exact accepted PR head.' });
+            let id;
+            if (match) {
+              // Reset the SAME logical run to in_progress — old success cannot survive this rerun.
+              id = await lib.updateCheckRun({ token, owner, repo, id: match.id, body: inProgress });
+              console.log('reset existing head-bound trusted run id=' + id + ' external_id=' + externalId);
+            } else {
+              id = await lib.createCheckRun({ token, owner, repo, body: inProgress });
+              console.log('created head-bound trusted run id=' + id + ' external_id=' + externalId);
+            }
+            fs.appendFileSync(process.env.GITHUB_ENV, 'CHECK_RUN_ID=' + id + '\n');
+            fs.appendFileSync(process.env.GITHUB_ENV, 'CHECK_EXTERNAL_ID=' + externalId + '\n');
+            fs.appendFileSync(process.env.GITHUB_ENV, 'APP_TOKEN=' + token + '\n');
+          })().catch((e) => { console.error('TRUSTED-A2-AUTHORITY: ' + e.message); process.exit(1); });
+          NODE
+
+      # STEP 3: revocable validation. Any exception here does NOT terminate the
+      # job silently — it is captured to WORK/validation.json and routed through
+      # the finalizer (next step) which concludes the SAME App check as failure.
+      - name: Revocable validation (routed through finalizer)
+        if: always() && env.CHECK_RUN_ID != ''
         env:
           ACCEPTED_A2_HEAD: ${{ vars.PAGAMENOS_ACCEPTED_A2_HEAD_SHA }}
           BASE_SHA: ${{ vars.PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          fail() { echo "TRUSTED-A2-AUTHORITY: FAIL — $1" >&2; exit 1; }
-          is40hex() { printf '%s' "${1:-}" | grep -Eiq '^[0-9a-f]{40}$'; }
-          isuint()  { printf '%s' "${1:-}" | grep -Eq  '^[0-9]+$'; }
-          lc()      { printf '%s' "${1:-}" | tr 'A-F' 'a-f'; }
-
-          [ -n "${ACCEPTED_A2_HEAD:-}" ] || fail "PAGAMENOS_ACCEPTED_A2_HEAD_SHA is blank (not configured yet) — fail closed"
-          [ -n "${BASE_SHA:-}" ]         || fail "PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA is blank — fail closed"
-          is40hex "$ACCEPTED_A2_HEAD" || fail "accepted A2 head SHA malformed (need 40-hex)"
-          is40hex "$BASE_SHA"         || fail "accepted authority base SHA malformed (need 40-hex)"
-          is40hex "$PR_HEAD_SHA"      || fail "PR head SHA malformed"
-          is40hex "$PR_BASE_SHA"      || fail "PR base SHA malformed"
-          isuint  "$PR_NUMBER"        || fail "PR number malformed"
-
-          LH="$(lc "$PR_HEAD_SHA")"; LA="$(lc "$ACCEPTED_A2_HEAD")"
-          LB="$(lc "$BASE_SHA")";    LPB="$(lc "$PR_BASE_SHA")"
-
-          # (12) EXACT reviewed-head pin.
-          [ "$LH" = "$LA" ] || fail "PR head $LH != accepted A2 head $LA (candidate changed after Sol acceptance)"
-
-          # (4) defense-in-depth explicit rejected-baseline guard (structural check is primary).
-          [ "$LB" != "68269bb5acad77bb6e8dc1644bb32d29ef485d31" ] || fail "authority base is the REJECTED baseline 68269bb"
-
-          git fetch --no-tags origin "refs/pull/${PR_NUMBER}/head" || fail "cannot fetch PR head ref"
-          FETCHED="$(lc "$(git rev-parse FETCH_HEAD)")"
-          [ "$FETCHED" = "$LH" ] || fail "fetched PR head $FETCHED != event head $LH"
-          git fetch --no-tags origin "$LB" || fail "cannot fetch authority base commit $LB (unavailable)"
-
           WORK="$(mktemp -d)"
           echo "WORK=$WORK" >> "$GITHUB_ENV"
-          echo "PR_HEAD_LC=$LH" >> "$GITHUB_ENV"
-
-          # (3) rename-safe + NUL-safe protected-path enumeration.
-          MB="$(git merge-base "$LPB" "$LH")" || fail "cannot compute merge-base"
-          : > "$WORK/changed.nul"
-          git diff --no-renames --name-only -z "$MB" "$LH" > "$WORK/changed.nul" || fail "cannot diff base..head"
-
-          # (7/10) extract inert JSON at FIXED trusted paths.
-          git show "${LH}:src/study/runtime-corpus-authority.v1.json"      > "$WORK/runtime.json"  || fail "runtime declaration missing at PR head"
-          git show "${LB}:authority/v1/CORPUS_RELEASE_LEDGER_V1.json"       > "$WORK/ledger.json"   || fail "external ledger missing at authority base"
-          git show "${LB}:authority/v1/AUTHORITY_BASELINE_MANIFEST_V1.json" > "$WORK/manifest.json" || fail "baseline manifest missing at authority base"
-          echo "TRUSTED-A2-AUTHORITY: data extracted (inert)."
-
-      # --- (9) Open the head-bound check FIRST (in_progress) via the App, so a
-      # crash before conclusion leaves a non-success head check. Fail-closed.
-      - name: Open trusted head check (in_progress)
-        env:
-          APP_ID: ${{ vars.PAGAMENOS_TRUSTED_GATE_APP_ID }}
-          APP_PRIVATE_KEY: ${{ secrets.PAGAMENOS_TRUSTED_GATE_APP_PRIVATE_KEY }}
-          GH_OWNER: ${{ github.repository_owner }}
-          GH_REPO: ${{ github.event.repository.name }}
-        run: |
-          set -euo pipefail
-          node - <<'NODE'
-          const lib = require(process.env.LIB_PATH);
-          (async () => {
-            const appId = process.env.APP_ID, key = process.env.APP_PRIVATE_KEY;
-            if (!appId || !key) { console.error('TRUSTED-A2-AUTHORITY: FAIL — trusted-a2-gate App credentials absent (fail closed)'); process.exit(1); }
-            const owner = process.env.GH_OWNER, repo = process.env.GH_REPO, headSha = process.env.PR_HEAD_LC;
-            const token = await lib.mintInstallationToken({ appId, privateKey: key, owner, repo });
-            const id = await lib.postCheckRun({ token, owner, repo, body: lib.buildCheckRunBody({
-              name: lib.CHECK_NAME, headSha, status: 'in_progress',
-              title: 'Trusted A2 authority (running)', summary: 'Validating candidate runtime declaration against external ledger.',
-            }) });
-            const fs = require('fs');
-            fs.appendFileSync(process.env.GITHUB_ENV, 'CHECK_RUN_ID=' + id + '\n');
-            console.log('opened head check ' + id + ' on ' + headSha);
-          })().catch((e) => { console.error('TRUSTED-A2-AUTHORITY: FAIL — ' + e.message); process.exit(1); });
-          NODE
-
-      # --- Run the trusted validation (schema + ledger + inventory + path boundary).
-      - name: Run trusted validation
-        run: |
-          set -euo pipefail
+          # Capture any failure into validation.json; NEVER let this step abort the job before finalize runs.
+          set +e
           node - <<'NODE'
           const fs = require('fs');
+          const { execFileSync } = require('child_process');
           const lib = require(process.env.LIB_PATH);
           const work = process.env.WORK;
-          const readJson = (p) => JSON.parse(fs.readFileSync(p, 'utf8')); // inert parse; never require candidate
-          let result;
+          function fail(err) { fs.writeFileSync(work + '/validation.json', JSON.stringify({ ok: false, error: err })); console.error('TRUSTED-A2-AUTHORITY: FAIL — ' + err); process.exit(0); }
           try {
-            const changed = fs.readFileSync(work + '/changed.nul', 'utf8').split('\0').filter(Boolean);
-            const forbidden = lib.forbiddenPaths(changed);
-            if (forbidden.length) {
-              result = { ok: false, error: 'A2 PR modifies protected trust paths (rename-safe): ' + forbidden.join(', ') };
-            } else {
-              result = lib.verifyTrustedA2({ runtime: readJson(work + '/runtime.json'), ledger: readJson(work + '/ledger.json'), manifest: readJson(work + '/manifest.json') });
-            }
-          } catch (e) { result = { ok: false, error: 'validation error: ' + e.message }; }
-          fs.writeFileSync(work + '/validation.json', JSON.stringify(result));
-          if (!result.ok) { console.error('TRUSTED-A2-AUTHORITY: FAIL — ' + result.error); process.exit(1); }
-          console.log('TRUSTED-A2-AUTHORITY: PASS — corpusId=' + result.corpusId + ' digest=' + result.digest);
-          NODE
+            const headSha = process.env.PR_HEAD_LC;
+            const prBase = String(process.env.PR_BASE_SHA || '').toLowerCase();
+            const sel = lib.verifyRevocableSelectors({ prHeadSha: headSha, acceptedA2Head: process.env.ACCEPTED_A2_HEAD, acceptedAuthorityBaseSha: process.env.BASE_SHA });
+            if (!sel.ok) return fail(sel.error);
+            const baseSha = String(process.env.BASE_SHA).toLowerCase();
+            // Fetch PR head + authority commit as data (no PR code executed).
+            try { execFileSync('git', ['fetch', '--no-tags', 'origin', 'refs/pull/' + Number(process.env.PR_NUMBER) + '/head'], { stdio: 'inherit' }); } catch (e) { return fail('cannot fetch PR head ref'); }
+            const fetched = execFileSync('git', ['rev-parse', 'FETCH_HEAD'], { encoding: 'utf8' }).trim().toLowerCase();
+            if (fetched !== headSha) return fail('fetched PR head ' + fetched + ' != event head ' + headSha);
+            try { execFileSync('git', ['fetch', '--no-tags', 'origin', baseSha], { stdio: 'inherit' }); } catch (e) { return fail('cannot fetch authority base commit ' + baseSha + ' (unavailable)'); }
 
-      # --- (9) Conclude the head-bound check. Runs always so failures also publish.
-      - name: Conclude trusted head check
-        if: always()
+            // Rename-safe + NUL-safe protected-path enumeration
+            let mb;
+            try { mb = execFileSync('git', ['merge-base', prBase, headSha], { encoding: 'utf8' }).trim(); } catch (e) { return fail('cannot compute merge-base'); }
+            let changedBuf;
+            try { changedBuf = execFileSync('git', ['diff', '--no-renames', '--name-only', '-z', mb, headSha]); } catch (e) { return fail('cannot diff base..head'); }
+            const changed = changedBuf.toString('utf8').split('\0').filter(Boolean);
+            const forbid = lib.forbiddenPaths(changed);
+            if (forbid.length) return fail('A2 PR modifies protected trust paths (rename-safe): ' + forbid.join(', '));
+
+            // Inert JSON at fixed trusted paths
+            const readAt = (sha, path) => { try { return execFileSync('git', ['show', sha + ':' + path], { encoding: 'utf8' }); } catch (e) { return null; } };
+            const runtimeText = readAt(headSha, 'src/study/runtime-corpus-authority.v1.json'); if (!runtimeText) return fail('runtime declaration missing at PR head');
+            const ledgerText = readAt(baseSha, 'authority/v1/CORPUS_RELEASE_LEDGER_V1.json'); if (!ledgerText) return fail('external ledger missing at authority base');
+            const manifestText = readAt(baseSha, 'authority/v1/AUTHORITY_BASELINE_MANIFEST_V1.json'); if (!manifestText) return fail('baseline manifest missing at authority base');
+            let runtime, ledger, manifest;
+            try { runtime = JSON.parse(runtimeText); } catch (e) { return fail('runtime declaration is not valid JSON'); }
+            try { ledger = JSON.parse(ledgerText); } catch (e) { return fail('external ledger is not valid JSON'); }
+            try { manifest = JSON.parse(manifestText); } catch (e) { return fail('baseline manifest is not valid JSON'); }
+
+            const r = lib.verifyTrustedA2({ runtime, ledger, manifest });
+            fs.writeFileSync(work + '/validation.json', JSON.stringify(r.ok ? { ok: true, corpusId: r.corpusId, digest: r.digest } : { ok: false, error: r.error }));
+            if (!r.ok) console.error('TRUSTED-A2-AUTHORITY: FAIL — ' + r.error);
+            else console.log('TRUSTED-A2-AUTHORITY: PASS — corpusId=' + r.corpusId + ' digest=' + r.digest);
+            process.exit(0);
+          } catch (e) {
+            return fail('validation exception: ' + (e && e.message ? e.message : String(e)));
+          }
+          NODE
+          set -e
+
+      # STEP 4: SINGLE FINALIZER — always runs when a check was opened; always
+      # concludes the SAME App check `success` or `failure`. If validation
+      # produced no verdict for any reason, that is `failure` (fail closed).
+      - name: Finalize head-bound trusted check
+        if: always() && env.CHECK_RUN_ID != ''
         env:
-          APP_ID: ${{ vars.PAGAMENOS_TRUSTED_GATE_APP_ID }}
-          APP_PRIVATE_KEY: ${{ secrets.PAGAMENOS_TRUSTED_GATE_APP_PRIVATE_KEY }}
           GH_OWNER: ${{ github.repository_owner }}
           GH_REPO: ${{ github.event.repository.name }}
         run: |
@@ -347,19 +404,15 @@ jobs:
           const fs = require('fs');
           const lib = require(process.env.LIB_PATH);
           (async () => {
-            const appId = process.env.APP_ID, key = process.env.APP_PRIVATE_KEY;
-            const id = process.env.CHECK_RUN_ID;
-            if (!appId || !key || !id) { console.error('cannot conclude head check (no creds or no in_progress check) — head check stays non-success, merge blocked'); process.exit(1); }
-            // Determine validation outcome; ANY missing/false result concludes failure (fail closed, no stale success).
-            let ok = false, detail = 'validation did not complete';
-            try { const r = JSON.parse(fs.readFileSync(process.env.WORK + '/validation.json', 'utf8')); ok = r.ok === true; detail = r.ok ? 'runtime declaration agrees with external ledger; scope boundary clean' : r.error; } catch { /* stays failure */ }
-            const owner = process.env.GH_OWNER, repo = process.env.GH_REPO, headSha = process.env.PR_HEAD_LC;
-            const token = await lib.mintInstallationToken({ appId, privateKey: key, owner, repo });
-            await lib.patchCheckRun({ token, owner, repo, id, body: lib.buildCheckRunBody({
-              name: lib.CHECK_NAME, headSha, status: 'completed', conclusion: lib.concludeFromValidation(ok),
-              title: ok ? 'Trusted A2 authority: PASS' : 'Trusted A2 authority: FAIL', summary: detail,
-            }) });
-            console.log('concluded head check ' + id + ' = ' + lib.concludeFromValidation(ok));
+            let ok = false, detail = 'validation did not produce a result (fail closed)';
+            try { const r = JSON.parse(fs.readFileSync(process.env.WORK + '/validation.json', 'utf8')); ok = r.ok === true; detail = r.ok ? ('runtime declaration agrees with external ledger; scope boundary clean (corpusId=' + r.corpusId + ')') : r.error; } catch { /* stays failure */ }
+            const owner = process.env.GH_OWNER, repo = process.env.GH_REPO;
+            const headSha = process.env.PR_HEAD_LC, externalId = process.env.CHECK_EXTERNAL_ID;
+            const token = process.env.APP_TOKEN;
+            if (!token) { console.error('finalize: no App token — trusted issuer availability failure; check remains in_progress'); process.exit(1); }
+            const body = lib.buildCompletedBody({ name: lib.CHECK_NAME, headSha, externalId, completedAt: new Date().toISOString(), conclusion: lib.concludeFromValidation(ok), title: ok ? 'Trusted A2 authority: PASS' : 'Trusted A2 authority: FAIL', summary: detail });
+            await lib.updateCheckRun({ token, owner, repo, id: process.env.CHECK_RUN_ID, body });
+            console.log('finalized head-bound trusted run id=' + process.env.CHECK_RUN_ID + ' = ' + lib.concludeFromValidation(ok));
             if (!ok) process.exit(1);
-          })().catch((e) => { console.error('TRUSTED-A2-AUTHORITY: conclude error — ' + e.message); process.exit(1); });
+          })().catch((e) => { console.error('finalize error: ' + e.message); process.exit(1); });
           NODE
