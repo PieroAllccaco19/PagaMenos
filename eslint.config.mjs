@@ -134,6 +134,25 @@ const FORBIDDEN_DEEP_SERVICE = [
       'Import the public @/services barrel (decideAndPersist / loadDecisionSnapshot / ' +
       'replayDecisionSnapshot). The decide-and-persist module exposes injectable deps and is off-limits.',
   },
+  {
+    // A2-CODE (Sol Finding 1): the A2 lifecycle + decision-saga modules expose the injectable
+    // `*WithDeps` surface (repository, trusted clock, decideAndPersist/finder/loader). Ordinary code
+    // must use the public @/services barrel (one-request-argument wrappers only). Only the barrel and
+    // tests may import these deep modules.
+    group: [
+      '@/services/study-purchase-intent',
+      '@/services/study-purchase-intent.js',
+      '@/services/study-purchase-intent.ts',
+      '**/services/study-purchase-intent',
+      '@/services/study-intent-decision',
+      '@/services/study-intent-decision.js',
+      '@/services/study-intent-decision.ts',
+      '**/services/study-intent-decision',
+    ],
+    message:
+      'Import the public @/services barrel. The A2 study-purchase-intent / study-intent-decision ' +
+      'modules expose injectable dependencies (repository, trusted clock, decision function) and are off-limits.',
+  },
 ];
 
 const FORBIDDEN_WRITE_AND_DEEP = [...FORBIDDEN_WRITE_INTERNALS, ...FORBIDDEN_DEEP_SERVICE];
@@ -178,6 +197,16 @@ const FORBIDDEN_STUDY_ADMIN = [
       'isTrustedParticipantContext / the TrustedParticipantContext type from @/study; contexts are ' +
       'constructed only by the trusted session adapter (@/services/study-admin).',
   },
+  {
+    // A2-CODE: the trusted entry-source CREATION primitive submodule. Ordinary code must never reach
+    // it (it would let a caller mint trusted RESEARCH/AUTH/etc. provenance). Only the trusted session
+    // adapter and the study barrel may import it.
+    group: ['@/study/entry-source-context', '**/study/entry-source-context'],
+    message:
+      'The trusted entry-source creation primitive is off-limits. Participant-facing code uses ' +
+      'isResolvedEntrySource / the ResolvedEntrySource type from @/study; trusted entry provenance is ' +
+      'minted only by the trusted session adapter (@/services/study-admin).',
+  },
 ];
 
 /** The sanctioned M3.5B-A1 study implementation files that may reach their own raw study repositories
@@ -192,6 +221,13 @@ const SANCTIONED_STUDY_IMPL_FILES = [
   'src/services/study-analysis.ts',
   'src/services/study-participant-session.ts',
   'src/services/study-admin.ts',
+];
+
+/** M3.5B-A2: the sanctioned intent-lifecycle + decision-saga service files. Each may reach its OWN raw
+ * A2 repository; operation-specific ownership is enforced by the module-capability AST test. */
+const SANCTIONED_A2_IMPL_FILES = [
+  'src/services/study-purchase-intent.ts',
+  'src/services/study-intent-decision.ts',
 ];
 
 export default tseslint.config(
@@ -275,12 +311,34 @@ export default tseslint.config(
     },
   },
   {
+    // The sanctioned M3.5B-A2 intent-lifecycle + decision-saga services may reach their OWN raw A2
+    // repositories. Operation-specific ownership is enforced by the module-capability AST test.
+    files: SANCTIONED_A2_IMPL_FILES,
+    rules: {
+      'no-restricted-imports': 'off',
+    },
+  },
+  {
     // Test + tooling files may use Node builtins, looser typing, and the internal modules
     // (infrastructure, not production application code).
     files: ['**/*.test.ts', 'vitest.config.ts', 'vitest.integration.config.ts'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       'no-restricted-imports': 'off',
+    },
+  },
+  {
+    // CommonJS build/CI tooling scripts (e.g. the shared runtime-authority verifier consumed by the CI
+    // authority-gate). Node CommonJS module scope: `require`, `module`, `process` are ambient globals.
+    files: ['scripts/**/*.cjs'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        require: 'readonly',
+        module: 'writable',
+        process: 'readonly',
+        console: 'readonly',
+      },
     },
   },
 );
