@@ -152,3 +152,41 @@ jobs:
           console.log('  corpusId=' + manifest.corpusId + ' corpusDigest=' + manifest.corpusSemanticDigest);
           console.log('  holidayVersion=' + hv + ' holidayDigest=' + manifest.holidayCalendarDigest + ' dates=' + d.length);
           NODE
+
+      # Sol Closure 1 (ADDITIVE): bind the CANDIDATE runtime corpus-authority declaration (the exact
+      # working-tree JSON the runtime consumes) to the accepted EXTERNAL historical ledger at BASE_SHA.
+      # This is the trust root that makes a same-corpusId "mutated corpus + mutated runtime declaration"
+      # self-approval attack fail: the external ledger digest is immutable. Uses the SAME shared verifier
+      # (scripts/runtime-authority-check.cjs) that the unit test exercises for negative cases.
+      - name: Verify candidate runtime authority declaration against external ledger
+        env:
+          BASE_SHA: ${{ vars.PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA }}
+        run: |
+          set -euo pipefail
+          node - "$BASE_SHA" <<'NODE'
+          const fs = require('node:fs');
+          const { execSync } = require('node:child_process');
+          const { verifyRuntimeAuthority } = require('./scripts/runtime-authority-check.cjs');
+          const SHA = process.argv[2];
+          const fail = (m) => { console.error('::error::runtime-authority-gate: ' + m); process.exit(1); };
+          const showJson = (p) => {
+            try { return JSON.parse(execSync('git show ' + SHA + ':' + p, { encoding: 'utf8' })); }
+            catch (e) { fail('cannot read/parse external ' + p + ' at ' + SHA + ': ' + e.message); }
+          };
+          // CANDIDATE runtime declaration = the exact working-tree JSON the runtime imports.
+          let runtime;
+          try { runtime = JSON.parse(fs.readFileSync('src/study/runtime-corpus-authority.v1.json', 'utf8')); }
+          catch (e) { fail('cannot read candidate runtime declaration: ' + e.message); }
+          const ledger = showJson('authority/v1/CORPUS_RELEASE_LEDGER_V1.json');
+          const manifest = showJson('authority/v1/AUTHORITY_BASELINE_MANIFEST_V1.json');
+          const res = verifyRuntimeAuthority({ runtime, ledger, manifest });
+          if (!res.ok) fail('candidate runtime declaration does not match external ledger: ' + res.error);
+          // Self-check the verifier is discriminating (negative controls) so a PASS is meaningful.
+          const mutatedDigest = { ...runtime, corpusSemanticDigest: 'sha256:deadbeefdeadbeef' };
+          if (verifyRuntimeAuthority({ runtime: mutatedDigest, ledger, manifest }).ok) fail('verifier accepted a mutated digest');
+          const mutatedId = { ...runtime, corpusId: 'PAGAMENOS_FORGED_CORPUS' };
+          if (verifyRuntimeAuthority({ runtime: mutatedId, ledger, manifest }).ok) fail('verifier accepted an unknown corpusId');
+          console.log('RUNTIME AUTHORITY GATE PASS');
+          console.log('  runtime.corpusId=' + res.corpusId);
+          console.log('  runtime.digest==ledger.digest=' + res.digest);
+          NODE
