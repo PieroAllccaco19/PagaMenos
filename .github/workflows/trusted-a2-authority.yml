@@ -309,6 +309,168 @@ jobs:
             return hits;
           }
 
+          // ---- Parity-aware protected-path absorption (independently accepted) ----
+          //
+          // A candidate protected path (per PROTECTED_PREFIXES) that appears in the
+          // rename-safe historical diff is FORBIDDEN unless it is registered here
+          // AND both EVENT-BOUND base and head carry the EXACT registered Git tree
+          // entry (mode + type + full object id + exact path). This is NOT generic
+          // parity: base==head alone never discharges a violation, nor does bytes-
+          // only equality — mode/type/OID must equal the registered expectation.
+          //
+          // The registry has EXACTLY ONE entry — the A2 CI object independently
+          // accepted by the SOL trust-prerequisite gate. It is defined here in the
+          // sentinel-bounded trusted region so its OID is pinned by the harness
+          // digest; a candidate PR cannot alter it, and no repository variable or
+          // candidate-side manifest supplies the OID.
+          const ABSORBED_OID_RE = /^[0-9a-f]{40}$/;
+          const ABSORBED_MODE_RE = /^[0-7]{6}$/;
+          const ABSORBED_ALLOWED_TYPES = new Set(['blob']);
+          const ABSORBED_PATH_REGISTRY = Object.freeze({
+            '.github/workflows/ci.yml': Object.freeze({
+              state: 'present',
+              mode: '100644',
+              type: 'blob',
+              objectId: 'b53dc40f2e3eb83e9157f3469ccc79fc61ab03b3',
+            }),
+          });
+
+          // Parse the NUL-terminated output of `git ls-tree -z <sha> -- <path>`
+          // for a SINGLE exact-path lookup. Fails closed on: empty output; more
+          // than one entry (logical ambiguity); malformed <mode>/<type>/<oid>;
+          // path bytes not equal to the requested path (no case-folding, no
+          // Unicode normalization, no basename matching).
+          function parseSingleLsTreeZ(buf, expectedPath) {
+            if (buf == null) return { ok: false, error: 'ls-tree returned no output' };
+            const text = Buffer.isBuffer(buf) ? buf.toString('utf8') : String(buf);
+            const segs = text.split('\0').filter((s) => s.length > 0);
+            if (segs.length === 0) return { ok: false, error: 'ls-tree returned zero entries' };
+            if (segs.length > 1) return { ok: false, error: 'ls-tree returned multiple entries (' + segs.length + ')' };
+            const line = segs[0];
+            const tab = line.indexOf('\t');
+            if (tab < 0) return { ok: false, error: 'ls-tree line missing TAB separator' };
+            const meta = line.slice(0, tab);
+            const gotPath = line.slice(tab + 1);
+            if (gotPath !== expectedPath) return { ok: false, error: 'ls-tree path mismatch (got "' + gotPath + '" expected "' + expectedPath + '")' };
+            const parts = meta.split(' ');
+            if (parts.length !== 3) return { ok: false, error: 'ls-tree meta must be <mode> <type> <oid>' };
+            const mode = parts[0], type = parts[1], objectId = parts[2];
+            if (!ABSORBED_MODE_RE.test(mode)) return { ok: false, error: 'ls-tree mode malformed: ' + mode };
+            if (typeof type !== 'string' || type.length === 0) return { ok: false, error: 'ls-tree type empty' };
+            if (!ABSORBED_OID_RE.test(objectId)) return { ok: false, error: 'ls-tree oid malformed: ' + objectId };
+            return { ok: true, entry: { path: gotPath, mode, type, objectId } };
+          }
+
+          // Reject ambiguity in the changed-path set that touches a registered
+          // path. Authorization ALWAYS uses exact byte-level path identity; this
+          // predicate only flags collision groups so the gate fails CLOSED when
+          // the surrounding change set looks equivalence-ambiguous around a
+          // registered path.
+          //   - exact-duplicate changed path -> FAIL
+          //   - ASCII case-fold group whose folded key equals a registered path
+          //     OR whose group contains more than one distinct path AND any
+          //     member of that group equals a registered path -> FAIL
+          // Unicode normalization is intentionally NOT applied here; a
+          // malformed/undecodable changed path from the diff caller is treated
+          // as fail-closed at the callsite (see NUL-safe diff handling).
+          function detectRegisteredPathCollisions(changedPaths, registry) {
+            if (!Array.isArray(changedPaths)) return { ok: false, error: 'changedPaths not an array' };
+            const registered = Object.keys(registry || {});
+            const registeredSet = new Set(registered);
+            const registeredLcKeys = new Set(registered.map((p) => p.toLowerCase()));
+            const seen = new Set();
+            for (const p of changedPaths) {
+              if (typeof p !== 'string' || p.length === 0) return { ok: false, error: 'changed path is not a non-empty string' };
+              if (seen.has(p)) return { ok: false, error: 'duplicate changed path "' + p + '"' };
+              seen.add(p);
+            }
+            const lcGroups = new Map();
+            for (const p of changedPaths) {
+              const k = p.toLowerCase();
+              if (!lcGroups.has(k)) lcGroups.set(k, []);
+              lcGroups.get(k).push(p);
+            }
+            for (const [k, group] of lcGroups) {
+              const touches = registeredLcKeys.has(k) || group.some((g) => registeredSet.has(g));
+              if (!touches) continue;
+              if (group.length > 1) {
+                return { ok: false, error: 'ASCII case-fold collision on registered path: [' + group.join(', ') + ']' };
+              }
+              // group.length === 1 — if it case-folds to a registered path it MUST equal that exact path
+              if (registeredLcKeys.has(k) && !registeredSet.has(group[0])) {
+                return { ok: false, error: 'changed path "' + group[0] + '" case-folds to a registered path but is not an exact match' };
+              }
+            }
+            return { ok: true };
+          }
+
+          // Pure authorization predicate. Callers inject tree-entry resolvers for
+          // the exact event-bound base and head (each returns the parseSingleLsTreeZ
+          // shape or { ok: false, error }). No network, no git.
+          function authorizeProtectedPathsPure(input) {
+            const { changedPaths, registry, resolveBase, resolveHead } = input;
+            const coll = detectRegisteredPathCollisions(changedPaths, registry);
+            if (!coll.ok) return { ok: false, absorbed: [], forbidden: [{ path: '<changed-set>', reason: coll.error }] };
+            const absorbed = [], forbidden = [];
+            for (const p of changedPaths) {
+              if (!PROTECTED_PREFIXES.some((pre) => p.startsWith(pre))) continue;
+              const expected = registry ? registry[p] : undefined;
+              if (!expected) { forbidden.push({ path: p, reason: 'protected path not registered for absorption' }); continue; }
+              if (expected.state !== 'present') { forbidden.push({ path: p, reason: 'registry entry state != present (deletion absorption not supported)' }); continue; }
+              if (!ABSORBED_MODE_RE.test(expected.mode) || !ABSORBED_ALLOWED_TYPES.has(expected.type) || !ABSORBED_OID_RE.test(expected.objectId)) {
+                forbidden.push({ path: p, reason: 'registry entry malformed (mode/type/oid)' }); continue;
+              }
+              const b = resolveBase(p);
+              if (!b || !b.ok) { forbidden.push({ path: p, reason: 'base tree entry unavailable: ' + (b && b.error ? b.error : 'unknown') }); continue; }
+              const h = resolveHead(p);
+              if (!h || !h.ok) { forbidden.push({ path: p, reason: 'head tree entry unavailable: ' + (h && h.error ? h.error : 'unknown') }); continue; }
+              const eqExpected = (e) => e && e.path === p && e.mode === expected.mode && e.type === expected.type && e.objectId === expected.objectId;
+              if (!eqExpected(b.entry)) { forbidden.push({ path: p, reason: 'base entry != expected (got ' + b.entry.mode + ' ' + b.entry.type + ' ' + b.entry.objectId + ')' }); continue; }
+              if (!eqExpected(h.entry)) { forbidden.push({ path: p, reason: 'head entry != expected (got ' + h.entry.mode + ' ' + h.entry.type + ' ' + h.entry.objectId + ')' }); continue; }
+              absorbed.push(p);
+            }
+            return { ok: forbidden.length === 0, absorbed, forbidden };
+          }
+
+          // Pure verifier: for every present registry entry, the caller-supplied
+          // catFileType resolver must return the expected type for the expected
+          // OID. This is defense in depth on top of tree-entry-identity equality.
+          function verifyRegistryObjectTypes(input) {
+            const { registry, catFileType } = input;
+            for (const p of Object.keys(registry || {})) {
+              const e = registry[p];
+              if (!e || e.state !== 'present') continue;
+              const got = catFileType(e.objectId);
+              if (typeof got !== 'string' || got.trim().toLowerCase() !== e.type) {
+                return { ok: false, error: 'registry OID ' + e.objectId + ' for "' + p + '" cat-file type "' + String(got) + '" != expected "' + e.type + '"' };
+              }
+            }
+            return { ok: true };
+          }
+
+          // ---- Base-stability revalidation (pure predicate; caller provides API JSON) ----
+          // Confirms current PR metadata AND the target branch tip still equal the
+          // event-bound (B, H). If either drifted, FAIL — never silently rebind to a
+          // moving target base.
+          function verifyBaseStability(input) {
+            const { eventHeadSha, eventBaseSha, prJson, branchJson } = input;
+            if (!SHA40_RE.test(lc(eventHeadSha))) return { ok: false, error: 'eventHeadSha malformed' };
+            if (!SHA40_RE.test(lc(eventBaseSha))) return { ok: false, error: 'eventBaseSha malformed' };
+            if (!isPlainObject(prJson) || !isPlainObject(prJson.head) || !isPlainObject(prJson.base)) return { ok: false, error: 'pr metadata malformed' };
+            const curHead = lc(prJson.head.sha);
+            const curBase = lc(prJson.base.sha);
+            if (!SHA40_RE.test(curHead)) return { ok: false, error: 'current pr.head.sha malformed' };
+            if (!SHA40_RE.test(curBase)) return { ok: false, error: 'current pr.base.sha malformed' };
+            if (curHead !== lc(eventHeadSha)) return { ok: false, error: 'PR head drifted: ' + lc(eventHeadSha) + ' -> ' + curHead };
+            if (curBase !== lc(eventBaseSha)) return { ok: false, error: 'PR base drifted: ' + lc(eventBaseSha) + ' -> ' + curBase };
+            if (typeof prJson.base.ref !== 'string' || prJson.base.ref.length === 0) return { ok: false, error: 'pr.base.ref missing' };
+            if (!isPlainObject(branchJson) || !isPlainObject(branchJson.commit)) return { ok: false, error: 'branch metadata malformed' };
+            const tip = lc(branchJson.commit.sha);
+            if (!SHA40_RE.test(tip)) return { ok: false, error: 'branch tip sha malformed' };
+            if (tip !== lc(eventBaseSha)) return { ok: false, error: 'target branch "' + prJson.base.ref + '" advanced past ' + lc(eventBaseSha) + ' to ' + tip };
+            return { ok: true, headSha: curHead, baseSha: curBase, baseRef: prJson.base.ref };
+          }
+
           // ---- Pure GitHub App / check-run request builders (no network) ----
           function b64url(buf) { return Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
           function buildAppJwt(appId, nowSec) {
@@ -428,6 +590,9 @@ jobs:
             duplicateNameFor, chooseCanonical, partitionCanonical,
             idMetadataSignature, detectIdMetadataConflicts,
             verifyTrustedA2, verifyRevocableSelectors, forbiddenPaths,
+            ABSORBED_PATH_REGISTRY, ABSORBED_OID_RE, ABSORBED_MODE_RE, ABSORBED_ALLOWED_TYPES,
+            parseSingleLsTreeZ, detectRegisteredPathCollisions, authorizeProtectedPathsPure, verifyRegistryObjectTypes,
+            verifyBaseStability,
             b64url, buildAppJwt, buildInProgressBody, buildCompletedBody, buildDuplicateFailureBody, concludeFromValidation,
             listAllCheckRunsForRefWithFetcher,
             mintInstallationToken, listAllCheckRunsForRef, createCheckRun, updateCheckRun, patchAllRuns,
@@ -554,8 +719,37 @@ jobs:
               let changedBuf;
               try { changedBuf = execFileSync('git', ['diff', '--no-renames', '--name-only', '-z', mb, headSha]); } catch (e) { return fail('cannot diff base..head'); }
               const changed = changedBuf.toString('utf8').split('\0').filter(Boolean);
+              // Parity-aware protected-path absorption. A protected path that
+              // historically changed on this PR is FORBIDDEN unless it is
+              // registered in the trusted-region ABSORBED_PATH_REGISTRY AND both
+              // event-bound base and head carry the EXACT expected tree entry
+              // (mode + type + full oid + exact path). See the trusted region.
               const forbid = lib.forbiddenPaths(changed);
-              if (forbid.length) return fail('A2 PR modifies protected trust paths (rename-safe): ' + forbid.join(', '));
+              if (forbid.length) {
+                const lsTreeZ = (sha, p) => {
+                  let out;
+                  try { out = execFileSync('git', ['ls-tree', '-z', sha, '--', p], { stdio: ['ignore', 'pipe', 'pipe'] }); }
+                  catch (e) { return { ok: false, error: 'ls-tree failed: ' + (e && e.message ? e.message : String(e)) }; }
+                  return lib.parseSingleLsTreeZ(out, p);
+                };
+                const catType = (oid) => {
+                  try { return execFileSync('git', ['cat-file', '-t', oid], { encoding: 'utf8' }).trim(); }
+                  catch (e) { return '<cat-file-error:' + (e && e.message ? e.message : String(e)) + '>'; }
+                };
+                const typeCheck = lib.verifyRegistryObjectTypes({ registry: lib.ABSORBED_PATH_REGISTRY, catFileType: catType });
+                if (!typeCheck.ok) return fail(typeCheck.error);
+                const az = lib.authorizeProtectedPathsPure({
+                  changedPaths: changed,
+                  registry: lib.ABSORBED_PATH_REGISTRY,
+                  resolveBase: (p) => lsTreeZ(prBase, p),
+                  resolveHead: (p) => lsTreeZ(headSha, p),
+                });
+                if (!az.ok) {
+                  const rep = az.forbidden.map((f) => f.path + ' (' + f.reason + ')').join('; ');
+                  return fail('A2 PR modifies protected trust paths: ' + rep);
+                }
+                console.log('parity-aware absorbed protected path(s): ' + az.absorbed.join(', '));
+              }
 
               const readAt = (sha, path) => { try { return execFileSync('git', ['show', sha + ':' + path], { encoding: 'utf8' }); } catch (e) { return null; } };
               const runtimeText = readAt(headSha, 'src/study/runtime-corpus-authority.v1.json'); if (!runtimeText) return fail('runtime declaration missing at PR head');
@@ -600,6 +794,8 @@ jobs:
         env:
           GH_OWNER: ${{ github.repository_owner }}
           GH_REPO: ${{ github.event.repository.name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_NUMBER_FINALIZE: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
           node - <<'NODE'
@@ -628,6 +824,33 @@ jobs:
               }
               console.log('finalized ' + ids.length + ' exact logical run(s) [' + ids.join(',') + '] = failure');
               process.exit(1);
+            }
+
+            // Base-stability revalidation: before publishing any required-context
+            // success, re-query PR metadata AND target-branch tip via trusted App
+            // token; if either drifted from (B, H), FAIL. Do NOT silently rebind
+            // to a moving base. This narrows race exposure during the run; it
+            // does NOT make the later merge atomic (see §19 in the design doc).
+            {
+              const prNumber = Number(process.env.PR_NUMBER_FINALIZE);
+              const evHead = String(process.env.PR_HEAD_LC || '').toLowerCase();
+              const evBase = String(process.env.PR_BASE_SHA || '').toLowerCase();
+              const hdrs = { authorization: 'token ' + token, accept: 'application/vnd.github+json', 'user-agent': 'trusted-a2-authority' };
+              async function fetchJson(url) {
+                const res = await fetch(url, { headers: hdrs });
+                const text = await res.text();
+                let json; try { json = text ? JSON.parse(text) : {}; } catch { json = null; }
+                return { status: res.status, ok: res.ok, json };
+              }
+              const prMeta = await fetchJson('https://api.github.com/repos/' + owner + '/' + repo + '/pulls/' + prNumber);
+              if (!prMeta.ok) { console.error('finalize: base-stability re-query failed status=' + prMeta.status + ' — TRUSTED ISSUER AVAILABILITY FAILURE'); process.exit(1); }
+              const baseRef = prMeta.json && prMeta.json.base && prMeta.json.base.ref;
+              if (typeof baseRef !== 'string' || baseRef.length === 0) { console.error('finalize: base-stability pr.base.ref missing'); process.exit(1); }
+              const branchMeta = await fetchJson('https://api.github.com/repos/' + owner + '/' + repo + '/branches/' + encodeURIComponent(baseRef));
+              if (!branchMeta.ok) { console.error('finalize: base-stability branch re-query failed status=' + branchMeta.status); process.exit(1); }
+              const stab = lib.verifyBaseStability({ eventHeadSha: evHead, eventBaseSha: evBase, prJson: prMeta.json, branchJson: branchMeta.json });
+              if (!stab.ok) { console.error('finalize: BASE-STABILITY FAILURE — ' + stab.error + '. ADMINISTRATIVE MERGE FREEZE APPLIES; canonical NOT promoted.'); process.exit(1); }
+              console.log('base-stability: PR head/base and branch tip still equal event-bound values (' + evHead + ', ' + evBase + ')');
             }
 
             // PASS path (§3/§6). Canonicalize.
