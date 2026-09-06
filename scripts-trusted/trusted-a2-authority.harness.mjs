@@ -47,7 +47,7 @@ const END = '===END TRUSTED-A2 TRUSTED LOGIC===';
 
 // Pin over the normalized authoritative region. Update ONLY with an intended
 // logic change (record it in the commit).
-const PINNED_REGION_SHA256 = '7aa942d7e797603769d27e3ce7aa44603c8c30ac5d106dd8ec6b600b4bfc3d1a';
+const PINNED_REGION_SHA256 = 'd2d3188c93b34d96698f9ee9afe3f152035f5a7fa88e608550797d5b55d67f70';
 
 const normalize = (s) =>
   s
@@ -1478,47 +1478,115 @@ async function main() {
     !p12.ok,
   );
 
-  // 13. Object-type mismatch via verifyRegistryObjectTypes
-  const badTypeChk = lib.verifyRegistryObjectTypes({ registry: REG, catFileType: () => 'tree' });
+  // 13. Object-type: STRICT canonical raw-stdout equality with `<type>\n`.
+  //     The verifier consumes RAW `git cat-file -t <oid>` bytes; no trim, no
+  //     lowercasing, no whitespace tolerance, no CRLF acceptance. Real Git
+  //     plumbing on both Linux and Windows emits exactly `blob\n` — proven at
+  //     the top of the harness via a raw-buffer assertion.
+  const canonicalBlob = 'blob\n';
+  const goodTypeChk = lib.verifyRegistryObjectTypes({
+    registry: REG,
+    catFileType: () => canonicalBlob,
+  });
+  checkRaw('§PAR/13 object-type canonical raw "blob\\n" -> OK', goodTypeChk.ok);
+  const badTypeChkTree = lib.verifyRegistryObjectTypes({
+    registry: REG,
+    catFileType: () => 'tree\n',
+  });
   checkRaw(
-    '§PAR/13 object-type mismatch (cat-file says tree) -> FAIL',
-    !badTypeChk.ok && /cat-file type/.test(badTypeChk.error),
+    '§PAR/13 object-type wrong ("tree\\n") -> FAIL',
+    !badTypeChkTree.ok && /!= canonical/.test(badTypeChkTree.error),
   );
-  const goodTypeChk = lib.verifyRegistryObjectTypes({ registry: REG, catFileType: () => 'blob' });
-  checkRaw('§PAR/13 object-type match (cat-file says blob) -> OK', goodTypeChk.ok);
+  // Non-canonical output shapes that the OLD tolerant verifier accepted MUST
+  // now fail closed. These are the exact synthetic corruptions the reviewer
+  // required be rejected.
+  const nonCanonicalOutputs = [
+    { label: 'uppercase "BLOB\\n"', raw: 'BLOB\n' },
+    { label: 'leading space " blob\\n"', raw: ' blob\n' },
+    { label: 'trailing space "blob \\n"', raw: 'blob \n' },
+    { label: 'missing newline "blob"', raw: 'blob' },
+    { label: 'CRLF "blob\\r\\n"', raw: 'blob\r\n' },
+    { label: 'double newline "blob\\n\\n"', raw: 'blob\n\n' },
+    { label: 'empty string', raw: '' },
+    { label: 'whitespace only', raw: '   \n' },
+    { label: 'unrelated error message', raw: 'fatal: bad object\n' },
+  ];
+  for (const nc of nonCanonicalOutputs) {
+    const r = lib.verifyRegistryObjectTypes({ registry: REG, catFileType: () => nc.raw });
+    checkRaw('§PAR/13-strict cat-file rejects: ' + nc.label, !r.ok);
+  }
+  // Non-string return (Buffer / null / undefined / number) MUST fail closed.
+  const nonStringReturns = [
+    { label: 'null', raw: null },
+    { label: 'undefined', raw: undefined },
+    { label: 'Buffer', raw: Buffer.from('blob\n') },
+    { label: 'number 42', raw: 42 },
+  ];
+  for (const nc of nonStringReturns) {
+    const r = lib.verifyRegistryObjectTypes({ registry: REG, catFileType: () => nc.raw });
+    checkRaw('§PAR/13-strict cat-file rejects non-string return: ' + nc.label, !r.ok);
+  }
 
-  // 14. Malformed tree-entry output -> parse failure
+  // 14. STRICT ls-tree -z framing. Canonical record shape is EXACTLY
+  //     `<meta>\t<exact-path>\x00` — one record, one terminal NUL, no CR, no
+  //     leading/interior/redundant NUL. Real Git plumbing on both Linux and
+  //     Windows emits this shape (verified via `xxd` on the actual command).
+  //     The stricter parser MUST accept it, and reject every synthetic
+  //     malformation below (missing-NUL and extra-NUL negatives are called
+  //     out explicitly by the independent reviewer).
+  const canonicalRec = '100644 blob ' + CI_OID + '\t' + CI_PATH;
+  const goodBuf = Buffer.from(canonicalRec + '\x00');
+  const goodParsed = lib.parseSingleLsTreeZ(goodBuf, CI_PATH);
+  checkRaw(
+    '§PAR/14 parseSingleLsTreeZ accepts canonical `<meta>\\t<path>\\x00`',
+    goodParsed.ok && goodParsed.entry.objectId === CI_OID && goodParsed.entry.mode === '100644',
+  );
+
   const badBuffers = [
-    { label: 'empty', buf: Buffer.from('') },
-    { label: 'no TAB', buf: Buffer.from('100644 blob ' + CI_OID + ' ' + CI_PATH + '\0') },
-    { label: 'meta 2 parts', buf: Buffer.from('100644 blob\t' + CI_PATH + '\0') },
-    { label: 'bad mode', buf: Buffer.from('10064x blob ' + CI_OID + '\t' + CI_PATH + '\0') },
-    { label: 'bad oid', buf: Buffer.from('100644 blob ZZZ\t' + CI_PATH + '\0') },
-    { label: 'wrong path', buf: Buffer.from('100644 blob ' + CI_OID + '\tother\0') },
+    // reviewer-called-out framing negatives (missing/redundant terminal NUL):
+    { label: 'missing terminal NUL', buf: Buffer.from(canonicalRec) },
+    { label: 'two terminal NULs', buf: Buffer.from(canonicalRec + '\x00\x00') },
+    { label: 'leading NUL only', buf: Buffer.from('\x00') },
+    { label: 'leading NUL + record + NUL', buf: Buffer.from('\x00' + canonicalRec + '\x00') },
     {
-      label: 'two entries',
-      buf: Buffer.from(
-        '100644 blob ' +
-          CI_OID +
-          '\t' +
-          CI_PATH +
-          '\x00100644 blob ' +
-          CI_OID +
-          '\t' +
-          CI_PATH +
-          '\0',
-      ),
+      label: 'interior empty record (NUL in middle)',
+      buf: Buffer.from(canonicalRec + '\x00' + '\x00'),
     },
+    {
+      label: 'two records',
+      buf: Buffer.from(canonicalRec + '\x00' + canonicalRec + '\x00'),
+    },
+    {
+      label: 'record + NUL + junk',
+      buf: Buffer.from(canonicalRec + '\x00extra-junk'),
+    },
+    {
+      label: 'record + NUL + junk (no trailing NUL)',
+      buf: Buffer.from(canonicalRec + '\x00' + '100755 blob'),
+    },
+    // buffer-shape negatives:
+    { label: 'empty buffer', buf: Buffer.from('') },
+    { label: 'null buffer', buf: null },
+    { label: 'number input', buf: 42 },
+    // record-shape negatives (all with canonical terminal NUL):
+    { label: 'CR before NUL', buf: Buffer.from(canonicalRec + '\r\x00') },
+    { label: 'no TAB', buf: Buffer.from('100644 blob ' + CI_OID + ' ' + CI_PATH + '\x00') },
+    { label: 'meta 2 parts', buf: Buffer.from('100644 blob\t' + CI_PATH + '\x00') },
+    { label: 'bad mode', buf: Buffer.from('10064x blob ' + CI_OID + '\t' + CI_PATH + '\x00') },
+    { label: 'bad oid', buf: Buffer.from('100644 blob ZZZ\t' + CI_PATH + '\x00') },
+    { label: 'wrong exact path', buf: Buffer.from('100644 blob ' + CI_OID + '\tother\x00') },
+    { label: 'empty path', buf: Buffer.from('100644 blob ' + CI_OID + '\t\x00') },
   ];
   for (const b of badBuffers) {
     const r = lib.parseSingleLsTreeZ(b.buf, CI_PATH);
-    checkRaw('§PAR/14 parseSingleLsTreeZ rejects malformed: ' + b.label, !r.ok);
+    checkRaw('§PAR/14-strict parseSingleLsTreeZ rejects: ' + b.label, !r.ok);
   }
-  const goodBuf = Buffer.from('100644 blob ' + CI_OID + '\t' + CI_PATH + '\0');
-  const goodParsed = lib.parseSingleLsTreeZ(goodBuf, CI_PATH);
+  // Canonical string coercion path (test-only): a string source with exact
+  // canonical framing must still parse.
+  const goodStrParsed = lib.parseSingleLsTreeZ(canonicalRec + '\x00', CI_PATH);
   checkRaw(
-    '§PAR/14 parseSingleLsTreeZ accepts well-formed exact entry',
-    goodParsed.ok && goodParsed.entry.objectId === CI_OID,
+    '§PAR/14-strict accepts canonical string source (Buffer-coerced)',
+    goodStrParsed.ok && goodStrParsed.entry.objectId === CI_OID,
   );
 
   // 15. Candidate head != accepted A2 head — enforced by verifyRevocableSelectors
@@ -1643,13 +1711,49 @@ async function main() {
     }
     return lib.parseSingleLsTreeZ(out, p);
   };
+  // RAW stdout, no trim: the strict verifier requires exact `<type>\n`.
   const catTypeReal = (oid) => {
     try {
-      return execFileSync('git', ['cat-file', '-t', oid], { encoding: 'utf8' }).trim();
+      return execFileSync('git', ['cat-file', '-t', oid], { encoding: 'utf8' });
     } catch {
       return null;
     }
   };
+  // Prove real Git output shape at run time (raw bytes; independent of the
+  // top-of-file `xxd` capture). Both must equal exactly `blob\n` = 626c 6f62 0a.
+  const rawCatFileBytes = execFileSync('git', [
+    'cat-file',
+    '-t',
+    'b53dc40f2e3eb83e9157f3469ccc79fc61ab03b3',
+  ]);
+  checkRaw(
+    '§PAR/9 REAL-GIT compat: `git cat-file -t <blob>` raw bytes == "blob\\n"',
+    Buffer.isBuffer(rawCatFileBytes) &&
+      rawCatFileBytes.length === 5 &&
+      rawCatFileBytes[0] === 0x62 &&
+      rawCatFileBytes[1] === 0x6c &&
+      rawCatFileBytes[2] === 0x6f &&
+      rawCatFileBytes[3] === 0x62 &&
+      rawCatFileBytes[4] === 0x0a,
+  );
+  const rawLsTreeBytes = execFileSync('git', [
+    'ls-tree',
+    '-z',
+    'dbbd0662af1470abe65cd58fa91784b9a76df35a',
+    '--',
+    CI_PATH,
+  ]);
+  checkRaw(
+    '§PAR/9 REAL-GIT compat: `git ls-tree -z ...` ends with exactly one terminal NUL',
+    Buffer.isBuffer(rawLsTreeBytes) &&
+      rawLsTreeBytes.length > 0 &&
+      rawLsTreeBytes[rawLsTreeBytes.length - 1] === 0x00 &&
+      rawLsTreeBytes.indexOf(0x00) === rawLsTreeBytes.length - 1,
+  );
+  checkRaw(
+    '§PAR/9 REAL-GIT compat: stricter parseSingleLsTreeZ accepts real ls-tree bytes',
+    lib.parseSingleLsTreeZ(rawLsTreeBytes, CI_PATH).ok,
+  );
   const realBase = lsTreeReal(BASELINE_SHA, CI_PATH);
   const realHead = lsTreeReal(A2_HEAD_SHA, CI_PATH);
   checkRaw(

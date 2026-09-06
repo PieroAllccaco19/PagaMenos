@@ -336,21 +336,48 @@ jobs:
           });
 
           // Parse the NUL-terminated output of `git ls-tree -z <sha> -- <path>`
-          // for a SINGLE exact-path lookup. Fails closed on: empty output; more
-          // than one entry (logical ambiguity); malformed <mode>/<type>/<oid>;
-          // path bytes not equal to the requested path (no case-folding, no
-          // Unicode normalization, no basename matching).
+          // for a SINGLE exact-path lookup. STRICT canonical framing: the raw
+          // output MUST be exactly `<meta>\t<exact-path>\x00` — one record, one
+          // NUL byte, at the terminal position, no CR, no junk before or after.
+          // Real Git plumbing on Linux and Windows both emit this exact shape
+          // (verified locally: `xxd` shows `... 03b3 092e ... 796d 6c00`).
+          // Fails closed on: absent buffer; empty output; missing terminal NUL;
+          // any additional NUL byte (leading, interior, redundant terminal);
+          // record after first NUL; more than one entry; malformed
+          // <mode>/<type>/<oid>; path bytes not equal to the requested path
+          // (no case-folding, no Unicode normalization, no basename matching).
           function parseSingleLsTreeZ(buf, expectedPath) {
             if (buf == null) return { ok: false, error: 'ls-tree returned no output' };
-            const text = Buffer.isBuffer(buf) ? buf.toString('utf8') : String(buf);
-            const segs = text.split('\0').filter((s) => s.length > 0);
-            if (segs.length === 0) return { ok: false, error: 'ls-tree returned zero entries' };
-            if (segs.length > 1) return { ok: false, error: 'ls-tree returned multiple entries (' + segs.length + ')' };
-            const line = segs[0];
-            const tab = line.indexOf('\t');
+            let bytes;
+            if (Buffer.isBuffer(buf)) {
+              bytes = buf;
+            } else if (typeof buf === 'string') {
+              bytes = Buffer.from(buf, 'utf8');
+            } else {
+              return { ok: false, error: 'ls-tree output is not a Buffer or string' };
+            }
+            if (bytes.length === 0) return { ok: false, error: 'ls-tree output empty' };
+            // STRICT FRAMING: last byte MUST be a NUL, and NO other NUL may appear.
+            if (bytes[bytes.length - 1] !== 0x00) {
+              return { ok: false, error: 'ls-tree output missing terminal NUL (canonical framing requires <meta>\\t<path>\\x00)' };
+            }
+            let nulCount = 0;
+            for (let i = 0; i < bytes.length; i++) if (bytes[i] === 0x00) nulCount++;
+            if (nulCount !== 1) {
+              return { ok: false, error: 'ls-tree output has ' + nulCount + ' NUL byte(s); canonical framing requires exactly one at end' };
+            }
+            const recordBytes = bytes.slice(0, bytes.length - 1);
+            if (recordBytes.length === 0) return { ok: false, error: 'ls-tree record empty (leading NUL only)' };
+            // No CR allowed inside the record.
+            for (let i = 0; i < recordBytes.length; i++) {
+              if (recordBytes[i] === 0x0d) return { ok: false, error: 'ls-tree record contains CR byte at offset ' + i + ' (canonical output is LF-free binary until terminal NUL)' };
+            }
+            const text = recordBytes.toString('utf8');
+            const tab = text.indexOf('\t');
             if (tab < 0) return { ok: false, error: 'ls-tree line missing TAB separator' };
-            const meta = line.slice(0, tab);
-            const gotPath = line.slice(tab + 1);
+            const meta = text.slice(0, tab);
+            const gotPath = text.slice(tab + 1);
+            if (gotPath.length === 0) return { ok: false, error: 'ls-tree path empty' };
             if (gotPath !== expectedPath) return { ok: false, error: 'ls-tree path mismatch (got "' + gotPath + '" expected "' + expectedPath + '")' };
             const parts = meta.split(' ');
             if (parts.length !== 3) return { ok: false, error: 'ls-tree meta must be <mode> <type> <oid>' };
@@ -433,16 +460,26 @@ jobs:
           }
 
           // Pure verifier: for every present registry entry, the caller-supplied
-          // catFileType resolver must return the expected type for the expected
-          // OID. This is defense in depth on top of tree-entry-identity equality.
+          // catFileType resolver must return the RAW `git cat-file -t <oid>`
+          // stdout, and that stdout MUST equal exactly `<expected-type>\n`.
+          // No trim, no case-folding, no whitespace tolerance, no CRLF: real
+          // Git plumbing on both Linux and Windows emits `blob\n` (verified
+          // locally: `xxd` on `git cat-file -t b53dc40…` shows `626c 6f62 0a`).
+          // Anything else — `BLOB\n`, ` blob\n`, `blob \n`, `blob`, `blob\r\n`,
+          // `blob\n\n`, `tree\n`, an error message — is TRUSTED ISSUER INTEGRITY
+          // FAILURE.
           function verifyRegistryObjectTypes(input) {
             const { registry, catFileType } = input;
             for (const p of Object.keys(registry || {})) {
               const e = registry[p];
               if (!e || e.state !== 'present') continue;
-              const got = catFileType(e.objectId);
-              if (typeof got !== 'string' || got.trim().toLowerCase() !== e.type) {
-                return { ok: false, error: 'registry OID ' + e.objectId + ' for "' + p + '" cat-file type "' + String(got) + '" != expected "' + e.type + '"' };
+              const raw = catFileType(e.objectId);
+              if (typeof raw !== 'string') {
+                return { ok: false, error: 'registry OID ' + e.objectId + ' for "' + p + '" cat-file output is not a string' };
+              }
+              const canonical = e.type + '\n';
+              if (raw !== canonical) {
+                return { ok: false, error: 'registry OID ' + e.objectId + ' for "' + p + '" raw cat-file output ' + JSON.stringify(raw) + ' != canonical ' + JSON.stringify(canonical) };
               }
             }
             return { ok: true };
@@ -732,8 +769,10 @@ jobs:
                   catch (e) { return { ok: false, error: 'ls-tree failed: ' + (e && e.message ? e.message : String(e)) }; }
                   return lib.parseSingleLsTreeZ(out, p);
                 };
+                // Preserve RAW cat-file stdout (no trim / no lowercasing). The
+                // pure verifier enforces exact canonical framing (`<type>\n`).
                 const catType = (oid) => {
-                  try { return execFileSync('git', ['cat-file', '-t', oid], { encoding: 'utf8' }).trim(); }
+                  try { return execFileSync('git', ['cat-file', '-t', oid], { encoding: 'utf8' }); }
                   catch (e) { return '<cat-file-error:' + (e && e.message ? e.message : String(e)) + '>'; }
                 };
                 const typeCheck = lib.verifyRegistryObjectTypes({ registry: lib.ABSORBED_PATH_REGISTRY, catFileType: catType });
