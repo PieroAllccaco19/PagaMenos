@@ -32,7 +32,7 @@
 // it uses so the repo's flat ESLint config (no per-file env for scripts-trusted)
 // does not flag them as `no-undef`. `process` is also imported explicitly so
 // the reference is a value binding, not only a declaration for the linter.
-/* global console */
+/* global console, Buffer */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -47,7 +47,7 @@ const END = '===END TRUSTED-A2 TRUSTED LOGIC===';
 
 // Pin over the normalized authoritative region. Update ONLY with an intended
 // logic change (record it in the commit).
-const PINNED_REGION_SHA256 = '9d515c5cc436896c5857480c53c36a8304bddf148e4994beafbe5490a3dbe858';
+const PINNED_REGION_SHA256 = 'd2d3188c93b34d96698f9ee9afe3f152035f5a7fa88e608550797d5b55d67f70';
 
 const normalize = (s) =>
   s
@@ -72,7 +72,7 @@ function loadTrustedLogic(regionRaw) {
   // "INTEGRITY MODEL" above) — do not attempt to lint away the `new Function`.
   return new Function(
     src +
-      '\nreturn { verifyTrustedA2, forbiddenPaths, buildAppJwt, buildInProgressBody, buildCompletedBody, buildDuplicateFailureBody, concludeFromValidation, b64url, REQUIRED_AUTHORITY_FILES, CHECK_NAME, DUPLICATE_NAME_PREFIX, PROTECTED_PREFIXES, REJECTED_AUTHORITY_BASE_SHA, sameRepositoryPolicy, preCheckEvent, externalIdFor, isExactLogicalMatch, findAllExactRuns, partitionOutcomes, duplicateNameFor, chooseCanonical, partitionCanonical, detectIdMetadataConflicts, idMetadataSignature, verifyRevocableSelectors, MAX_EXACT_RUNS, MAX_PAGES, PAGE_SIZE, listAllCheckRunsForRefWithFetcher };',
+      '\nreturn { verifyTrustedA2, forbiddenPaths, buildAppJwt, buildInProgressBody, buildCompletedBody, buildDuplicateFailureBody, concludeFromValidation, b64url, REQUIRED_AUTHORITY_FILES, CHECK_NAME, DUPLICATE_NAME_PREFIX, PROTECTED_PREFIXES, REJECTED_AUTHORITY_BASE_SHA, sameRepositoryPolicy, preCheckEvent, externalIdFor, isExactLogicalMatch, findAllExactRuns, partitionOutcomes, duplicateNameFor, chooseCanonical, partitionCanonical, detectIdMetadataConflicts, idMetadataSignature, verifyRevocableSelectors, MAX_EXACT_RUNS, MAX_PAGES, PAGE_SIZE, listAllCheckRunsForRefWithFetcher, ABSORBED_PATH_REGISTRY, ABSORBED_OID_RE, ABSORBED_MODE_RE, ABSORBED_ALLOWED_TYPES, parseSingleLsTreeZ, detectRegisteredPathCollisions, authorizeProtectedPathsPure, verifyRegistryObjectTypes, verifyBaseStability };',
   )();
 }
 
@@ -1335,6 +1335,455 @@ async function main() {
       lib.MAX_EXACT_RUNS >= 128 &&
       typeof lib.MAX_PAGES === 'number' &&
       typeof lib.PAGE_SIZE === 'number',
+  );
+
+  // ==== §PAR PARITY-AWARE PROTECTED-PATH ABSORPTION ==========================
+  // Exercise the pure `authorizeProtectedPathsPure` predicate against injected
+  // tree-entry resolvers. No git; the injected resolvers are the moral
+  // equivalent of `git ls-tree -z <sha> -- <path>` after parseSingleLsTreeZ.
+  const CI_PATH = '.github/workflows/ci.yml';
+  const CI_OID = 'b53dc40f2e3eb83e9157f3469ccc79fc61ab03b3';
+  const OTHER_OID = '0000000000000000000000000000000000000001';
+  const REG = lib.ABSORBED_PATH_REGISTRY;
+  const expectedEntry = { path: CI_PATH, mode: '100644', type: 'blob', objectId: CI_OID };
+  const okEntry = (over = {}) => ({ ok: true, entry: { ...expectedEntry, ...over } });
+  const absent = { ok: false, error: 'ls-tree returned zero entries' };
+
+  // Registry shape invariants
+  checkRaw(
+    '§4 absorbed registry has EXACTLY one entry',
+    Object.keys(REG).length === 1 && Object.prototype.hasOwnProperty.call(REG, CI_PATH),
+  );
+  checkRaw(
+    '§4 absorbed registry entry = 100644 blob b53dc40 for ci.yml (state=present)',
+    REG[CI_PATH].state === 'present' &&
+      REG[CI_PATH].mode === '100644' &&
+      REG[CI_PATH].type === 'blob' &&
+      REG[CI_PATH].objectId === CI_OID,
+  );
+  checkRaw(
+    '§4 absorbed registry is frozen (no wildcards)',
+    Object.isFrozen(REG) && Object.isFrozen(REG[CI_PATH]),
+  );
+
+  const az = (
+    changedPaths,
+    baseMap = { [CI_PATH]: okEntry() },
+    headMap = { [CI_PATH]: okEntry() },
+  ) =>
+    lib.authorizeProtectedPathsPure({
+      changedPaths,
+      registry: REG,
+      resolveBase: (p) => baseMap[p] || absent,
+      resolveHead: (p) => headMap[p] || absent,
+    });
+
+  // 1. Positive: base + head both exact registered entry -> absorbed
+  const p1 = az([CI_PATH]);
+  checkRaw(
+    '§PAR/1 base+head both expected registered entry -> ABSORBED',
+    p1.ok && p1.absorbed[0] === CI_PATH && p1.forbidden.length === 0,
+  );
+
+  // 2. Base old CI blob, head expected -> FAIL
+  const p2 = az(
+    [CI_PATH],
+    { [CI_PATH]: okEntry({ objectId: OTHER_OID }) },
+    { [CI_PATH]: okEntry() },
+  );
+  checkRaw(
+    '§PAR/2 base != expected OID -> FORBIDDEN',
+    !p2.ok && p2.forbidden.length === 1 && /base entry != expected/.test(p2.forbidden[0].reason),
+  );
+
+  // 3. Base expected, head different -> FAIL
+  const p3 = az(
+    [CI_PATH],
+    { [CI_PATH]: okEntry() },
+    { [CI_PATH]: okEntry({ objectId: OTHER_OID }) },
+  );
+  checkRaw(
+    '§PAR/3 head != expected OID -> FORBIDDEN',
+    !p3.ok && /head entry != expected/.test(p3.forbidden[0].reason),
+  );
+
+  // 4. Base/head SAME different blob -> FAIL (rejects generic base==head absorption)
+  const p4 = az(
+    [CI_PATH],
+    { [CI_PATH]: okEntry({ objectId: OTHER_OID }) },
+    { [CI_PATH]: okEntry({ objectId: OTHER_OID }) },
+  );
+  checkRaw(
+    '§PAR/4 base==head but different from registered OID -> FORBIDDEN (no generic parity)',
+    !p4.ok,
+  );
+
+  // 5. base absent -> FAIL
+  const p5 = az([CI_PATH], {}, { [CI_PATH]: okEntry() });
+  checkRaw(
+    '§PAR/5 base tree entry absent -> FORBIDDEN',
+    !p5.ok && /base tree entry unavailable/.test(p5.forbidden[0].reason),
+  );
+
+  // 6. head absent -> FAIL
+  const p6 = az([CI_PATH], { [CI_PATH]: okEntry() }, {});
+  checkRaw(
+    '§PAR/6 head tree entry absent -> FORBIDDEN',
+    !p6.ok && /head tree entry unavailable/.test(p6.forbidden[0].reason),
+  );
+
+  // 7. head mode 100755 same blob -> FAIL (mode mismatch)
+  const p7 = az([CI_PATH], { [CI_PATH]: okEntry() }, { [CI_PATH]: okEntry({ mode: '100755' }) });
+  checkRaw(
+    '§PAR/7 head mode 100755 (executable) same blob -> FORBIDDEN',
+    !p7.ok && /head entry != expected/.test(p7.forbidden[0].reason),
+  );
+
+  // 8. head mode 120000 blob (symlink) -> FAIL
+  const p8 = az([CI_PATH], { [CI_PATH]: okEntry() }, { [CI_PATH]: okEntry({ mode: '120000' }) });
+  checkRaw('§PAR/8 head mode 120000 (symlink) -> FORBIDDEN', !p8.ok);
+
+  // 9. Unregistered protected path with base/head equality -> FAIL
+  const OTHER = '.github/workflows/other.yml';
+  const p9 = az([OTHER], { [OTHER]: okEntry() }, { [OTHER]: okEntry() });
+  checkRaw(
+    '§PAR/9 unregistered protected path with parity -> FORBIDDEN',
+    !p9.ok && /not registered for absorption/.test(p9.forbidden[0].reason),
+  );
+
+  // 10. Renamed-away protected path (registered path deleted on head)
+  const p10 = az([CI_PATH], { [CI_PATH]: okEntry() }, {});
+  checkRaw('§PAR/10 renamed-away (registered path absent on head) -> FORBIDDEN', !p10.ok);
+
+  // 11. Renamed-into protected path with wrong entry
+  const p11 = az(
+    [CI_PATH],
+    { [CI_PATH]: okEntry() },
+    { [CI_PATH]: okEntry({ objectId: OTHER_OID }) },
+  );
+  checkRaw('§PAR/11 renamed-into with wrong entry -> FORBIDDEN', !p11.ok);
+
+  // 12. Registry OID wrong (simulate a mutated registry) -> FAIL
+  const mutatedRegistry = {
+    [CI_PATH]: { state: 'present', mode: '100644', type: 'blob', objectId: OTHER_OID },
+  };
+  const p12 = lib.authorizeProtectedPathsPure({
+    changedPaths: [CI_PATH],
+    registry: mutatedRegistry,
+    resolveBase: () => okEntry(),
+    resolveHead: () => okEntry(),
+  });
+  checkRaw(
+    '§PAR/12 mutated registry OID -> FORBIDDEN (real base/head do not match mutation)',
+    !p12.ok,
+  );
+
+  // 13. Object-type: STRICT canonical raw-stdout equality with `<type>\n`.
+  //     The verifier consumes RAW `git cat-file -t <oid>` bytes; no trim, no
+  //     lowercasing, no whitespace tolerance, no CRLF acceptance. Real Git
+  //     plumbing on both Linux and Windows emits exactly `blob\n` — proven at
+  //     the top of the harness via a raw-buffer assertion.
+  const canonicalBlob = 'blob\n';
+  const goodTypeChk = lib.verifyRegistryObjectTypes({
+    registry: REG,
+    catFileType: () => canonicalBlob,
+  });
+  checkRaw('§PAR/13 object-type canonical raw "blob\\n" -> OK', goodTypeChk.ok);
+  const badTypeChkTree = lib.verifyRegistryObjectTypes({
+    registry: REG,
+    catFileType: () => 'tree\n',
+  });
+  checkRaw(
+    '§PAR/13 object-type wrong ("tree\\n") -> FAIL',
+    !badTypeChkTree.ok && /!= canonical/.test(badTypeChkTree.error),
+  );
+  // Non-canonical output shapes that the OLD tolerant verifier accepted MUST
+  // now fail closed. These are the exact synthetic corruptions the reviewer
+  // required be rejected.
+  const nonCanonicalOutputs = [
+    { label: 'uppercase "BLOB\\n"', raw: 'BLOB\n' },
+    { label: 'leading space " blob\\n"', raw: ' blob\n' },
+    { label: 'trailing space "blob \\n"', raw: 'blob \n' },
+    { label: 'missing newline "blob"', raw: 'blob' },
+    { label: 'CRLF "blob\\r\\n"', raw: 'blob\r\n' },
+    { label: 'double newline "blob\\n\\n"', raw: 'blob\n\n' },
+    { label: 'empty string', raw: '' },
+    { label: 'whitespace only', raw: '   \n' },
+    { label: 'unrelated error message', raw: 'fatal: bad object\n' },
+  ];
+  for (const nc of nonCanonicalOutputs) {
+    const r = lib.verifyRegistryObjectTypes({ registry: REG, catFileType: () => nc.raw });
+    checkRaw('§PAR/13-strict cat-file rejects: ' + nc.label, !r.ok);
+  }
+  // Non-string return (Buffer / null / undefined / number) MUST fail closed.
+  const nonStringReturns = [
+    { label: 'null', raw: null },
+    { label: 'undefined', raw: undefined },
+    { label: 'Buffer', raw: Buffer.from('blob\n') },
+    { label: 'number 42', raw: 42 },
+  ];
+  for (const nc of nonStringReturns) {
+    const r = lib.verifyRegistryObjectTypes({ registry: REG, catFileType: () => nc.raw });
+    checkRaw('§PAR/13-strict cat-file rejects non-string return: ' + nc.label, !r.ok);
+  }
+
+  // 14. STRICT ls-tree -z framing. Canonical record shape is EXACTLY
+  //     `<meta>\t<exact-path>\x00` — one record, one terminal NUL, no CR, no
+  //     leading/interior/redundant NUL. Real Git plumbing on both Linux and
+  //     Windows emits this shape (verified via `xxd` on the actual command).
+  //     The stricter parser MUST accept it, and reject every synthetic
+  //     malformation below (missing-NUL and extra-NUL negatives are called
+  //     out explicitly by the independent reviewer).
+  const canonicalRec = '100644 blob ' + CI_OID + '\t' + CI_PATH;
+  const goodBuf = Buffer.from(canonicalRec + '\x00');
+  const goodParsed = lib.parseSingleLsTreeZ(goodBuf, CI_PATH);
+  checkRaw(
+    '§PAR/14 parseSingleLsTreeZ accepts canonical `<meta>\\t<path>\\x00`',
+    goodParsed.ok && goodParsed.entry.objectId === CI_OID && goodParsed.entry.mode === '100644',
+  );
+
+  const badBuffers = [
+    // reviewer-called-out framing negatives (missing/redundant terminal NUL):
+    { label: 'missing terminal NUL', buf: Buffer.from(canonicalRec) },
+    { label: 'two terminal NULs', buf: Buffer.from(canonicalRec + '\x00\x00') },
+    { label: 'leading NUL only', buf: Buffer.from('\x00') },
+    { label: 'leading NUL + record + NUL', buf: Buffer.from('\x00' + canonicalRec + '\x00') },
+    {
+      label: 'interior empty record (NUL in middle)',
+      buf: Buffer.from(canonicalRec + '\x00' + '\x00'),
+    },
+    {
+      label: 'two records',
+      buf: Buffer.from(canonicalRec + '\x00' + canonicalRec + '\x00'),
+    },
+    {
+      label: 'record + NUL + junk',
+      buf: Buffer.from(canonicalRec + '\x00extra-junk'),
+    },
+    {
+      label: 'record + NUL + junk (no trailing NUL)',
+      buf: Buffer.from(canonicalRec + '\x00' + '100755 blob'),
+    },
+    // buffer-shape negatives:
+    { label: 'empty buffer', buf: Buffer.from('') },
+    { label: 'null buffer', buf: null },
+    { label: 'number input', buf: 42 },
+    // record-shape negatives (all with canonical terminal NUL):
+    { label: 'CR before NUL', buf: Buffer.from(canonicalRec + '\r\x00') },
+    { label: 'no TAB', buf: Buffer.from('100644 blob ' + CI_OID + ' ' + CI_PATH + '\x00') },
+    { label: 'meta 2 parts', buf: Buffer.from('100644 blob\t' + CI_PATH + '\x00') },
+    { label: 'bad mode', buf: Buffer.from('10064x blob ' + CI_OID + '\t' + CI_PATH + '\x00') },
+    { label: 'bad oid', buf: Buffer.from('100644 blob ZZZ\t' + CI_PATH + '\x00') },
+    { label: 'wrong exact path', buf: Buffer.from('100644 blob ' + CI_OID + '\tother\x00') },
+    { label: 'empty path', buf: Buffer.from('100644 blob ' + CI_OID + '\t\x00') },
+  ];
+  for (const b of badBuffers) {
+    const r = lib.parseSingleLsTreeZ(b.buf, CI_PATH);
+    checkRaw('§PAR/14-strict parseSingleLsTreeZ rejects: ' + b.label, !r.ok);
+  }
+  // Canonical string coercion path (test-only): a string source with exact
+  // canonical framing must still parse.
+  const goodStrParsed = lib.parseSingleLsTreeZ(canonicalRec + '\x00', CI_PATH);
+  checkRaw(
+    '§PAR/14-strict accepts canonical string source (Buffer-coerced)',
+    goodStrParsed.ok && goodStrParsed.entry.objectId === CI_OID,
+  );
+
+  // 15. Candidate head != accepted A2 head — enforced by verifyRevocableSelectors
+  const p15 = lib.verifyRevocableSelectors({
+    prHeadSha: 'a'.repeat(40),
+    acceptedA2Head: ACCEPTED_HEAD,
+    acceptedAuthorityBaseSha: ACCEPTED_BASE,
+  });
+  checkRaw(
+    '§PAR/15 PR head != accepted A2 head -> revocable-selectors FAIL',
+    !p15.ok && /!= accepted A2 head/.test(p15.error),
+  );
+
+  // Ordinary (non-protected) path is ignored by absorption logic
+  const p_ord = az(['src/db/foo.ts'], {}, {});
+  checkRaw(
+    '§PAR ordinary path is not protected; absorption skips it silently',
+    p_ord.ok && p_ord.absorbed.length === 0,
+  );
+
+  // §13 Collision safety: duplicate change entry involving registered path -> FAIL
+  const pDup = lib.authorizeProtectedPathsPure({
+    changedPaths: [CI_PATH, CI_PATH],
+    registry: REG,
+    resolveBase: () => okEntry(),
+    resolveHead: () => okEntry(),
+  });
+  checkRaw('§PAR/13-coll duplicate exact registered path in change set -> FAIL', !pDup.ok);
+
+  // §13 Case-fold collision touching a registered path -> FAIL (authorization uses exact bytes; collision is flagged as ambiguity)
+  const pCase = lib.authorizeProtectedPathsPure({
+    changedPaths: [CI_PATH, '.GITHUB/workflows/CI.YML'],
+    registry: REG,
+    resolveBase: () => okEntry(),
+    resolveHead: () => okEntry(),
+  });
+  checkRaw('§PAR/13-coll ASCII case-fold collision on registered path -> FAIL', !pCase.ok);
+
+  // §13 Non-exact case variant of registered path (single-member group) -> FAIL
+  const pCaseAlt = lib.authorizeProtectedPathsPure({
+    changedPaths: ['.GITHUB/workflows/CI.YML'],
+    registry: REG,
+    resolveBase: () => okEntry(),
+    resolveHead: () => okEntry(),
+  });
+  checkRaw('§PAR/13-coll non-exact case variant of registered path -> FAIL', !pCaseAlt.ok);
+
+  // 16. EXACT A2 SCENARIO after PR #6 prerequisite: base==head==expected -> PASS
+  //     This is the operational proof the trusted gate now returns PASS on
+  //     precisely the PR #4 protected-path scenario documented in §15 of the
+  //     design spec.
+  const p16 = az([CI_PATH]);
+  checkRaw(
+    '§PAR/16 A2 scenario (base==head==registered entry) -> PROTECTED-PATH ABSORBED = PASS',
+    p16.ok &&
+      p16.absorbed.length === 1 &&
+      p16.absorbed[0] === CI_PATH &&
+      p16.forbidden.length === 0,
+  );
+
+  // ==== §BS BASE-STABILITY REVALIDATION ======================================
+  const EVH = ACCEPTED_HEAD,
+    EVB = 'b'.repeat(40);
+  const goodPr = { head: { sha: EVH }, base: { sha: EVB, ref: 'm3.5b-a2-integration' } };
+  const goodBranch = { commit: { sha: EVB } };
+  const bs1 = lib.verifyBaseStability({
+    eventHeadSha: EVH,
+    eventBaseSha: EVB,
+    prJson: goodPr,
+    branchJson: goodBranch,
+  });
+  checkRaw('§BS/1 all match -> OK', bs1.ok);
+  const bs2 = lib.verifyBaseStability({
+    eventHeadSha: EVH,
+    eventBaseSha: EVB,
+    prJson: { ...goodPr, head: { sha: 'c'.repeat(40) } },
+    branchJson: goodBranch,
+  });
+  checkRaw('§BS/2 head drifted -> FAIL', !bs2.ok && /head drifted/.test(bs2.error));
+  const bs3 = lib.verifyBaseStability({
+    eventHeadSha: EVH,
+    eventBaseSha: EVB,
+    prJson: { ...goodPr, base: { sha: 'd'.repeat(40), ref: 'x' } },
+    branchJson: goodBranch,
+  });
+  checkRaw('§BS/3 base drifted -> FAIL', !bs3.ok && /base drifted/.test(bs3.error));
+  const bs4 = lib.verifyBaseStability({
+    eventHeadSha: EVH,
+    eventBaseSha: EVB,
+    prJson: goodPr,
+    branchJson: { commit: { sha: 'e'.repeat(40) } },
+  });
+  checkRaw('§BS/4 target branch advanced -> FAIL', !bs4.ok && /branch.*advanced/.test(bs4.error));
+  const bs5 = lib.verifyBaseStability({
+    eventHeadSha: EVH,
+    eventBaseSha: EVB,
+    prJson: {},
+    branchJson: goodBranch,
+  });
+  checkRaw('§BS/5 pr metadata malformed -> FAIL', !bs5.ok);
+  const bs6 = lib.verifyBaseStability({
+    eventHeadSha: 'zz',
+    eventBaseSha: EVB,
+    prJson: goodPr,
+    branchJson: goodBranch,
+  });
+  checkRaw('§BS/6 event head sha malformed -> FAIL', !bs6.ok);
+
+  // ==== §PAR/16 real-git PR #4 scenario proof against LIVE Git objects =======
+  // Prove locally, with the real repository, that the new logic returns PASS
+  // for the exact (BASELINE, ACCEPTED_A2_HEAD) pair on the ONE protected path
+  // that historically changes on PR #4.
+  const BASELINE_SHA = 'dbbd0662af1470abe65cd58fa91784b9a76df35a';
+  const A2_HEAD_SHA = ACCEPTED_HEAD;
+  const { execFileSync } = await import('node:child_process');
+  const lsTreeReal = (sha, p) => {
+    let out;
+    try {
+      out = execFileSync('git', ['ls-tree', '-z', sha, '--', p]);
+    } catch (e) {
+      return { ok: false, error: 'ls-tree failed: ' + (e && e.message ? e.message : String(e)) };
+    }
+    return lib.parseSingleLsTreeZ(out, p);
+  };
+  // RAW stdout, no trim: the strict verifier requires exact `<type>\n`.
+  const catTypeReal = (oid) => {
+    try {
+      return execFileSync('git', ['cat-file', '-t', oid], { encoding: 'utf8' });
+    } catch {
+      return null;
+    }
+  };
+  // Prove real Git output shape at run time (raw bytes; independent of the
+  // top-of-file `xxd` capture). Both must equal exactly `blob\n` = 626c 6f62 0a.
+  const rawCatFileBytes = execFileSync('git', [
+    'cat-file',
+    '-t',
+    'b53dc40f2e3eb83e9157f3469ccc79fc61ab03b3',
+  ]);
+  checkRaw(
+    '§PAR/9 REAL-GIT compat: `git cat-file -t <blob>` raw bytes == "blob\\n"',
+    Buffer.isBuffer(rawCatFileBytes) &&
+      rawCatFileBytes.length === 5 &&
+      rawCatFileBytes[0] === 0x62 &&
+      rawCatFileBytes[1] === 0x6c &&
+      rawCatFileBytes[2] === 0x6f &&
+      rawCatFileBytes[3] === 0x62 &&
+      rawCatFileBytes[4] === 0x0a,
+  );
+  const rawLsTreeBytes = execFileSync('git', [
+    'ls-tree',
+    '-z',
+    'dbbd0662af1470abe65cd58fa91784b9a76df35a',
+    '--',
+    CI_PATH,
+  ]);
+  checkRaw(
+    '§PAR/9 REAL-GIT compat: `git ls-tree -z ...` ends with exactly one terminal NUL',
+    Buffer.isBuffer(rawLsTreeBytes) &&
+      rawLsTreeBytes.length > 0 &&
+      rawLsTreeBytes[rawLsTreeBytes.length - 1] === 0x00 &&
+      rawLsTreeBytes.indexOf(0x00) === rawLsTreeBytes.length - 1,
+  );
+  checkRaw(
+    '§PAR/9 REAL-GIT compat: stricter parseSingleLsTreeZ accepts real ls-tree bytes',
+    lib.parseSingleLsTreeZ(rawLsTreeBytes, CI_PATH).ok,
+  );
+  const realBase = lsTreeReal(BASELINE_SHA, CI_PATH);
+  const realHead = lsTreeReal(A2_HEAD_SHA, CI_PATH);
+  checkRaw(
+    '§PAR/16 real git: BASELINE tree entry for ci.yml == expected',
+    realBase.ok &&
+      realBase.entry.objectId === CI_OID &&
+      realBase.entry.mode === '100644' &&
+      realBase.entry.type === 'blob',
+  );
+  checkRaw(
+    '§PAR/16 real git: A2 HEAD tree entry for ci.yml == expected',
+    realHead.ok &&
+      realHead.entry.objectId === CI_OID &&
+      realHead.entry.mode === '100644' &&
+      realHead.entry.type === 'blob',
+  );
+  const realTypeOk = lib.verifyRegistryObjectTypes({ registry: REG, catFileType: catTypeReal });
+  checkRaw('§PAR/16 real git: cat-file -t confirms blob for registry OID', realTypeOk.ok);
+  const realAz = lib.authorizeProtectedPathsPure({
+    changedPaths: [CI_PATH],
+    registry: REG,
+    resolveBase: (p) => lsTreeReal(BASELINE_SHA, p),
+    resolveHead: (p) => lsTreeReal(A2_HEAD_SHA, p),
+  });
+  checkRaw(
+    '§PAR/16 real git: PR #4 protected-path decision = PASS (absorbed=[ci.yml], forbidden=[])',
+    realAz.ok &&
+      realAz.absorbed.length === 1 &&
+      realAz.absorbed[0] === CI_PATH &&
+      realAz.forbidden.length === 0,
   );
 
   // ---- report ----
