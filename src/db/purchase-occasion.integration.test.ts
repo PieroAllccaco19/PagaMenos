@@ -45,6 +45,7 @@ import {
   PurchaseIntentInvalidatedError,
   PurchaseIntentNotFinalizedError,
   PurchaseIntentOwnershipError,
+  PurchaseOccasionCoherenceError,
   PurchaseOccasionConflictError,
   PurchaseOccasionIdempotencyConflictError,
   PurchaseOccasionInvariantError,
@@ -433,6 +434,44 @@ describe('B1 conflicting replay — an inconsistent replay is rejected, never me
         where: { occasionId: first.occasionId },
       }),
     ).toBe(1);
+  });
+
+  it('a FORGED receipt row cannot redirect a legitimate retry to a foreign occasion', async () => {
+    // Adversarial audit finding: UPDATE/DELETE/TRUNCATE are trigger-blocked on the receipt table, but
+    // INSERT is not (and cannot be — the repository must write receipts). A forged receipt carrying a
+    // victim's (operationScope, idempotencyKey, requestHash) but somebody else's occasionId would
+    // otherwise make the victim's retry resolve to the WRONG opportunity. It must fail closed.
+    const fx = await grantedAssignment();
+    const victim = await finalizedIntent(fx);
+    const foreign = await finalizedIntent(fx);
+    const foreignOcc = await materialize(fx, foreign.intent.intentId);
+
+    const key = `occ-forged-${uid()}`;
+    const victimHash = materializeOccasionRequestHash({
+      intentId: victim.intent.intentId,
+      context: { participantId: fx.participantId },
+    });
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "purchase_occasion_materialization_receipt"
+         ("operationScope","idempotencyKey","requestHash","resultKind","occasionId")
+       VALUES ('${OCCASION_MATERIALIZE_OPERATION_SCOPE}','${key}','${victimHash}','MATERIALIZED',
+               '${foreignOcc.occasionId}'::uuid)`,
+    );
+
+    await expect(materialize(fx, victim.intent.intentId, key)).rejects.toBeInstanceOf(
+      PurchaseOccasionCoherenceError,
+    );
+    // The victim intent still has no identity, and the foreign occasion is untouched.
+    expect(
+      await prisma.purchaseOccasion.count({ where: { originIntentId: victim.intent.intentId } }),
+    ).toBe(0);
+    expect(
+      (
+        await prisma.purchaseOccasion.findUniqueOrThrow({
+          where: { id: foreignOcc.occasionId },
+        })
+      ).originIntentId,
+    ).toBe(foreign.intent.intentId);
   });
 });
 

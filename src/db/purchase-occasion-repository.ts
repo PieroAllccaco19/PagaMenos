@@ -28,6 +28,7 @@ import {
   PurchaseIntentInvalidatedError,
   PurchaseIntentNotFinalizedError,
   PurchaseIntentOwnershipError,
+  PurchaseOccasionCoherenceError,
   PurchaseOccasionConflictError,
   PurchaseOccasionIdempotencyConflictError,
   PurchaseOccasionInvariantError,
@@ -219,6 +220,22 @@ export class PurchaseOccasionRepository {
             existingRequestHash: receipt.requestHash,
             attemptedRequestHash: args.requestHash,
           });
+          // A receipt is a POINTER, never an authority: prove the occasion it resolves to really is
+          // this intent's before handing it back. `INSERT` on the receipt table is not (and cannot
+          // meaningfully be) forbidden, so a forged receipt row carrying a victim's `(scope, key,
+          // requestHash)` but a foreign `occasionId` would otherwise redirect a legitimate retry to
+          // somebody else's opportunity. Fail closed instead.
+          const resolved = await tx.purchaseOccasion.findUnique({
+            where: { id: receipt.occasionId },
+            select: { originIntentId: true },
+          });
+          if (!resolved || resolved.originIntentId !== args.intentId) {
+            throw new PurchaseOccasionCoherenceError(
+              'ORIGIN_INTENT_MISSING',
+              `receipt ${JSON.stringify(args.idempotencyKey)} resolves to occasion ` +
+                `${receipt.occasionId}, which does not belong to intent ${args.intentId}`,
+            );
+          }
           return {
             occasionId: receipt.occasionId,
             resultKind: receipt.resultKind as 'MATERIALIZED' | 'OCCASION_ALIAS',
@@ -235,6 +252,7 @@ export class PurchaseOccasionRepository {
           const origin = await tx.purchaseOccasionMaterializationReceipt.findFirst({
             where: { occasionId: existing.id, resultKind: 'MATERIALIZED' },
             select: { requestHash: true },
+            orderBy: { createdAt: 'asc' },
           });
           if (!origin) {
             throw new PurchaseOccasionInvariantError(
