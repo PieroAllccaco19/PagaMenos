@@ -203,3 +203,25 @@ export {
   invalidateRequestHash,
   type A2TrustedContext,
 } from './purchase-intent-request-hash';
+
+// ── M3.5B-B1 pure-domain surface (Opportunity / PurchaseOccasion identity) ──────────────────────────
+export {
+  PurchaseOccasionError,
+  PurchaseOccasionValidationError,
+  PurchaseOccasionConflictError,
+  PurchaseOccasionCoherenceError,
+  PurchaseOccasionIdempotencyConflictError,
+  PurchaseOccasionInvariantError,
+} from './purchase-occasion-errors';
+
+export {
+  B1_OCCASION_SCHEMA_VERSION_V1,
+  OCCASION_MATERIALIZE_OPERATION_SCOPE,
+  canonicalOccasionInstant,
+  normalizeOccasionIdentityFacts,
+  computeOccasionIdentityDigest,
+  assertOccasionIdentityCoherent,
+  materializeOccasionRequestHash,
+  type OccasionIdentityFacts,
+  type B1TrustedContext,
+} from './purchase-occasion-identity';

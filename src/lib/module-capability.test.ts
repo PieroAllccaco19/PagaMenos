@@ -47,6 +47,8 @@ const DEEP_SERVICE = new Set([
   // A2-CODE (Sol Finding 1): the A2 lifecycle + saga modules expose *WithDeps (repo, clock, decision fn).
   'services/study-purchase-intent',
   'services/study-intent-decision',
+  // B1-CODE: the Opportunity-Identity service exposes *WithDeps (repository, trusted clock).
+  'services/study-purchase-occasion',
 ]);
 
 type Kind = 'raw' | 'deep' | 'nonliteral';
@@ -155,6 +157,12 @@ const exemptFromDeep = (rel: string): boolean =>
   rel === 'services/decide-and-persist.ts' ||
   rel === 'services/study-intent-decision.ts' ||
   isTestOrFixture(rel);
+// B1-CODE: the B1 raw repository is owned by exactly one sanctioned service. A NEW `db/purchase-
+// occasion-*` module would otherwise fall through every ownership regex below, so it gets its own
+// explicit branch (never a wildcard) — a raw B1 module with no registered owner is a violation.
+const PO_RAW_OWNERS: Record<string, string[]> = {
+  'db/purchase-occasion-repository': ['services/study-purchase-occasion.ts'],
+};
 // The non-literal dynamic-import rule is fail-closed for ALL protected production source: NO
 // capability directory (db/, persistence/) and NOT even the sanctioned impl earns a computed-import
 // exemption. Only tests/fixtures/probes may retain their existing exemption.
@@ -227,6 +235,11 @@ const DEEP_ATTACKS = [
   "const m = await import('@/services/study-purchase-intent.js');",
   "const m = await import('../services/study-intent-decision');",
   'const m = await import(`@/services/study-purchase-intent`);',
+  // B1-CODE: the B1 deep module must be equally unreachable from ordinary code.
+  "import { materializePurchaseOccasionWithDeps } from '@/services/study-purchase-occasion';",
+  "const m = await import('@/services/study-purchase-occasion.js');",
+  "const m = await import('../services/study-purchase-occasion');",
+  'const m = await import(`@/services/study-purchase-occasion`);',
 ];
 
 // COMPUTED / non-literal dynamic imports (P35A-02 root closure §9/§12). Each MUST be rejected as
@@ -457,6 +470,14 @@ function studyBoundaryViolations(code: string, fromSrcRel: string): string[] {
       out.push(`raw-pi:${mod}`);
       continue;
     }
+    if (/^db\/purchase-occasion-/.test(mod)) {
+      // Raw B1 internals: only db/ files, the single mapped owner, and tests may import them.
+      if (isTest || isDbFile) continue;
+      const owners = PO_RAW_OWNERS[mod] ?? [];
+      if (owners.includes(fromSrcRel)) continue;
+      out.push(`raw-po:${mod}`);
+      continue;
+    }
     if (Object.prototype.hasOwnProperty.call(STUDY_ADMIN_OWNERS, mod)) {
       if (isTest) continue;
       if (STUDY_ADMIN_OWNERS[mod]!.includes(fromSrcRel)) continue;
@@ -558,6 +579,41 @@ describe('M3.5B-A1 study capability ownership — arbitrary-module probes (§11/
       studyBoundaryViolations(
         "export { resolveTrustedParticipantContext } from './study-participant-session';",
         'services/study-admin.ts',
+      ),
+    ).toEqual([]);
+  });
+
+  it('B1-CODE: only the sanctioned occasion service may import the raw B1 repository (any spelling)', () => {
+    const attacks = [
+      "import { purchaseOccasionRepository } from '@/db/purchase-occasion-repository';",
+      "import x from '@/db/purchase-occasion-repository.js';",
+      "const x = await import('../db/purchase-occasion-repository');",
+      'const x = await import(`@/db/purchase-occasion-repository`);',
+    ];
+    // Participant-facing/app code, and an arbitrary service, are both refused.
+    for (const code of attacks) {
+      expect(studyBoundaryViolations(code, 'app/occasion-page.ts'), code).not.toEqual([]);
+      expect(studyBoundaryViolations(code, 'services/evil-service.ts'), code).not.toEqual([]);
+    }
+    // Another A2 service may NOT reach the B1 repository (operation-specific ownership).
+    expect(
+      studyBoundaryViolations(
+        "import { purchaseOccasionRepository } from '@/db/purchase-occasion-repository';",
+        'services/study-intent-decision.ts',
+      ),
+    ).not.toEqual([]);
+    // ...and the B1 service may NOT reach an A2 raw repository it does not own.
+    expect(
+      studyBoundaryViolations(
+        "import { purchaseIntentRepository } from '@/db/purchase-intent-repository';",
+        'services/study-purchase-occasion.ts',
+      ),
+    ).not.toEqual([]);
+    // Its OWN repository is allowed.
+    expect(
+      studyBoundaryViolations(
+        "import { purchaseOccasionRepository } from '@/db/purchase-occasion-repository';",
+        'services/study-purchase-occasion.ts',
       ),
     ).toEqual([]);
   });

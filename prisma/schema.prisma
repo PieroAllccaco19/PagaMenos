@@ -305,6 +305,9 @@ model ExperimentAssignment {
   purchaseIntentCaptureTokens PurchaseIntentCaptureToken[]
   eligibilityProfileVersions  EligibilityProfileVersion[]
 
+  /// M3.5B-B1 virtual back-relation (NO SQL column on experiment_assignment).
+  purchaseOccasions PurchaseOccasion[]
+
   @@unique([experimentId, participantId])
   @@index([experimentId])
   @@index([participantId])
@@ -567,6 +570,10 @@ model PurchaseIntent {
   invalidationsAsReplacement PurchaseIntentInvalidation[]   @relation("replacementIntent")
   createReceipts             PurchaseIntentCreateReceipt[]
 
+  /// M3.5B-B1 virtual back-relation (Prisma relational completeness ONLY; NO SQL column on
+  /// purchase_intent). The FK lives on `purchase_occasion.originIntentId`.
+  purchaseOccasion PurchaseOccasion?
+
   @@map("purchase_intent")
 }
 
@@ -597,6 +604,9 @@ model PurchaseIntentContextVersion {
 
   finalizations   PurchaseIntentFinalization[]
   contextReceipts PurchaseIntentContextCommandReceipt[]
+
+  /// M3.5B-B1 virtual back-relation (NO SQL column on purchase_intent_context_version).
+  purchaseOccasion PurchaseOccasion?
 
   @@unique([intentId, contextSeq])
   @@unique([intentId, contextCaptureKey])
@@ -651,6 +661,9 @@ model PurchaseIntentFinalization {
 
   decisionRequest      PurchaseIntentDecisionRequest?
   finalizationReceipts PurchaseIntentFinalizationReceipt[]
+
+  /// M3.5B-B1 virtual back-relation (NO SQL column on purchase_intent_finalization).
+  purchaseOccasion PurchaseOccasion?
 
   @@index([contextVersionId])
   @@index([eligibilityProfileVersionId])
@@ -828,4 +841,105 @@ model PurchaseIntentInvalidationReceipt {
   @@unique([operationScope, idempotencyKey])
   @@index([invalidationId])
   @@map("purchase_intent_invalidation_receipt")
+}
+
+// ===================================================================================================
+// M3.5B-B1 — Opportunity Identity (PurchaseOccasion).
+//
+// ADDITIVE over accepted M3.5A / A1 / A2: creates NEW tables + one enum only. No accepted table,
+// enum, column, FK or trigger is altered. The three virtual back-relations added above on
+// PurchaseIntent / PurchaseIntentFinalization / PurchaseIntentContextVersion / ExperimentAssignment
+// add NO SQL column (Prisma relational completeness only) — every FK column lives on the B1 tables.
+//
+// B1 owns IDENTITY ONLY. It records no exposure, no reconciliation/merge, no evidence, no
+// `actualTransactionAt`, no `purchaseFingerprint`, no effectiveness flag, no threshold and no count:
+// those are B2/C1/C2. Scientific non-effectiveness of an invalidated origin intent stays a DERIVED
+// property of the A2 invalidation row (A2 §10) — B1 stores no copy of it.
+// ===================================================================================================
+
+/// B1 materialization outcome (mirrors the accepted A2 receipt `resultKind` grammar).
+/// MATERIALIZED = this command created the occasion; OCCASION_ALIAS = a different transport key
+/// resolved to an occasion that already existed for the same origin intent.
+enum PurchaseOccasionResultKind {
+  MATERIALIZED
+  OCCASION_ALIAS
+}
+
+/// The durable identity of ONE opportunity — "one real-world attempted/realized purchase, not one app
+/// request" (RT-11 §6.A). `id` is the SOLE durable identifier and is DB-generated; it is never derived
+/// from business fields, timestamps or hashes, and it never changes once assigned.
+///
+/// LOGICAL UNIQUENESS BOUNDARY: `UNIQUE(originIntentId)` — one accepted A2 PurchaseIntent yields at
+/// most one occasion; genuinely distinct intents always yield distinct occasions. It is deliberately
+/// NOT (participant, merchant, coarse time): collapsing distinct captures into one economic
+/// opportunity is B2 reconciliation, which A2 §38/§44 explicitly reserve.
+///
+/// The identity facts (`assignmentId`, `merchantId`, `intendedTransactionAt`) are copied verbatim from
+/// the accepted A2 authorities and re-proven at INSERT by a cross-table trigger (migration SQL); they
+/// are query/integrity duplicates, never a second source of truth. `identityDigest` fingerprints the
+/// complete fact set for integrity only and is NOT unique-indexed. Append-only (no UPDATE/DELETE/
+/// TRUNCATE — triggers RAISE).
+model PurchaseOccasion {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  /// Frozen meaning of this row's identity shape (parsed by its OWN version, never the current one).
+  occasionSchemaVersion String
+
+  /// THE uniqueness boundary: the originating immutable A2 PurchaseIntent root.
+  originIntentId String         @unique @db.Uuid
+  originIntent   PurchaseIntent @relation(fields: [originIntentId], references: [id])
+
+  /// The accepted A2 finalization that pinned the exact context (1:1 with the intent by A2 §9).
+  originFinalizationId String                     @unique @db.Uuid
+  originFinalization   PurchaseIntentFinalization @relation(fields: [originFinalizationId], references: [id])
+
+  /// The exact A2 context version that finalization pinned (the merchant + intended-instant authority).
+  originContextVersionId String                       @unique @db.Uuid
+  originContextVersion   PurchaseIntentContextVersion @relation(fields: [originContextVersionId], references: [id])
+
+  /// A1 cohort anchor, reached through the intent's capture token; proven by trigger, never asserted.
+  assignmentId String               @db.Uuid
+  assignment   ExperimentAssignment @relation(fields: [assignmentId], references: [id])
+
+  /// Immutable identity facts lifted from the pinned context version (A2 rows remain the truth).
+  merchantId            String
+  intendedTransactionAt DateTime @db.Timestamptz(6)
+
+  /// SHA-256 over the canonical serialization of the complete identity-fact set (integrity only —
+  /// deliberately NOT unique: the durable identity is `id`, never a digest).
+  identityDigest String
+
+  /// B1-OWNED temporal fact: when this identity was materialized (trusted clock, sampled under the
+  /// PurchaseIntent root lock). Distinct from initiatedAt / finalizedAt / evaluatedAt (A2) and from
+  /// every B2 exposure / C1 evidence instant. It participates in NO uniqueness key.
+  materializedAt DateTime @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  receipts PurchaseOccasionMaterializationReceipt[]
+
+  @@index([assignmentId])
+  @@index([merchantId])
+  @@index([intendedTransactionAt])
+  @@map("purchase_occasion")
+}
+
+/// Transport idempotency receipt for materializePurchaseOccasion. Concrete strong FK (no polymorphic
+/// target); append-only. `operationScope` is a trusted constant (CHECK in the migration SQL).
+model PurchaseOccasionMaterializationReceipt {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  operationScope String
+  idempotencyKey String
+  requestHash    String
+  resultKind     PurchaseOccasionResultKind
+
+  occasionId String           @db.Uuid
+  occasion   PurchaseOccasion @relation(fields: [occasionId], references: [id])
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([operationScope, idempotencyKey])
+  @@index([occasionId])
+  @@map("purchase_occasion_materialization_receipt")
 }

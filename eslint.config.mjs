@@ -153,6 +153,20 @@ const FORBIDDEN_DEEP_SERVICE = [
       'Import the public @/services barrel. The A2 study-purchase-intent / study-intent-decision ' +
       'modules expose injectable dependencies (repository, trusted clock, decision function) and are off-limits.',
   },
+  {
+    // B1-CODE: the Opportunity-Identity service exposes the injectable `*WithDeps` surface (repository
+    // + trusted materialization clock). Ordinary code must use the public @/services barrel
+    // (one-request-argument wrappers only). Only the barrel and tests may import this deep module.
+    group: [
+      '@/services/study-purchase-occasion',
+      '@/services/study-purchase-occasion.js',
+      '@/services/study-purchase-occasion.ts',
+      '**/services/study-purchase-occasion',
+    ],
+    message:
+      'Import the public @/services barrel. The B1 study-purchase-occasion module exposes injectable ' +
+      'dependencies (repository, trusted clock) and is off-limits.',
+  },
 ];
 
 const FORBIDDEN_WRITE_AND_DEEP = [...FORBIDDEN_WRITE_INTERNALS, ...FORBIDDEN_DEEP_SERVICE];
@@ -229,6 +243,10 @@ const SANCTIONED_A2_IMPL_FILES = [
   'src/services/study-purchase-intent.ts',
   'src/services/study-intent-decision.ts',
 ];
+
+/** M3.5B-B1: the sanctioned Opportunity-Identity service file. It may reach its OWN raw B1 repository;
+ * operation-specific ownership is enforced by the module-capability AST test. */
+const SANCTIONED_B1_IMPL_FILES = ['src/services/study-purchase-occasion.ts'];
 
 export default tseslint.config(
   {
@@ -314,6 +332,14 @@ export default tseslint.config(
     // The sanctioned M3.5B-A2 intent-lifecycle + decision-saga services may reach their OWN raw A2
     // repositories. Operation-specific ownership is enforced by the module-capability AST test.
     files: SANCTIONED_A2_IMPL_FILES,
+    rules: {
+      'no-restricted-imports': 'off',
+    },
+  },
+  {
+    // The sanctioned M3.5B-B1 Opportunity-Identity service may reach its OWN raw B1 repository.
+    // Operation-specific ownership is enforced by the module-capability AST test.
+    files: SANCTIONED_B1_IMPL_FILES,
     rules: {
       'no-restricted-imports': 'off',
     },

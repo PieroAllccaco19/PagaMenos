@@ -97,6 +97,17 @@ function main(): void {
       'recruitment_credential_link_no_delete',
       'recruitment_credential_link_no_truncate',
     ],
+    // M3.5B-B1 opportunity identity: an identity that could be UPDATEd would not be an identity.
+    purchase_occasion: [
+      'purchase_occasion_no_update',
+      'purchase_occasion_no_delete',
+      'purchase_occasion_no_truncate',
+    ],
+    purchase_occasion_materialization_receipt: [
+      'purchase_occasion_materialization_receipt_no_update',
+      'purchase_occasion_materialization_receipt_no_delete',
+      'purchase_occasion_materialization_receipt_no_truncate',
+    ],
   };
   const seen = new Set<string>();
 
@@ -196,11 +207,36 @@ function main(): void {
     );
   }
 
+  // M3.5B-B1 (Opportunity Identity): the insert-time identity-coherence trigger, the malformed-identity
+  // CHECKs, and the receipt operationScope CHECK must all be present. Without the coherence trigger an
+  // occasion could store identity facts that disagree with the accepted A2 authorities.
+  const requiredB1Objects = [
+    'purchase_occasion_identity_coherence', // cross-table identity proof function
+    'purchase_occasion_identity_coherence_ins', // ...and its BEFORE INSERT trigger
+    'purchase_occasion_schema_version_ck',
+    'purchase_occasion_merchant_nonblank_ck',
+    'purchase_occasion_identity_digest_ck',
+    'purchase_occasion_materialization_receipt_scope_ck',
+    'purchase_occasion_originIntentId_key', // THE logical uniqueness boundary
+  ];
+  const missingB1 = requiredB1Objects.filter((name) => !allSql.includes(name));
+  if (missingB1.length > 0) {
+    fail(
+      `M3.5B-B1 migration is missing required guard/constraint object(s): ${missingB1.join(', ')}`,
+    );
+  }
+  // The coherence trigger must actually reject an invalidated origin intent (a literal check that the
+  // A2 exclusion is enforced in SQL, not merely that some trigger exists).
+  if (!/origin intent is invalidated and cannot mint a new occasion identity/.test(allSql)) {
+    fail('purchase_occasion coherence trigger does not reject an invalidated origin intent');
+  }
+
   console.log(
     `[db:migrate:check] OK — ${dirs.length} migration(s); append-only triggers present for ` +
       `${Object.keys(immutableTables).length} tables; analysis_protocol freeze-guard + experiment ` +
-      `FROZEN-protocol guard + consent §8.11 CHECK + receipt scope CHECKs present; receipt backfill ` +
-      `precedes the key drop.`,
+      `FROZEN-protocol guard + consent §8.11 CHECK + receipt scope CHECKs present; B1 occasion ` +
+      `identity-coherence trigger + uniqueness boundary + malformed-identity CHECKs present; ` +
+      `receipt backfill precedes the key drop.`,
   );
 }
 

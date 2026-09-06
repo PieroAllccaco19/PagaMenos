@@ -68,6 +68,26 @@ export {
   type PurchaseIntentDecisionResult,
 } from './study-intent-decision';
 
+// ── M3.5B-B1 Opportunity Identity (PurchaseOccasion), behind the same trusted participant context ──
+export {
+  materializePurchaseOccasion,
+  loadPurchaseOccasion,
+  type MaterializePurchaseOccasionRequest,
+  type LoadPurchaseOccasionRequest,
+} from './study-purchase-occasion';
+export type { MaterializeOccasionResult, PurchaseOccasionRecord } from './study-purchase-occasion';
+
+// B1 typed domain errors consumers need to interpret results/failures (no write capability).
+export {
+  PurchaseOccasionError,
+  PurchaseOccasionValidationError,
+  PurchaseOccasionConflictError,
+  PurchaseOccasionCoherenceError,
+  PurchaseOccasionIdempotencyConflictError,
+  PurchaseOccasionInvariantError,
+  B1_OCCASION_SCHEMA_VERSION_V1,
+} from '@/study';
+
 // A2 typed domain errors consumers need to interpret results/failures (no write capability).
 export {
   PurchaseIntentError,

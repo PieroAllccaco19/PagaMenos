@@ -105,9 +105,10 @@ async function main(): Promise<number> {
     );
     started = true;
 
-    // 3. Create BOTH databases: the main suite DB and a separate staged-upgrade DB.
+    // 3. Create the databases: the main suite DB plus one isolated DB per staged-upgrade phase (each
+    //    staged phase drives its OWN `prisma migrate deploy` staging and must start EMPTY).
     const conn = (db: string) => `postgresql://postgres@127.0.0.1:${port}/${db}?schema=public`;
-    for (const db of ['pagamenos_test', 'pagamenos_upgrade']) {
+    for (const db of ['pagamenos_test', 'pagamenos_upgrade', 'pagamenos_b1_upgrade']) {
       runPg(pgExe('createdb'), ['-h', '127.0.0.1', '-p', String(port), '-U', 'postgres', db], {
         label: `createdb ${db}`,
       });
@@ -124,6 +125,19 @@ async function main(): Promise<number> {
       { env: stagedEnv, label: 'vitest staged-upgrade', allowFail: true },
     );
 
+    // 4a-bis. M3.5B-B1 STAGED-UPGRADE PHASE: the accepted A1/A2 chain is deployed alone into an
+    //     EMPTY `pagamenos_b1_upgrade`, real A2 data is created, and only then is the B1 migration
+    //     deployed — proving B1 is a correct forward step over the ACCEPTED prior state, not only
+    //     over a clean database. Its own database, because it stages its own migration sequence.
+    const b1StagedEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      DATABASE_URL: conn('pagamenos_b1_upgrade'),
+    };
+    const b1Staged = runTool(
+      'npx vitest run -c vitest.integration.config.ts src/db/b1-staged-upgrade.integration.test.ts',
+      { env: b1StagedEnv, label: 'vitest b1-staged-upgrade', allowFail: true },
+    );
+
     // 4b. MAIN PHASE: apply the full migration chain from a CLEAN database (explicit deploy; §24/§52),
     //     then run the main integration suite. PAGAMENOS_GIT_SHA supplies a valid 40-hex build id so
     //     the PUBLIC decideAndPersist(request) (which resolves build metadata from the trusted
@@ -134,16 +148,17 @@ async function main(): Promise<number> {
       PAGAMENOS_GIT_SHA: '0123456789abcdef0123456789abcdef01234567',
     };
     runTool('npx prisma migrate deploy', { env: mainEnv, label: 'prisma migrate deploy (main)' });
-    // Main phase runs BOTH the accepted M3.5A decision integration suite AND the M3.5B-A1 study
-    // authority suite against the same clean database (the A1 migration composed over the M3.5A ones).
+    // Main phase runs the accepted M3.5A decision suite, the M3.5B-A1 study authority suite, the
+    // M3.5B-A2 intent suite AND the M3.5B-B1 opportunity-identity suite against the same clean
+    // database (each migration composed over the previous ones).
     const main = runTool(
       'npx vitest run -c vitest.integration.config.ts ' +
         'src/db/decision-snapshot.integration.test.ts src/db/study-authority.integration.test.ts ' +
-        'src/db/purchase-intent.integration.test.ts',
+        'src/db/purchase-intent.integration.test.ts src/db/purchase-occasion.integration.test.ts',
       { env: mainEnv, label: 'vitest integration (main)', allowFail: true },
     );
 
-    return staged.ok && main.ok ? 0 : 1;
+    return staged.ok && b1Staged.ok && main.ok ? 0 : 1;
   } finally {
     if (started) {
       runPg(pgExe('pg_ctl'), ['-D', dataDir, '-m', 'immediate', 'stop'], {
