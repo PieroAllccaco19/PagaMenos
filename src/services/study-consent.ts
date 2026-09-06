@@ -88,6 +88,11 @@ function mapRejection(e: unknown): never {
   throw e;
 }
 
+// NOTE (Sol Correction 3): the A2 Consent Model A read facade is NOT here and is NOT public. It is the
+// db-layer internal `readConsentAuthorizationFacts` in `@/db/study-support`, called by the A2 write
+// boundary inside its assignment-locked transaction (READ COMMITTED). It is never exposed on the public
+// `@/services` barrel.
+
 /** Record a consent GRANT for the participant's own assignment (spec §8.2/§8.3). */
 export async function recordConsentGrant(
   request: RecordConsentGrantRequest,

@@ -18,6 +18,8 @@
 // receipt-return path uses the single `assertReceiptMatchesRequest` identity invariant (§4/§5).
 import { decide, type DecideInput, type EngineEvaluation } from '@/engine';
 
+import { PurchaseIntentHistoricalConflictError } from '@/study';
+
 import { decisionSnapshotRepository } from '@/db/decision-snapshot-repository';
 import { assertCanonicalizable } from '@/persistence/canonical';
 import { BusinessDecisionConflictError, PersistenceInvariantError } from '@/persistence/errors';
@@ -170,6 +172,125 @@ export async function decideAndPersistWithDeps(
   return verifyHistoricalSnapshot(dto);
 }
 
+/**
+ * The exact-identity a M3.5B-A2 decision request looks up (§18). Beyond the receipt/business/input
+ * identity, the finder receives the COMPLETE set of expected M3.5A material pins (Sol Closure 3) so it
+ * can independently prove EXACT / NONE / CONFLICT — an inexact candidate never escapes the finder on the
+ * hope the binder catches it later.
+ */
+export interface FindExactHistoricalDecisionQuery {
+  businessDecisionKey: string;
+  idempotencyKey: string; // the M3.5A idempotency key (operationScope = DECISION_PERSIST_V1)
+  inputHash: string; // == requestHash == decideInputHash
+  expectedEngineContractVersion: string;
+  expectedEngineInputSchemaVersion: string;
+  expectedCorpusVersion: string;
+}
+export type FindExactHistoricalDecisionResult =
+  { kind: 'NONE' } | { kind: 'FOUND'; snapshot: DecisionSnapshotDto };
+
+/**
+ * INTERNAL: read-only exact-historical decision lookup (M3.5B-A2 §18/§24; Sol Closures 2 + 3). READ ONLY
+ * — no engine, corpus, build, or write. It reads the receipt + linked snapshot + business-key snapshot in
+ * ONE transactionally-consistent view (`readHistoricalObservation`), so a competitor committing between
+ * statements can never manufacture a false SNAPSHOT_WITHOUT_RECEIPT. It then proves the COMPLETE M3.5A
+ * material predicate (receipt/idempotency, businessDecisionKey, inputHash, engine contract, engine-input
+ * schema, corpus authority). Returns NONE only when NOTHING exists for the identity; FOUND only when every
+ * clause passes; any corrupted/contradictory/partial/subset-mismatch state throws a typed CONFLICT (never
+ * collapsed to NONE). The snapshot returned came from the consistent view and is fully verified.
+ */
+export async function findExactHistoricalDecisionWithDeps(
+  query: FindExactHistoricalDecisionQuery,
+  deps: DecideAndPersistDeps = {},
+): Promise<FindExactHistoricalDecisionResult> {
+  const repository = deps.repository ?? decisionSnapshotRepository;
+  const businessDecisionKey = requireNonEmpty(query.businessDecisionKey, 'businessDecisionKey');
+  const idempotencyKey = requireNonEmpty(query.idempotencyKey, 'idempotencyKey');
+  const inputHash = requireNonEmpty(query.inputHash, 'inputHash');
+  const expectedEngineContractVersion = requireNonEmpty(
+    query.expectedEngineContractVersion,
+    'expectedEngineContractVersion',
+  );
+  const expectedEngineInputSchemaVersion = requireNonEmpty(
+    query.expectedEngineInputSchemaVersion,
+    'expectedEngineInputSchemaVersion',
+  );
+  const expectedCorpusVersion = requireNonEmpty(
+    query.expectedCorpusVersion,
+    'expectedCorpusVersion',
+  );
+  const operationScope = DECISION_PERSIST_OPERATION_SCOPE;
+
+  // ONE transactionally-consistent observation (Sol Closure 2): receipt + linked snapshot + business-key
+  // snapshot all from a single MVCC view. M3.5A commits snapshot+receipt atomically, so this observes
+  // neither or both — the receipt-absent/snapshot-present contradiction can only be REAL corruption.
+  const obs = await repository.readHistoricalObservation({
+    operationScope,
+    idempotencyKey,
+    businessDecisionKey,
+  });
+
+  if (obs.receipt === null && obs.snapshotByBusinessKey === null) return { kind: 'NONE' };
+
+  if (obs.receipt !== null) {
+    const receipt = obs.receipt;
+    const snapshot = obs.snapshotByReceipt;
+    if (!snapshot) {
+      throw new PurchaseIntentHistoricalConflictError(
+        'RECEIPT_DANGLING',
+        `receipt ${operationScope}/${idempotencyKey} references missing snapshot ${receipt.decisionSnapshotId}`,
+      );
+    }
+    if (receipt.requestHash !== inputHash) {
+      throw new PurchaseIntentHistoricalConflictError(
+        'RECEIPT_HASH_MISMATCH',
+        `receipt requestHash ${receipt.requestHash} != expected inputHash ${inputHash}`,
+      );
+    }
+    if (snapshot.businessDecisionKey !== businessDecisionKey) {
+      throw new PurchaseIntentHistoricalConflictError(
+        'BUSINESS_KEY_MISMATCH',
+        `snapshot businessDecisionKey ${snapshot.businessDecisionKey} != ${businessDecisionKey}`,
+      );
+    }
+    verifyHistoricalSnapshot(snapshot); // recompute hashes + column↔payload coherence (throws typed)
+    if (snapshot.inputHash !== inputHash) {
+      throw new PurchaseIntentHistoricalConflictError(
+        'SEMANTIC_MISMATCH',
+        `snapshot inputHash ${snapshot.inputHash} != expected ${inputHash}`,
+      );
+    }
+    // Complete M3.5A material predicate (Sol Closure 3): each independently-mutable pin is checked, so a
+    // subset-mismatch candidate (differing on exactly one pin) is a CONFLICT, never a false FOUND/NONE.
+    if (snapshot.engineContractVersion !== expectedEngineContractVersion) {
+      throw new PurchaseIntentHistoricalConflictError(
+        'ENGINE_CONTRACT_MISMATCH',
+        `snapshot engineContractVersion ${snapshot.engineContractVersion} != expected ${expectedEngineContractVersion}`,
+      );
+    }
+    if (snapshot.engineInputSchemaVersion !== expectedEngineInputSchemaVersion) {
+      throw new PurchaseIntentHistoricalConflictError(
+        'ENGINE_INPUT_SCHEMA_MISMATCH',
+        `snapshot engineInputSchemaVersion ${snapshot.engineInputSchemaVersion} != expected ${expectedEngineInputSchemaVersion}`,
+      );
+    }
+    if (snapshot.corpusVersion !== expectedCorpusVersion) {
+      throw new PurchaseIntentHistoricalConflictError(
+        'CORPUS_MISMATCH',
+        `snapshot corpusVersion ${snapshot.corpusVersion} != expected ${expectedCorpusVersion}`,
+      );
+    }
+    return { kind: 'FOUND', snapshot };
+  }
+
+  // receipt === null but a snapshot exists under this business key — observed IN ONE CONSISTENT VIEW, so
+  // this is not a torn read but genuine corruption (A2 writes snapshot+receipt atomically). Never NONE.
+  throw new PurchaseIntentHistoricalConflictError(
+    'SNAPSHOT_WITHOUT_RECEIPT',
+    `snapshot exists for businessDecisionKey ${businessDecisionKey} but no receipt for the deterministic key`,
+  );
+}
+
 /** INTERNAL: load with an injectable store. See `loadDecisionSnapshot`. */
 export async function loadDecisionSnapshotWithDeps(
   id: string,
@@ -213,6 +334,17 @@ export function decideAndPersist(request: DecideAndPersistRequest): Promise<Deci
  */
 export function loadDecisionSnapshot(id: string): Promise<DecisionSnapshotDto | null> {
   return loadDecisionSnapshotWithDeps(id);
+}
+
+/**
+ * Read-only exact-historical decision lookup (M3.5B-A2 §18/§24), using TRUSTED production dependencies.
+ * Returns NONE / FOUND(verified snapshot), or throws a typed CONFLICT on any corrupted/partial state.
+ * Decides nothing and writes nothing.
+ */
+export function findExactHistoricalDecision(
+  query: FindExactHistoricalDecisionQuery,
+): Promise<FindExactHistoricalDecisionResult> {
+  return findExactHistoricalDecisionWithDeps(query);
 }
 
 /**

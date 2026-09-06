@@ -96,3 +96,110 @@ export { type RecruitmentResolver, type ResolvedRecruitmentSubject } from './rec
 // session adapter (`services/study-participant-session.ts`) and tests (A1-CODE-01). Only the
 // runtime-unforgeable checker and the type are public.
 export { isTrustedParticipantContext, type TrustedParticipantContext } from './participant-context';
+
+// ── M3.5B-A2 pure-domain surface (PurchaseIntent lifecycle, deterministic decision freeze) ──────────
+export {
+  PurchaseIntentError,
+  PurchaseIntentValidationError,
+  PurchaseIntentConsentNotAuthorizedError,
+  PurchaseIntentOwnershipError,
+  PurchaseIntentCaptureConflictError,
+  PurchaseIntentContextConflictError,
+  PurchaseIntentContextSignatureError,
+  PurchaseIntentContextAfterFinalizationError,
+  EligibilityProfileConflictError,
+  PurchaseIntentInvalidationConflictError,
+  PurchaseIntentFinalizationConflictError,
+  PurchaseIntentInvalidatedError,
+  PurchaseIntentNotFinalizedError,
+  PurchaseIntentInvalidationCycleError,
+  PurchaseIntentSemanticDriftError,
+  PurchaseIntentDecisionRequestIntegrityError,
+  PurchaseIntentUnsupportedInputSchemaError,
+  PurchaseIntentBindingCoherenceError,
+  PurchaseIntentHistoricalConflictError,
+  TrustedEntrySourceError,
+  PurchaseIntentIdempotencyConflictError,
+  PurchaseIntentInvariantError,
+} from './purchase-intent-errors';
+
+export {
+  A2_HOLIDAY_CALENDAR_VERSION_V1,
+  A2_HOLIDAY_CALENDAR_DIGEST_V1,
+  A2_HOLIDAY_CALENDAR_FIXTURE_V1,
+  resolveHolidayCalendarFixture,
+  computeHolidayContentDigest,
+  limaLocalDateOf,
+  assertIntendedDateWithinCoverage,
+  HolidayFixtureIntegrityError,
+  UnsupportedHolidayCalendarVersionError,
+  HolidayCoverageError,
+  type HolidayCalendarFixtureV1,
+} from './holiday-fixture';
+
+export {
+  A2_CORPUS_PROJECTION_VERSION_V1,
+  A2_ACCEPTED_CORPUS_ID,
+  A2_ACCEPTED_CORPUS_SEMANTIC_DIGEST_V1,
+  RUNTIME_CORPUS_AUTHORITY,
+  normalizeCorpusSemanticProjection,
+  computeCorpusSemanticDigest,
+  assertCorpusAuthority,
+  CorpusAuthorityMismatchError,
+  type RuntimeCorpusAuthorityDeclaration,
+} from './corpus-authority';
+
+export {
+  A2_BUSINESS_DECISION_KEY_PREFIX,
+  A2_M3_5A_IDEMPOTENCY_KEY_PREFIX,
+  deriveBusinessDecisionKey,
+  deriveM3_5aIdempotencyKey,
+} from './purchase-intent-keys';
+
+export {
+  A2_PORTFOLIO_SCHEMA_VERSION_V1,
+  normalizeEligibilityPortfolioV1,
+  compareUnicodeCodePointStrings,
+  compareNormalizedEligibilityInstrumentV1,
+  canonicalMembershipsSerialized,
+  EligibilityProfileNormalizedKeyCollisionError,
+  EligibilityProfileInstrumentComparatorInvariantError,
+} from './eligibility-portfolio';
+
+// NOTE: the pure precedence resolver is intentionally NOT on the barrel — trusted entry provenance is
+// minted only via the session adapter's `resolveTrustedEntrySource` (branded `ResolvedEntrySource`).
+export {
+  ENTRY_SOURCES,
+  type EntrySource as A2EntrySource,
+  type TrustedEntryEvidence,
+} from './purchase-intent-entry-source';
+
+// The trusted resolved-entry-source TYPE + runtime-unforgeable validator (A2 §8). The CREATION
+// primitive (`createResolvedEntrySource`) is intentionally NOT exported here — it lives behind the
+// trusted session adapter (mirrors the participant-context creation primitive, A1-CODE-01).
+export { isResolvedEntrySource, type ResolvedEntrySource } from './entry-source-context';
+
+export {
+  A2_CONTEXT_SCHEMA_VERSION_V1,
+  normalizeA2PurchaseSignatureV1,
+  flattenToPurchaseContext,
+  buildDecideInputFromFinalizedAuthorities,
+  computeDecideInputHash,
+  type A2PurchaseSignature,
+  type A2SignatureKind,
+  type BuildDecideInputArgs,
+} from './purchase-intent-decide-input';
+
+export {
+  INTENT_CREATE_OPERATION_SCOPE,
+  INTENT_CONTEXT_APPEND_OPERATION_SCOPE,
+  ELIGIBILITY_PROFILE_APPEND_OPERATION_SCOPE,
+  INTENT_FINALIZE_OPERATION_SCOPE,
+  INTENT_INVALIDATE_OPERATION_SCOPE,
+  createPurchaseIntentRequestHash,
+  appendContextRequestHash,
+  appendEligibilityProfileRequestHash,
+  finalizeRequestHash,
+  invalidateRequestHash,
+  type A2TrustedContext,
+} from './purchase-intent-request-hash';

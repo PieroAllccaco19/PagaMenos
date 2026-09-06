@@ -6,6 +6,10 @@
 // reads go through `loadDecisionSnapshot` / `replayDecisionSnapshot`, which verify hash integrity +
 // column↔payload coherence. The raw db client, repository, draft constructor, providers, and the
 // injectable `*WithDeps` / `DecideAndPersistDeps` surface are deliberately NOT re-exported here.
+// Sol Closure 3: `findExactHistoricalDecision` (the §18 exact-historical finder) is deliberately NOT
+// re-exported here. It is an INTERNAL A2 decision/repair capability reachable only from the sanctioned
+// saga (`services/study-intent-decision.ts`) via the deep module; ordinary application code has no
+// access (module-capability AST boundary + ESLint). Its query/result types are likewise internal.
 export {
   decideAndPersist,
   loadDecisionSnapshot,
@@ -41,6 +45,53 @@ export {
   type ConsentResultKind,
 } from './study-consent';
 export { loadFrozenProtocolForAnalysis, type LoadFrozenProtocolRef } from './study-analysis';
+
+// ── M3.5B-A2 participant-facing PurchaseIntent lifecycle + decision saga (behind a trusted context) ──
+export {
+  captureIntentToken,
+  createPurchaseIntent,
+  appendPurchaseIntentContext,
+  appendEligibilityProfile,
+  finalizePurchaseIntent,
+  invalidatePurchaseIntent,
+  type CaptureIntentTokenRequest,
+  type CreatePurchaseIntentRequest,
+  type AppendPurchaseIntentContextRequest,
+  type AppendEligibilityProfileRequest,
+  type FinalizePurchaseIntentRequest,
+  type InvalidatePurchaseIntentRequest,
+} from './study-purchase-intent';
+export {
+  requestPurchaseIntentDecision,
+  A2_DECISION_REQUEST_SCHEMA_VERSION_V1,
+  type RequestPurchaseIntentDecisionRequest,
+  type PurchaseIntentDecisionResult,
+} from './study-intent-decision';
+
+// A2 typed domain errors consumers need to interpret results/failures (no write capability).
+export {
+  PurchaseIntentError,
+  PurchaseIntentValidationError,
+  PurchaseIntentConsentNotAuthorizedError,
+  PurchaseIntentOwnershipError,
+  CorpusAuthorityMismatchError,
+  PurchaseIntentCaptureConflictError,
+  PurchaseIntentContextConflictError,
+  PurchaseIntentContextSignatureError,
+  PurchaseIntentContextAfterFinalizationError,
+  EligibilityProfileConflictError,
+  PurchaseIntentInvalidationConflictError,
+  PurchaseIntentFinalizationConflictError,
+  PurchaseIntentInvalidatedError,
+  PurchaseIntentNotFinalizedError,
+  PurchaseIntentInvalidationCycleError,
+  PurchaseIntentSemanticDriftError,
+  PurchaseIntentDecisionRequestIntegrityError,
+  PurchaseIntentBindingCoherenceError,
+  PurchaseIntentHistoricalConflictError,
+  PurchaseIntentIdempotencyConflictError,
+  PurchaseIntentInvariantError,
+} from '@/study';
 
 // The trusted participant context TYPE (erased) and the pure A1 helpers + typed study errors that
 // consumers need to interpret results/failures (no write capability). The context CREATION primitive

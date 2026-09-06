@@ -25,6 +25,28 @@ import {
 import type { DecisionSnapshotDto } from '@/persistence/schema';
 
 import { prisma as defaultPrisma } from './client';
+import { classifyUniqueViolation, isUniqueViolation, type UniqueConstraintSpec } from './p2002';
+
+/**
+ * The exact unique constraints the decision-persistence writes can collide on (Sol Closure 4). Field
+ * sets are the Prisma schema field names reported in `P2002.meta.target` (empirically an array). Any
+ * P2002 not matching one of these EXACTLY is UNKNOWN → the caller fails closed.
+ */
+const SNAPSHOT_BUSINESS_KEY: UniqueConstraintSpec = {
+  id: 'SNAPSHOT_BUSINESS_KEY',
+  fields: ['businessDecisionKey'],
+};
+const RECEIPT_IDEMPOTENCY: UniqueConstraintSpec = {
+  id: 'RECEIPT_IDEMPOTENCY',
+  fields: ['operationScope', 'idempotencyKey'],
+};
+
+/** Diagnostic emitted when a P2002 reconciliation path is actually ENTERED (Sol Closure 4 catch proof). */
+export interface UniqueReconcileEvent {
+  op: 'createDecision' | 'attachAliasReceipt';
+  constraint: string;
+  outcome: 'equivalent-reuse' | 'conflict' | 'retry';
+}
 
 type SnapshotRow = Prisma.DecisionSnapshotGetPayload<Record<string, never>>;
 type ReceiptRow = Prisma.DecisionIdempotencyReceiptGetPayload<Record<string, never>>;
@@ -87,12 +109,17 @@ function snapshotCreateData(draft: DecisionSnapshotDraft): Prisma.DecisionSnapsh
   };
 }
 
-function isUniqueViolation(e: unknown): e is Prisma.PrismaClientKnownRequestError {
-  return e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002';
-}
-
 export class DecisionSnapshotRepository implements DecisionPersistenceStore {
-  constructor(private readonly prisma: PrismaClient = defaultPrisma) {}
+  /**
+   * @param prisma The client (default: shared).
+   * @param onReconcile INTERNAL diagnostic sink invoked when a P2002 reconciliation path is actually
+   *   entered — used by tests to PROVE the loser took the intended catch (Sol Closure 4). No-op default;
+   *   never affects production behavior.
+   */
+  constructor(
+    private readonly prisma: PrismaClient = defaultPrisma,
+    private readonly onReconcile: (event: UniqueReconcileEvent) => void = () => {},
+  ) {}
 
   async findReceipt(
     operationScope: string,
@@ -121,6 +148,49 @@ export class DecisionSnapshotRepository implements DecisionPersistenceStore {
   }
 
   /**
+   * Read the receipt, its linked snapshot, and the business-key snapshot in ONE consistent snapshot
+   * (Sol Closure 2). Runs at REPEATABLE READ so all statements observe a single MVCC snapshot: because
+   * M3.5A commits the decision snapshot and its initial receipt atomically (createDecision, one
+   * transaction), this view sees NEITHER or BOTH — never a cross-statement mixed timeline. Read-only.
+   */
+  async readHistoricalObservation(args: {
+    operationScope: string;
+    idempotencyKey: string;
+    businessDecisionKey: string;
+  }): Promise<{
+    receipt: DecisionReceiptRecord | null;
+    snapshotByReceipt: DecisionSnapshotDto | null;
+    snapshotByBusinessKey: DecisionSnapshotDto | null;
+  }> {
+    const { operationScope, idempotencyKey, businessDecisionKey } = args;
+    return this.prisma
+      .$transaction(
+        async (tx) => {
+          const receiptRow = await tx.decisionIdempotencyReceipt.findUnique({
+            where: { operationScope_idempotencyKey: { operationScope, idempotencyKey } },
+          });
+          const receipt = receiptRow ? receiptRowToRecord(receiptRow) : null;
+          const bizRow = await tx.decisionSnapshot.findUnique({
+            where: { businessDecisionKey },
+          });
+          const snapshotByBusinessKey = bizRow ? rowToDto(bizRow) : null;
+          let snapshotByReceipt: DecisionSnapshotDto | null = null;
+          if (receipt) {
+            const linked = await tx.decisionSnapshot.findUnique({
+              where: { id: receipt.decisionSnapshotId },
+            });
+            snapshotByReceipt = linked ? rowToDto(linked) : null;
+          }
+          return { receipt, snapshotByReceipt, snapshotByBusinessKey };
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+      )
+      .catch((e: unknown) => {
+        throw wrapUnexpected(e, `read historical observation for ${businessDecisionKey}`);
+      });
+  }
+
+  /**
    * Persist a NEW decision: snapshot + its initial receipt atomically (§16/§51). On a unique
    * violation, race-reconcile to the already-committed state: an existing receipt for this key
    * resolves the idempotency (same request → return its snapshot; different → IdempotencyConflict); an
@@ -142,9 +212,16 @@ export class DecisionSnapshotRepository implements DecisionPersistenceStore {
         return rowToDto(row);
       } catch (e) {
         if (!isUniqueViolation(e)) throw wrapUnexpected(e, 'persist new decision');
-        const resolved = await this.reconcileCreate(args);
+        // Exact classification (Sol Closure 4): the P2002 MUST be one of the two constraints this write
+        // can collide on; any other target is an unexpected integrity fault → fail closed.
+        const cls = classifyUniqueViolation(e, [SNAPSHOT_BUSINESS_KEY, RECEIPT_IDEMPOTENCY]);
+        if (!cls.matched) {
+          throw wrapUnexpected(e, `persist new decision (unexpected unique target: ${cls.reason})`);
+        }
+        const resolved = await this.reconcileCreate(args, cls.id);
         if (resolved) return resolved;
         // Both keys momentarily absent (the conflicting writer rolled back) — retry the insert once.
+        this.onReconcile({ op: 'createDecision', constraint: cls.id, outcome: 'retry' });
       }
     }
     throw new PersistenceInvariantError(
@@ -153,7 +230,17 @@ export class DecisionSnapshotRepository implements DecisionPersistenceStore {
     );
   }
 
-  private async reconcileCreate(args: CreateDecisionArgs): Promise<DecisionSnapshotDto | null> {
+  /**
+   * Reload-and-prove reconciliation, keyed on the EXACT constraint that fired (Sol Closure 4). Reloads
+   * the authoritative winner by the collided scientific identity, proves complete material equivalence,
+   * and returns it (equivalent) or raises the exact domain conflict (non-equivalent). `classifiedId` is
+   * the constraint the classifier matched; the reconciliation checks BOTH families regardless (they are
+   * the only two possible), but the diagnostic is stamped with the constraint that actually fired.
+   */
+  private async reconcileCreate(
+    args: CreateDecisionArgs,
+    classifiedId: string,
+  ): Promise<DecisionSnapshotDto | null> {
     const { operationScope, idempotencyKey, requestHash, draft } = args;
 
     // 1. Idempotency: an existing receipt for this transport key wins — but ONLY if it resolves the
@@ -173,6 +260,11 @@ export class DecisionSnapshotRepository implements DecisionPersistenceStore {
         requestedBusinessDecisionKey: draft.businessDecisionKey,
         requestedRequestHash: requestHash,
       });
+      this.onReconcile({
+        op: 'createDecision',
+        constraint: classifiedId,
+        outcome: 'equivalent-reuse',
+      });
       return snapshot; // exact retry / concurrent duplicate — no new snapshot
     }
 
@@ -183,6 +275,11 @@ export class DecisionSnapshotRepository implements DecisionPersistenceStore {
       const existingRequestHash = existing.inputHash;
       if (existingRequestHash === requestHash) {
         // Same historical decision reached via a new/racing key ⇒ durably alias, then return it.
+        this.onReconcile({
+          op: 'createDecision',
+          constraint: classifiedId,
+          outcome: 'equivalent-reuse',
+        });
         return this.attachAliasReceipt({
           operationScope,
           idempotencyKey,
@@ -190,6 +287,7 @@ export class DecisionSnapshotRepository implements DecisionPersistenceStore {
           snapshot: existing,
         });
       }
+      this.onReconcile({ op: 'createDecision', constraint: classifiedId, outcome: 'conflict' });
       throw new BusinessDecisionConflictError(
         draft.businessDecisionKey,
         existingRequestHash,
@@ -214,8 +312,19 @@ export class DecisionSnapshotRepository implements DecisionPersistenceStore {
       return snapshot;
     } catch (e) {
       if (!isUniqueViolation(e)) throw wrapUnexpected(e, 'attach alias receipt');
+      // Exact classification: the only constraint an alias insert can hit is the receipt idempotency
+      // pair; any other target is fail-closed (Sol Closure 4).
+      const cls = classifyUniqueViolation(e, [RECEIPT_IDEMPOTENCY]);
+      if (!cls.matched) {
+        throw wrapUnexpected(e, `attach alias receipt (unexpected unique target: ${cls.reason})`);
+      }
       const receipt = await this.findReceipt(operationScope, idempotencyKey);
       if (!receipt) throw wrapUnexpected(e, 'attach alias receipt (missing after conflict)');
+      this.onReconcile({
+        op: 'attachAliasReceipt',
+        constraint: cls.id,
+        outcome: 'equivalent-reuse',
+      });
       // The racing receipt must resolve the SAME request AND the SAME business decision (§4) —
       // verify against the receipt's OWN linked snapshot, not merely the intended alias target.
       const linked = await this.findSnapshotById(receipt.decisionSnapshotId);

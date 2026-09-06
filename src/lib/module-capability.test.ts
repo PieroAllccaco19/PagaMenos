@@ -41,8 +41,13 @@ const RAW_WRITE_MODULES = new Set([
   'persistence/provenance',
   'persistence/build-meta',
 ]);
-/** The deep DI module (importing it exposes the injectable *WithDeps surface). */
-const DEEP_SERVICE = new Set(['services/decide-and-persist']);
+/** Deep DI modules (importing one exposes an injectable *WithDeps surface). */
+const DEEP_SERVICE = new Set([
+  'services/decide-and-persist',
+  // A2-CODE (Sol Finding 1): the A2 lifecycle + saga modules expose *WithDeps (repo, clock, decision fn).
+  'services/study-purchase-intent',
+  'services/study-intent-decision',
+]);
 
 type Kind = 'raw' | 'deep' | 'nonliteral';
 interface Violation {
@@ -142,9 +147,14 @@ const exemptFromRaw = (rel: string): boolean =>
   rel.startsWith('persistence/') ||
   rel === 'services/decide-and-persist.ts' ||
   isTestOrFixture(rel);
-// The deep DI module may be imported only by the barrel and the module itself.
+// The deep DI module may be imported only by the barrel, the module itself, and — for the INTERNAL
+// §18 finder capability (Sol Closure 3) — the sanctioned A2 decision/repair saga, which is the sole
+// owner of `findExactHistoricalDecision` now that it is off the public barrel.
 const exemptFromDeep = (rel: string): boolean =>
-  rel === 'services/index.ts' || rel === 'services/decide-and-persist.ts' || isTestOrFixture(rel);
+  rel === 'services/index.ts' ||
+  rel === 'services/decide-and-persist.ts' ||
+  rel === 'services/study-intent-decision.ts' ||
+  isTestOrFixture(rel);
 // The non-literal dynamic-import rule is fail-closed for ALL protected production source: NO
 // capability directory (db/, persistence/) and NOT even the sanctioned impl earns a computed-import
 // exemption. Only tests/fixtures/probes may retain their existing exemption.
@@ -208,6 +218,15 @@ const DEEP_ATTACKS = [
   "const m = await import('../services/decide-and-persist');",
   // NoSubstitutionTemplateLiteral (STATIC template §10) — inspectable, must resolve to deep.
   'const m = await import(`@/services/decide-and-persist`);',
+  // Sol Closure 3: the INTERNAL §18 finder lives in the deep module; an unauthorized deep import of it
+  // is a `deep` violation from ordinary code.
+  "import { findExactHistoricalDecision } from '@/services/decide-and-persist';",
+  // A2-CODE (Sol Finding 1): the A2 deep modules exposing *WithDeps must be equally unreachable.
+  "import { createPurchaseIntentWithDeps } from '@/services/study-purchase-intent';",
+  "import { requestPurchaseIntentDecisionWithDeps } from '@/services/study-intent-decision';",
+  "const m = await import('@/services/study-purchase-intent.js');",
+  "const m = await import('../services/study-intent-decision');",
+  'const m = await import(`@/services/study-purchase-intent`);',
 ];
 
 // COMPUTED / non-literal dynamic imports (P35A-02 root closure §9/§12). Each MUST be rejected as
@@ -324,6 +343,37 @@ describe('non-literal dynamic-import closure (P35A-02 root defect §9/§10/§12)
 });
 
 // ===================================================================================================
+// Sol Closure 3 — findExactHistoricalDecision is an INTERNAL A2 decision/repair capability.
+// ===================================================================================================
+describe('§18 finder capability (Sol Closure 3)', () => {
+  it('is ABSENT from the public @/services barrel at runtime', async () => {
+    const svc = (await import('@/services')) as Record<string, unknown>;
+    expect(svc.findExactHistoricalDecision).toBeUndefined();
+    // The public decision surface remains available.
+    expect(typeof svc.decideAndPersist).toBe('function');
+    expect(typeof svc.loadDecisionSnapshot).toBe('function');
+  });
+
+  it('the public barrel SOURCE no longer re-exports the finder (unauthorized deep import required)', () => {
+    const src = readFileSync(path.join(SRC, 'services/index.ts'), 'utf8');
+    expect(src).not.toMatch(/export\s*\{[^}]*findExactHistoricalDecision/s);
+  });
+
+  it('an ordinary service importing the finder from the deep module is a `deep` violation', () => {
+    const hits = forbiddenCapabilities(
+      "import { findExactHistoricalDecision } from '@/services/decide-and-persist';",
+      'services/evil-service.ts',
+    );
+    expect(hits.some((h) => h.kind === 'deep')).toBe(true);
+  });
+
+  it('the sanctioned saga MAY reach the deep module (sole finder owner)', () => {
+    expect(exemptFromDeep('services/study-intent-decision.ts')).toBe(true);
+    expect(exemptFromDeep('services/evil-service.ts')).toBe(false);
+  });
+});
+
+// ===================================================================================================
 // M3.5B-A1 — operation-specific study capability ownership (spec §11/§27).
 //
 // Extends the accepted AST boundary with OPERATION-SPECIFIC allowlists: each raw study repository is
@@ -347,6 +397,18 @@ const STUDY_RAW_OWNERS: Record<string, string[]> = {
   'db/study-consent-repository': ['services/study-consent.ts'],
 };
 
+/** M3.5B-A2 raw repository (src-relative, no ext) → the ONLY sanctioned service files that may import
+ * it. The decision-request/binding writer is owned solely by the decision saga; the intent lifecycle
+ * writer is owned by the intent service AND read-only by the decision saga (which loads the finalized
+ * authorities to freeze a request) — mirroring the two-owner study-protocol-repository pattern. */
+const PI_RAW_OWNERS: Record<string, string[]> = {
+  'db/purchase-intent-repository': [
+    'services/study-purchase-intent.ts',
+    'services/study-intent-decision.ts',
+  ],
+  'db/purchase-intent-decision-repository': ['services/study-intent-decision.ts'],
+};
+
 /** Trusted admin service module → the ONLY files that may import it (study-admin barrel; read-only
  * analysis load additionally reachable from the public @/services barrel). Empty ⇒ tests only. */
 const STUDY_ADMIN_OWNERS: Record<string, string[]> = {
@@ -363,6 +425,9 @@ const STUDY_ADMIN_OWNERS: Record<string, string[]> = {
  * checker/type, never the primitive) and the trusted session adapter may import it. */
 const STUDY_RESTRICTED_MODULES: Record<string, string[]> = {
   'study/participant-context': ['study/index.ts', 'services/study-participant-session.ts'],
+  // A2-CODE: the trusted entry-source creation primitive — only the pure barrel (which re-exports the
+  // validator/type, never the primitive) and the trusted session adapter may import it.
+  'study/entry-source-context': ['study/index.ts', 'services/study-participant-session.ts'],
 };
 
 /** Study boundary violations for one file's source (literal specifiers only; non-literal handled by
@@ -382,6 +447,14 @@ function studyBoundaryViolations(code: string, fromSrcRel: string): string[] {
       const owners = STUDY_RAW_OWNERS[mod] ?? [];
       if (owners.includes(fromSrcRel)) continue;
       out.push(`raw-study:${mod}`);
+      continue;
+    }
+    if (/^db\/purchase-intent-/.test(mod)) {
+      // Raw A2 internals: only db/ files, the mapped owners, and tests may import them.
+      if (isTest || isDbFile) continue;
+      const owners = PI_RAW_OWNERS[mod] ?? [];
+      if (owners.includes(fromSrcRel)) continue;
+      out.push(`raw-pi:${mod}`);
       continue;
     }
     if (Object.prototype.hasOwnProperty.call(STUDY_ADMIN_OWNERS, mod)) {

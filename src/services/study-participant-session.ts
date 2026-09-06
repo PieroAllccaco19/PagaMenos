@@ -16,6 +16,10 @@ import {
   createTrustedParticipantContext,
   type TrustedParticipantContext,
 } from '@/study/participant-context';
+// The entry-source creation primitive is likewise module-private to `@/study/entry-source-context`;
+// this trusted adapter is one of the only sanctioned importers (module-capability AST test).
+import { createResolvedEntrySource, type ResolvedEntrySource } from '@/study/entry-source-context';
+import type { TrustedEntryEvidence } from '@/study';
 
 export interface ResolveTrustedParticipantContextArgs {
   /** A participant identity already authenticated by a trusted caller (never an untrusted request). */
@@ -27,4 +31,17 @@ export function resolveTrustedParticipantContext(
   args: ResolveTrustedParticipantContextArgs,
 ): TrustedParticipantContext {
   return createTrustedParticipantContext(args.authenticatedParticipantId);
+}
+
+/**
+ * Resolve TRUSTED entry-source evidence to a registry-backed `ResolvedEntrySource` (A2 §8). The
+ * evidence is derived by the trusted server layer from trusted signals (research/auth links, saved
+ * decisions, share tokens, content tokens) — never from a participant-facing request body. This is the
+ * ONLY sanctioned construction path for trusted entry provenance; participant-facing code cannot mint
+ * one, so it cannot self-assign RESEARCH/AUTH/etc. provenance.
+ */
+export function resolveTrustedEntrySource(
+  evidence: readonly TrustedEntryEvidence[],
+): ResolvedEntrySource {
+  return createResolvedEntrySource(evidence);
 }
