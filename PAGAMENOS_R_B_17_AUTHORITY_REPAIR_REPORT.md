@@ -4,9 +4,9 @@
 **Mandated by:** `PAGAMENOS_M3_5B_B_SEMANTIC_RATIFICATION_V1_3`, clause **R-B-17**; annotation obligation **O-12**.
 **Nature:** **DOCUMENTATION AND AUTHORITY ONLY.** No implementation delta.
 **Root register after repair:** `PAGAMENOS_SPEC_AUTHORITY.md`.
-**Baseline of the final commit:** the accepted A2 integration merge `81b1cc606df9eeff7766c5afdaa56eeddb0db1a5` — **see §18, which records how this repair was rehomed after preparation.** Sections 1–17 are the original forensic record and are deliberately left exactly as written.
+**Baseline of the final commit:** the accepted A2 integration merge `81b1cc606df9eeff7766c5afdaa56eeddb0db1a5` — **see §18, which records how this repair was rehomed after preparation, and §19, which records the independent-audit correction patch.** Sections 1–17 are the original forensic record; where the audit found a factual error in them it was corrected in place and logged in §19.
 
-> **This repair created no architecture, resolved no open item, and authorized no work.** It made the existing accepted authority durable, versioned, unambiguous, explicitly ordered and auditable, so that the Joint B Architecture and the B1/B2 effective specifications can be written against it.
+> **This repair created no architecture and authorized no work. It resolved no Joint B Architecture semantic question and did not design B1 or B2.** It closed only **O-12**, whose owner and deadline were explicitly the R-B-17 authority repair itself. Every other open item — O-01, O-02, O-03, O-04, O-05, O-06a, O-06b-ARCH, O-06b-SPEC, O-06c, O-08, O-09, O-10, O-11, O-13, O-14, O-15, O-16, O-17, O-B-DISTINCTNESS and O-C-INDEPENDENCE — remains unresolved and with its owner unchanged. What this repair did was make the existing accepted authority durable, versioned, unambiguous, explicitly ordered and auditable, so that the Joint B Architecture and the B1/B2 effective specifications can be written against it.
 
 ---
 
@@ -16,10 +16,10 @@ Four authority defects were independently established before this repair. Each w
 
 | Defect | Statement | Evidence at the time |
 | :-- | :-- | :-- |
-| **AUTH-01** | **The A2 effective specification was untracked.** No `PAGAMENOS_M3_5B_A2_EFFECTIVE_SPEC*.md` existed in any commit on any ref; all eleven revisions were working-tree-only. | `git log --all --diff-filter=A -- "*A2_EFFECTIVE*"` returned empty; the tracked `.md` sets at `HEAD` and at the accepted integration merge `81b1cc6` were identical and contained no A2 spec. |
+| **AUTH-01** | **The A2 effective specification was untracked.** No `PAGAMENOS_M3_5B_A2_EFFECTIVE_SPEC*.md` existed in any commit on any ref; all nine revisions — V1, V2, V3, V4, V4.1, V4.2, V4.3, V4.4, V4.5 — were working-tree-only. | `git log --all --diff-filter=A -- "*A2_EFFECTIVE*"` returned empty; the tracked `.md` sets at `HEAD` and at the accepted integration merge `81b1cc6` were identical and contained no A2 spec. |
 | **AUTH-02** | **`PAGAMENOS_SPEC_AUTHORITY.md` was stale at M0.** It read `Authorized now: M0 only` and `Not authorized in this run: M1, M2, M3, M3.5 …`, and named no A1, A2 or M3.5A artifact. | The file itself, at `HEAD`. |
 | **AUTH-03** | **No accepted document split B1 from B2 in formal authority.** | No tracked artifact recorded the split; the ratification that created it was untracked. |
-| **AUTH-06** | **The rejected B1 was implemented with no B1 specification.** | `git diff 81b1cc6 a586b31` adds 16 files, 3236 insertions — **none of them a specification or design document**. |
+| **AUTH-06** | **The rejected B1 was implemented with no B1 specification.** | `git diff 81b1cc6..a586b31` touches 16 paths — **nine added and seven modified**, 3236 insertions — and **contains no specification or design artifact**. |
 
 **Consequence.** The accepted A2 implementation was merged while the authority defining its semantics was absent from the repository; the root precedence file did not recognise the authorities a B artifact would have to derive from; and the phase boundary a B implementation had assumed was unratified. Any B1/B2 specification written in that state would have cited unversioned files.
 
@@ -61,7 +61,7 @@ The stated accepted integration tree `b6de0d7f…` was confirmed to be exactly t
 const PROTECTED_PREFIXES = ['src/corpus/', 'src/engine/', 'authority/', '.github/workflows/', 'scripts-trusted/'];
 ```
 
-`authority/` is therefore a **protected trust path**, reserved for the machine-readable authority-baseline JSON artifacts. **The documentation archive created by this repair deliberately does NOT use it**, and lives at `docs/authority/archive/` instead. No CI workflow or script in the repository references any `.md` path, so this repair cannot alter gate behaviour.
+`authority/` is therefore a **protected trust path**, reserved for the machine-readable authority-baseline JSON artifacts. Reserved, not populated: **that namespace is empty in this repair tree and in its parent `81b1cc6`**, because those artifacts belong to the separately selected authority-baseline commit (§19.2; register §2.4). **The documentation archive created by this repair deliberately does NOT use the protected prefix**, and lives at `docs/authority/archive/` instead. No CI workflow or script in the repository references any `.md` path, so this repair cannot alter gate behaviour.
 
 ---
 
@@ -331,7 +331,7 @@ Returns **empty**. No runtime source, Prisma schema, migration, script, trusted 
 
 > **Subsequently resolved — see §18.** The observation below is the **preparation-time** finding, recorded before any commit existed. It is retained verbatim as forensic history. The concern it raises was acted on: the repair was rehomed onto the accepted baseline, and the final commit does **not** descend from `a586b31`.
 
-This repair was authored on `m3.5b-b1-implementation`, whose HEAD is the **rejected** B1 commit `a586b31`. That branch's tree therefore contains the sixteen rejected B1 files, which are **not** part of the accepted A2 integration tree:
+This repair was authored on `m3.5b-b1-implementation`, whose HEAD is the **rejected** B1 commit `a586b31`. `git diff --name-only 81b1cc6..a586b31` touches sixteen paths — **nine added and seven modified** — so that branch's tree carries nine files absent from the accepted A2 integration tree and seven files whose content diverges from it:
 
 ```
 eslint.config.mjs
@@ -500,3 +500,46 @@ Not squashed with anything else. The rejected B1 implementation was **not** merg
 ### 18.7 Preservation of prepared work
 
 The primary worktree on `m3.5b-b1-implementation` was left untouched throughout, so the prepared staged state remains intact there as an independent record. Unrelated user work was preserved: the pre-existing stash from 2026-09-05 on `pre-a2-ci-authority-parity` was neither popped nor modified, and no untracked file was deleted.
+
+---
+
+## 19. Independent-audit correction patch
+
+> **Appended after §§1–18.** The independent acceptance audit of commit `fce04a2e0c7db256af8381dbd484ced5eea40e57` returned `R-B-17 AUTHORITY REPAIR REQUIRES PATCH`. The Git/runtime repair and the substantive authority installation **PASSED**; five documentation and authority-metadata findings did not. This section records their closure. **No semantic content changed** — not canonical A2, not the accepted V1.3 body, not the Rev 2 amendments, not B1/B2 phase ownership, not open-item ownership, not the AnalysisProtocol state.
+
+### 19.1 Findings closed
+
+| Finding | Severity | Defect | Correction |
+| :-- | :-- | :-- | :-- |
+| **RB17-AUD-01** | HIGH | The root register §2.4 implied this repair tree's `authority/` contains the machine-readable authority JSON artifacts. `git ls-tree -r fce04a2 authority/` is **empty**, as is the same query at parent `81b1cc6`. | §2.4 rewritten to separate *this repository tree / R-B-17 documentation authority* from *the separately selected machine-readable authority baseline*, and to state that the JSON artifacts are **not** in this tree. |
+| **RB17-AUD-02** | MEDIUM | "eleven historical A2 revisions" in register §2.3 and report §1. The chain is V1, V2, V3, V4, V4.1, V4.2, V4.3, V4.4, V4.5. | Both corrected to **nine**, with the nine enumerated. The archive manifest itself was already correct and is unchanged. |
+| **RB17-AUD-03** | MEDIUM | The report opened with "resolved no open item" while §6, §11 and §17 correctly recorded O-12 as discharged. | Opening replaced with the exact scope: no Joint B Architecture semantic question resolved, no B1/B2 designed, **only O-12 closed** — its owner and deadline having been the R-B-17 repair itself — with every other open item enumerated as unresolved. |
+| **RB17-AUD-04** | LOW | "`git diff 81b1cc6 a586b31` adds 16 files" in report §1 and register §5.1. | Corrected to: **touches 16 paths — nine added and seven modified — and contains no specification or design artifact.** The AUTH-06 conclusion is unchanged. The same imprecision in §13.8 was found by sweep and corrected. |
+| **RB17-AUD-05** | LOW | Every archival header, and the archive README, pointed readers to canonical A2 **Appendix B** as though it were the neutralization register for all archive families. It governs the historical **A2** chain only. | The nine **A2** headers keep the Appendix B pointer. The two **A1** headers now point to `PAGAMENOS_SPEC_AUTHORITY.md` §5 and the archive README; the four **B** headers point to §3 and §5 and the archive README. Each retargeted header states explicitly that Appendix B does not govern it. The README's tree-level pointer was scoped the same way. |
+
+### 19.2 Machine-authority location — what is now asserted
+
+**Asserted, and independently verified in this tree:**
+
+- `git ls-tree -r HEAD authority/` returns nothing; the namespace is absent from this repair commit and from parent `81b1cc6`.
+- The machine-readable artifacts belong to a **separately selected** authority-baseline commit, referenced by the protected external selector `PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA`.
+- `authority/` nonetheless remains a **protected trust path** in `.github/workflows/trusted-a2-authority.yml`; it is the protected machine-authority namespace *when present in the selected authority-baseline tree*.
+- `docs/authority/archive/` is documentation only, outside every protected prefix, and read by no CI job.
+
+**Deliberately NOT asserted:**
+
+```
+Exact selected authority-baseline SHA: externally governed / not asserted by this documentation repair.
+```
+
+The selector is a GitHub Actions **repository variable** — `${{ vars.PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA }}` in `.github/workflows/ci.yml` and `.github/workflows/trusted-a2-authority.yml`. Its value lives in project settings outside the repository, appears in no tracked file, and is rotatable by a privileged owner without any repository change. It cannot be verified from repository content, so it is not stated.
+
+**Corroborating evidence was recorded as evidence only.** The four artifacts do exist at `84a7a1a30545b1c61ce2b372a95da9005ea46b6c` (*"m3.5b-a2: bootstrap authority baseline v2"*), tip of `m3.5b-a2-authority-bootstrap-v2` and current `origin/HEAD`, which is **not** an ancestor of this repair commit; and an accepted-baseline source comment in `src/study/corpus-authority.ts` records an abbreviated expectation of that lineage. **That is not proof of the current selector value and is explicitly not treated as such** — an in-tree comment is precisely the candidate-controlled claim the external-selector mechanism exists to distrust, the value there is abbreviated rather than the required 40-character full SHA, and `origin/HEAD` is a default-branch pointer, not the protected variable.
+
+### 19.3 Archive body integrity after header edits
+
+Six archival headers were edited; **line 11 only** in each, with lines 1–10 and 12–EOF passed through byte for byte. All **fifteen** archived bodies were re-verified after the edits against the pre-archival SHA-256 recorded in each header: **all IDENTICAL**. No historical document body was touched.
+
+### 19.4 Scope
+
+Documentation only. This patch changed no runtime source, Prisma schema, migration, script, trusted harness, CI workflow, protected `authority/` path, or package/lock/config file. It did not modify the canonical A2 specification, the accepted V1.3 body, or the Rev 2 amendments.

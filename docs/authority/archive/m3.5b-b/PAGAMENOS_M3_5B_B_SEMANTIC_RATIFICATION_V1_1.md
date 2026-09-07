@@ -8,7 +8,7 @@
 >
 > **Accepted B semantic authority:** `PAGAMENOS_M3_5B_B_SEMANTIC_RATIFICATION_V1_3.md` (tracked at the repository root).
 >
-> **Supersession language inside this file is non-operative.** Any claim below of the form "fully supersedes" or "fully replaces" described the review packet submitted to one historical gate. It does **not** supersede, and never superseded, the active normative artifact named above. See Appendix B of the canonical A2 specification for the full register of neutralized claims.
+> **Supersession language inside this file is non-operative.** Any claim below of the form "fully supersedes" or "fully replaces" described the review packet submitted to one historical gate. It does **not** supersede, and never superseded, the active normative artifact named above. For the accepted B semantic authority and the status of this artifact, see `PAGAMENOS_SPEC_AUTHORITY.md` §3 and §5, and `docs/authority/archive/README.md`. *(Appendix B of the canonical A2 specification is the neutralization register for the historical **A2** revision chain only. It does not govern this file.)*
 >
 > **Body integrity.** Everything after the `R-B-17 ARCHIVAL HEADER - END` marker is the original file, byte for byte. Its SHA-256 before archival was:
 >

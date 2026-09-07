@@ -4,11 +4,11 @@
 >
 > **Everything under `docs/authority/archive/` is retained as audit evidence only.**
 > No file in this tree is active authority. No file here may drive implementation, review, or gating.
-> Supersession language inside these files is **non-operative** — see `PAGAMENOS_M3_5B_A2_EFFECTIVE_SPEC_CANONICAL_V1.md` Appendix B.
+> Supersession language inside these files is **non-operative**. For the historical **A2** revision chain the full neutralization register is Appendix B of `PAGAMENOS_M3_5B_A2_EFFECTIVE_SPEC_CANONICAL_V1.md`; that appendix governs the **A2 chain only**. For the **A1** and **B** families, status is recorded in `PAGAMENOS_SPEC_AUTHORITY.md` §3 and §5 and in the per-family sections below.
 
 The active normative hierarchy is defined by **`PAGAMENOS_SPEC_AUTHORITY.md`** at the repository root. This archive exists so the historical revision chains remain auditable after the **R-B-17 authority repair** (`PAGAMENOS_R_B_17_AUTHORITY_REPAIR_REPORT.md`).
 
-Do not confuse this documentation archive with `authority/` at the repository root, which is a **protected trust path** reserved for machine-readable authority-baseline artifacts (`CORPUS_RELEASE_LEDGER_V1.json`, `HOLIDAY_CALENDAR_REGISTRY_V1.json` and the holiday fixture). Nothing in this archive is read by CI.
+Do not confuse this documentation archive with `authority/`, the **protected trust path** that holds the machine-readable authority-baseline artifacts (`AUTHORITY_BASELINE_MANIFEST_V1.json`, `CORPUS_RELEASE_LEDGER_V1.json`, `HOLIDAY_CALENDAR_REGISTRY_V1.json` and the holiday-calendar fixture). **Those artifacts are not in this repair tree** — `git ls-tree -r HEAD authority/` returns nothing here. They live in the separately selected authority-baseline commit named by the protected external selector `PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA`; see `PAGAMENOS_SPEC_AUTHORITY.md` §2.4. Nothing in this documentation archive is read by CI.
 
 ---
 
