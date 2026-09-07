@@ -4,6 +4,19 @@
 **Recheck verdict:** B — IMPLEMENTATION GO WITH SPECIFIC PATCH (13 CLOSED · 6 PARTIAL · 0 OPEN · 0 new CRITICAL/HIGH).
 **Scope:** close the six residual PARTIALs only — RT-02, RT-04, RT-05 (blocking M0/M1–M3); RT-10, RT-11, RT-14 (later-milestone contracts frozen now). No architecture, no new features, no repetition of CLOSED findings. Milestones are touched only to attach these corrections.
 
+> ### ⚠ AMENDMENT NOTICE — this document has been amended in two places
+>
+> **Two sections of this document are AMENDED by a later accepted authority and MUST NOT be applied as written:**
+>
+> | Section | Amendment | Controlling authority |
+> | :-- | :-- | :-- |
+> | **§6.A** — `PurchaseOccasion` identity | field structure amended (**R-B-05**, **R-B-13**, **HR-B-03**) | `PAGAMENOS_M3_5B_B_SEMANTIC_RATIFICATION_V1_3` |
+> | **§8** — superseded-field register, `occasionKey` row | deletion **stands**; its scope is narrowed (**P-03**, **P-03a**, **O-16**) | `PAGAMENOS_M3_5B_B_SEMANTIC_RATIFICATION_V1_3` |
+>
+> The amendment notes are printed **inline at each amended section**. Do not apply the pre-ratification field structure of §6.A. Nothing else in this document is amended; §§1–5, §6.B–§6.F, §7 and §§9–11 stand unchanged.
+>
+> Recorded by the **R-B-17 authority repair** in satisfaction of open item **O-12**. Root register: `PAGAMENOS_SPEC_AUTHORITY.md`. Repair record: `PAGAMENOS_R_B_17_AUTHORITY_REPAIR_REPORT.md`.
+
 ---
 
 ## 1. Revision-2 Decision
@@ -106,6 +119,29 @@ Invariants: `verifiedSavingCentimos = counterfactualAmountCentimos − paidAmoun
 
 ## 6. RT-11 Frozen Contract — PurchaseOccasion & RIVSR Analysis
 
+> ### ⚠ NORMATIVE AMENDMENT TO §6.A — controlling authority: `PAGAMENOS_M3_5B_B_SEMANTIC_RATIFICATION_V1_3`
+>
+> **§6.A below is the PRE-RATIFICATION field structure. It MUST NOT be applied as written.** The interface printed in §6.A was authored before the M3.5B-B semantic ratification and is amended by clauses **R-B-05** and **R-B-13**, as further corrected by **HR-B-03**. The amendment is permissible because the contract is *slated for* — but has **not undergone** — the `AnalysisProtocol v1` freeze, and **v1 is UNFROZEN**; because §6.B itself anticipates versioned change; and because R-B-05 removes an internal §6.A-versus-§6.C contradiction rather than creating one.
+>
+> **What the accepted ratification supersedes in §6.A:**
+>
+> 1. the **required singular `createdFromIntentId`** field;
+> 2. **any interpretation requiring one app intent per occasion** — no 1:1 intent-to-occasion relation is implied, and `UNIQUE(originIntentId)` or any equivalent finalization/context uniqueness is **forbidden** as canonical occasion identity (**R-B-04**, prohibition **P-02**);
+> 3. **physical scalar-shape assumptions incompatible with the ratified logical interface** — in particular, requiring physical scalar columns merely because the superseded interface used them (prohibition **P-19**).
+>
+> **What holds after the amendment:**
+>
+> - a `PurchaseOccasion` may have **zero, one, or many** source links; synthetic `PurchaseIntent` records MUST NOT be manufactured for purchases that occurred outside app usage (**R-B-05**, prohibition **P-11**);
+> - **provenance is separate from canonical identity** — no source-system identifier is canonical identity, and one authoritative source may suffice (**R-B-06**, **HR-B-08**; corroboration from two or more sources is **not** a universal establishment rule, prohibition **P-15**);
+> - **analysis-facing semantics follow the accepted amended logical interface** (**HR-B-03**), not the literal shape printed below. Any analysis-facing scalar projection requires an accepted selection/adjudication rule first; implicit *latest-wins*, *first-wins* or *highest-confidence-wins* selection is **prohibited** (**P-14**), and **no scalar projection may be implemented before its rule is accepted** (open item **O-11**);
+> - **late-arriving facts may be represented append-only** on supporting records — including `actualTransactionAt` and `purchaseFingerprint` — **rather than by mutating the canonical identity record** (**R-B-13**). Canonical occasion identity is append-only; the accepted append-only discipline is not weakened.
+>
+> **Unchanged by this amendment.** The **conservative dedup invariant** and **anti-inflation rule** below remain binding — *ambiguity MUST NOT increase the numerator* — but they bind **B2**, which owns real-world distinctness, and are preserved inside C2 analysis; they MUST NOT be re-expressed as B2 identity rules (**R-B-11**, **HR-B-02**, **§8.2** of the ratification). Scientific independence MUST NOT be used as the individuation predicate (**P-12**), and C2 / `AnalysisProtocol` MUST NOT change B2's canonical occasion count (**P-12a**). §6.B–§6.F are **not** amended; §6.E in particular remains controlling, including *"Legal/consent deletion overrides analysis retention."*
+>
+> **Still open — do not resolve from §6.A.** `intendedTransactionAt`'s semantic contract, including whether an intentless occasion may obtain it from another admissible source, is open item **O-04**, owned by the **Joint B Architecture**. The provenance/source-link architecture is **O-14**; the preservation contract is **O-06b-ARCH**. **The exact physical representation of the amended interface is NOT decided here and MUST NOT be inferred from §6.A.**
+>
+> Recorded by the **R-B-17 authority repair** in satisfaction of open item **O-12**.
+
 **A. Identity** (one real-world attempted/realized purchase, not one app request):
 ```ts
 interface PurchaseOccasion {
@@ -154,6 +190,33 @@ An audit enters CEA only if **100% of its pre-registered critical fields** are r
 ---
 
 ## 8. Canonical Superseded-Field/Type Register
+
+> ### ⚠ NORMATIVE AMENDMENT TO §8 — controlling authority: `PAGAMENOS_M3_5B_B_SEMANTIC_RATIFICATION_V1_3`
+>
+> **The `occasionKey` deletion recorded in the RT-11 row below STANDS. Its SCOPE is narrowed.**
+>
+> **What remains in force (INHERITED from this §8).** The legacy `occasionKey` removed here MUST NOT be treated as a surviving inherited contract field, and MUST NOT be silently restored under its former semantics (prohibition **P-03**).
+>
+> **What MUST NOT be inferred from that deletion.** This deletion **MUST NOT be reinterpreted as a universal ban on all possible future deterministic identity constructions.** The accepted ratification (§4.1) states explicitly: *"No universal prohibition on every conceivable deterministic identity construction is ratified"*, and *"the universal prohibition MUST NOT be labelled INHERITED."*
+>
+> **What the narrowing preserves separately** — as distinct rules, never merged into a universal ban:
+>
+> - no source-system identifier is canonical identity (**R-B-06**);
+> - no timestamp is canonical identity (**R-B-12**);
+> - `UNIQUE(originIntentId)` and equivalents remain forbidden (**R-B-04**, **P-02**);
+> - the rejected digest design remains unauthorized — no digest is required, and none is stored unless PostgreSQL can verify its **semantic content**, not merely its syntax (**R-B-14**, **P-09**).
+>
+> **The open question and its interim default.** Whether canonical occasion identity must remain opaque/surrogate, or may use another deterministic construction, is open item **O-16**, owned by the **Joint B Architecture**, deadlined **before JBA acceptance**. **`O-16` REMAINS OPEN AND IS NOT RESOLVED BY THIS AMENDMENT.**
+>
+> ```
+> DEFAULT UNTIL O-16 IS RESOLVED: no new deterministic canonical key is authorized.
+> ```
+>
+> Introducing a **new** deterministic canonical occasion key before O-16 is resolved is prohibited (**P-03a**).
+>
+> **Scope of this amendment.** Only the `occasionKey` clause of the RT-11 row is affected. **No other row of the register below is amended** — every other superseded field or type listed remains superseded exactly as written. The RT-11 row's replacement shape (`intendedTransactionAt` / `actualTransactionAt?` / `purchaseFingerprint?` / `createdFromIntentId`) is separately amended by the §6.A amendment note above.
+>
+> Recorded by the **R-B-17 authority repair** in satisfaction of open item **O-12**.
 
 No duplicate canonical form may remain. Removed/replaced:
 
