@@ -3,9 +3,11 @@
 This file is the **root authority register**. It records which specification documents are authoritative, their precedence, the independent closure verdicts, the accepted implementation SHAs, and the current implementation authorization. It does **not** restate or modify the specifications.
 
 **Last repaired:** the **R-B-17 authority repair** — see `PAGAMENOS_R_B_17_AUTHORITY_REPAIR_REPORT.md`.
+**Latest authority progression:** the formal integration of the **Joint B Architecture V1.9** (§3.1), through the protected `m3.5b-b-integration` surface (§8.1).
 **Controlling B semantic authority:** `PAGAMENOS_M3_5B_B_SEMANTIC_RATIFICATION_V1_3.md` (status **ACCEPTED**).
+**Controlling B architecture authority:** `PAGAMENOS_M3_5B_B_ARCHITECTURE_CONTRACT_V1_9.md`, the **Joint B Architecture** (status **ACCEPTED**, formally integrated; §3.1). It is **subordinate to, and does not replace,** the B Semantic Ratification V1.3.
 
-> **Reading rule.** When two artifacts appear to conflict, resolve in this order: (1) §1 base study authority, by its own internal precedence; (2) §2 accepted milestone specifications, each governing its own milestone; (3) §3 B semantic authority, for the B phase only and subject to §1. An artifact listed in §5 is **never** authority.
+> **Reading rule.** When two artifacts appear to conflict, resolve in this order: (1) §1 base study authority, by its own internal precedence; (2) §2 accepted milestone specifications, each governing its own milestone; (3) §3 B semantic authority, for the B phase only and subject to §1; (4) §3.1 the Joint B Architecture, for the shared B1/B2 architecture only and subject to §3; (5) any future accepted B1S/B2S effective specification, subject to §3.1. An artifact listed in §5 is **never** authority.
 
 ---
 
@@ -41,7 +43,7 @@ Two sections of Rev 2 are **amended** by the accepted B semantic ratification. T
 | Amended section | Amendment | Controlling authority |
 | :-- | :-- | :-- |
 | **Rev 2 §6.A** (`PurchaseOccasion` identity) | Required singular `createdFromIntentId` superseded; no one-intent-per-occasion interpretation; no physical scalar-shape assumptions incompatible with the ratified logical interface. Zero/one/many source links; provenance separate from canonical identity; analysis-facing semantics follow the amended logical interface; late facts append-only rather than by mutating the canonical identity record. | `PAGAMENOS_M3_5B_B_SEMANTIC_RATIFICATION_V1_3` — **R-B-05**, **R-B-13**, **HR-B-03** |
-| **Rev 2 §8** (superseded-field register, `occasionKey` row) | The `occasionKey` deletion **stands**; it MUST NOT be reinterpreted as a universal ban on all possible future deterministic identity constructions. **O-16 remains open** for the Joint B Architecture; default until then: **no new deterministic canonical key authorized**. | `PAGAMENOS_M3_5B_B_SEMANTIC_RATIFICATION_V1_3` — **§4.1**, **P-03**, **P-03a**, **O-16** |
+| **Rev 2 §8** (superseded-field register, `occasionKey` row) | The `occasionKey` deletion **stands**; it MUST NOT be reinterpreted as a universal ban on all possible future deterministic identity constructions. **O-16 is CLOSED**: the accepted Joint B Architecture V1.9 holds canonical B identities to be **opaque, server-minted surrogates**, never constructed from business data or from any key pair. Physical generation mechanics remain downstream B1S/B2S representation work. | `PAGAMENOS_M3_5B_B_SEMANTIC_RATIFICATION_V1_3` — **§4.1**, **P-03**, **P-03a**; closed by `PAGAMENOS_M3_5B_B_ARCHITECTURE_CONTRACT_V1_9.md` — **O-16** (§3.1) |
 
 Rev 2 §6.B–§6.F, §7 and all other rows of §8 are **unchanged**. Rev 2 §6.E remains controlling, including *"Legal/consent deletion overrides analysis retention."*
 
@@ -141,6 +143,24 @@ Exact selected authority-baseline SHA: externally governed / not asserted by thi
 
 Ratification revisions **V1**, **V1.1** and **V1.2** are `SUPERSEDED HISTORICAL REVIEW ARTIFACTS — NON-NORMATIVE`, archived under `docs/authority/archive/m3.5b-b/`.
 
+### 3.1 Accepted Joint B Architecture — V1.9
+
+| Item | Value |
+| :-- | :-- |
+| Artifact | `PAGAMENOS_M3_5B_B_ARCHITECTURE_CONTRACT_V1_9.md` |
+| **Status** | **ACCEPTED** |
+| Independent semantic verdict | `M3.5B-B JOINT ARCHITECTURE ACCEPT` |
+| Accepted JBA SHA-256 | `e10b9afdf61f8d6dc0b907cfdfc6eb00ce4059eac7dcca3cd41a1e8902ce5b1b` |
+| Original accepted commit | `47123397a87304d8e7357fbd4b5dc4dd0243fd12` |
+| Accepted / integrated tree | `bb9568639ceea2276c44b8e8579dcd948ceac9af` |
+| Integration carrier | `6eeab5a6b12040d023c023cb59dfb6b4f032274d` |
+| Formal protected integration merge | `fe8ac7af8ee7feb3963e14b8c0e9b16875c4dedf` |
+| Scope | the **shared B1/B2 architecture** — semantics common to both B1 and B2 |
+| Relation to §3 | **subordinate to, and does not replace,** `PAGAMENOS_M3_5B_B_SEMANTIC_RATIFICATION_V1_3`; it closes the JBA-owned open items §7's prior register assigned to it, and constructs no semantic §3 did not already require |
+| Authorizes | **no B1/B2 implementation.** It authorizes downstream B1S/B2S effective-specification work only (§6, §7) |
+
+**Supersession.** JBA V1.9 supersedes V1.8 **only because its independent acceptance condition — `M3.5B-B JOINT ARCHITECTURE ACCEPT`** — **has now been satisfied.** V1.8 and every earlier JBA candidate revision are non-normative and are not part of this repository's authoritative tree.
+
 ---
 
 ## 4. Formal B phase spine
@@ -148,8 +168,12 @@ Ratification revisions **V1**, **V1.1** and **V1.2** are `SUPERSEDED HISTORICAL 
 ```
 A1  Protocol / Cohort                                    ACCEPTED
 A2  Intent / Decision                                    ACCEPTED
-B1  Purchase Observation / Occasion Candidate Identity   RATIFIED, NOT YET SPECIFIED
-B2  Purchase Occasion & Exposure Reconciliation          RATIFIED, NOT YET SPECIFIED
+B1  Purchase Observation / Occasion Candidate Identity   ARCHITECTURE ACCEPTED (JBA V1.9, see section 3.1)
+                                                          EFFECTIVE SPEC (B1S): NOT YET ACCEPTED
+                                                          IMPLEMENTATION: NOT AUTHORIZED
+B2  Purchase Occasion & Exposure Reconciliation          ARCHITECTURE ACCEPTED (JBA V1.9, see section 3.1)
+                                                          EFFECTIVE SPEC (B2S): NOT YET ACCEPTED
+                                                          IMPLEMENTATION: NOT AUTHORIZED
 C1  Evidence / Attribution                               NOT AUTHORIZED
 C2  Analysis                                             NOT AUTHORIZED
 ```
@@ -212,8 +236,9 @@ tree   ae31d6649303d04bd334ef1bf93ec56b915d39fe
 ## 6. Current implementation authorization
 
 - **Accepted and implemented:** M0, M1, M2, M3, M3.5A, M3.5B-A1, M3.5B-A2.
-- **Next authorized design artifact:** the **`M3.5B-B ARCHITECTURE CONTRACT — B1+B2`** (the "Joint B Architecture") — **NOT YET DRAFTED**. See §7.
-- **Not authorized:** B1 implementation; B2 implementation; C1; C2; any `AnalysisProtocol v1` freeze; deployment; Wave 0.
+- **Joint B Architecture V1.9:** **ACCEPTED AND FORMALLY INTEGRATED** (§3.1). Downstream **B1 and B2 effective-specification** work (B1S, B2S) is now authorized to begin. See §7.
+- **Not authorized by JBA acceptance alone:** B1 implementation; B2 implementation. Implementation remains unauthorized until the applicable effective specification (B1S or B2S) is **independently accepted** and every applicable gate — including §6.2's standing engineering pre-condition — is satisfied.
+- **Not authorized:** C1; C2; any `AnalysisProtocol v1` freeze; deployment; Wave 0.
 
 ### 6.1 Frozen status flags
 
@@ -238,38 +263,41 @@ Before B1/B2 can be formally accepted, the **hosted required-check surface** MUS
 
 ---
 
-## 7. Next authorized artifact — Joint B Architecture
+## 7. Accepted Joint B Architecture — downstream ownership
 
 ```
-M3.5B-B ARCHITECTURE CONTRACT — B1+B2
-Status: NEXT AUTHORIZED DESIGN ARTIFACT — NOT YET DRAFTED
+M3.5B-B ARCHITECTURE CONTRACT — B1+B2   (the "Joint B Architecture")
+Status: ACCEPTED AND FORMALLY INTEGRATED — V1.9 (see section 3.1)
 ```
 
-The Joint B Architecture is the **first artifact of the B chain**; B1 and B2 effective specifications derive from it, and implementation derives from those. Dependencies run **one direction only**: `JBA → B1S / B2S → implementation`.
+The Joint B Architecture is the **first artifact of the B chain**; B1 and B2 effective specifications derive from it, and implementation derives from those. Dependencies run **one direction only**: `JBA → B1S / B2S → implementation`. This register does not restate JBA content; the JBA itself (§3.1) is authority for its own reasoning.
 
-**Open decisions the Joint B Architecture MUST close before its own acceptance.** These are listed here so the gate is visible; **this register does not answer any of them**, and neither did the R-B-17 authority repair.
+**Closure.** The thirteen JBA-owned open items formerly listed here — `O-01`, `O-02`, `O-03`, `O-04`, `O-06a`, `O-06b-ARCH`, `O-B-DISTINCTNESS`, `O-11`, `O-13`, `O-14`, `O-15`, `O-16`, `O-17` — are **`13 / 13` CLOSED VALIDLY**, and **`O-06a`** is separately **CLOSED VALIDLY** against its own eighteen-function standard. The hard architecture-gate condition (§8.3 of the ratification) — removing the ambiguity in *"one `Outcome` per occasion/Decision"* by distinguishing the **purchase-decision occasion** (A2 / RT-09) from the canonical **`PurchaseOccasion`** (B2) — is **closed**. **No JBA-owned semantic decision remains open for B1S or B2S to make.**
 
-| Open item | Semantic question |
-| :-- | :-- |
-| **O-01** | Admissible observation-source taxonomy |
-| **O-02** | `Outcome` source role and ownership |
-| **O-03** | `Outcome` attachment/cardinality semantics, including the **RT-09 terminology clarification** |
-| **O-04** | `intendedTransactionAt` semantic contract, including intentless occasions |
-| **O-06a** | Architecture-level reconciliation/adjudication model |
-| **O-06b-ARCH** | What semantic information B1 must preserve for B2 |
-| **O-B-DISTINCTNESS** | Failed/retry/resumed sequences — one or multiple real-world occasions (factual semantics) |
-| **O-11** | Scalar selection/adjudication rule for any analysis-facing scalar projection, **where shared** |
-| **O-13** | B2 establishment to C1 verification semantic ordering |
-| **O-14** | Provenance / source-link architecture — zero/one/many linkage; what B2 consumes |
-| **O-15** | Event-time / knowledge-time semantics at architecture level |
-| **O-16** | Whether canonical occasion identity must remain opaque/surrogate, or may use another deterministic construction |
-| **O-17** | How a controlling legal/consent/privacy deletion obligation is satisfied against append-only B tables, and what audit residue is legally permitted |
+**Remaining downstream ownership (representation and enforcement, not semantics).**
 
-**Hard architecture-gate condition (§8.3 of the ratification).** The Joint B Architecture MUST remove the ambiguity in *"one `Outcome` per occasion/Decision"* before acceptance, distinguishing at minimum the **purchase-decision occasion** (A2 / RT-09) from the canonical **`PurchaseOccasion`** (B2).
+**B1S owns:**
 
-**Separations that MUST NOT be recombined.** `O-06b-ARCH` (architecture) and `O-06b-SPEC` (B1 representation) MUST NOT be recombined. `O-B-DISTINCTNESS` (B2) and `O-C-INDEPENDENCE` (C2 / `AnalysisProtocol`) MUST NOT be recombined.
+- **O-05** — exact candidate schema / physical representation;
+- **O-06b-SPEC** — the physical representation of the already-accepted preservation contract (`O-06b-ARCH`, closed);
+- physical trusted-generation provenance mechanisms;
+- other representation/enforcement/test obligations from the JBA's Part P.1.
 
-**Items deliberately NOT owned by the Joint B Architecture:** `O-05` and `O-06b-SPEC` belong to the B1 Effective Spec; `O-06c` belongs to the B2 Effective Spec; `O-08`, `O-09` and `O-C-INDEPENDENCE` belong to C2 / `AnalysisProtocol`; `O-10` opens only if a spec elects receiptless-winner recovery, defaulting to **none, fail closed**.
+**B2S owns:**
+
+- **O-06c** — the concrete reconciliation representation/algorithm conforming to the accepted architecture;
+- other physical/enforcement/test obligations from the JBA's Part P.2.
+
+**C2 remains later, and remains unauthorized:**
+
+- **O-C-INDEPENDENCE**;
+- **O-08**;
+- **O-09**;
+- `AnalysisProtocol` decisions.
+
+**Separations that MUST NOT be recombined.** `O-06b-ARCH` (architecture, **closed**) and `O-06b-SPEC` (B1 representation, **open**) MUST NOT be recombined. `O-B-DISTINCTNESS` (B2, **closed**) and `O-C-INDEPENDENCE` (C2 / `AnalysisProtocol`, **open**) MUST NOT be recombined.
+
+`O-10` opens only if a spec elects receiptless-winner recovery, defaulting to **none, fail closed**.
 
 ---
 
@@ -282,3 +310,13 @@ The Joint B Architecture is the **first artifact of the B chain**; B1 and B2 eff
 | Record | `PAGAMENOS_R_B_17_AUTHORITY_REPAIR_REPORT.md` |
 | Defects repaired | **AUTH-01** (A2 spec untracked), **AUTH-02** (this register stale at M0), **AUTH-03** (no B1/B2 split in formal authority), **AUTH-06** (rejected B1 had no accepted effective specification) |
 | Implementation delta | **NONE.** Documentation and authority only — no runtime source, Prisma schema, migration, business logic, trusted-harness or application-behaviour change. |
+
+### 8.1 Protected B integration provenance
+
+| Item | Value |
+| :-- | :-- |
+| R-B-17 protected integration merge | `9fa869799aaa8295d5b82d4b268890ad80717a35` |
+| Joint B Architecture V1.9 protected integration merge | `fe8ac7af8ee7feb3963e14b8c0e9b16875c4dedf` |
+| Protected integration surface | both were integrated through the dedicated protected branch `m3.5b-b-integration` |
+
+This entry is provenance only. It does not amend `PAGAMENOS_R_B_17_AUTHORITY_REPAIR_REPORT.md`, which remains the historical record of the R-B-17 repair as executed at the time.
