@@ -3,11 +3,11 @@
 This file is the **root authority register**. It records which specification documents are authoritative, their precedence, the independent closure verdicts, the accepted implementation SHAs, and the current implementation authorization. It does **not** restate or modify the specifications.
 
 **Last repaired:** the **R-B-17 authority repair** — see `PAGAMENOS_R_B_17_AUTHORITY_REPAIR_REPORT.md`.
-**Latest authority progression:** the formal integration of the **Joint B Architecture V1.9** (§3.1), through the protected `m3.5b-b-integration` surface (§8.1).
+**Latest authority progression:** **JBA V1.9 + formally integrated JBA Narrow Amendment 01** (§3.1, §3.2), through the protected `m3.5b-b-integration` surface (§8.1) at merge `d64ea203e2022b6f313bc35b32a8ea0f961caecc`. JBA V1.9 itself is **not superseded or replaced** by Amendment 01 — see §3.2.
 **Controlling B semantic authority:** `PAGAMENOS_M3_5B_B_SEMANTIC_RATIFICATION_V1_3.md` (status **ACCEPTED**).
-**Controlling B architecture authority:** `PAGAMENOS_M3_5B_B_ARCHITECTURE_CONTRACT_V1_9.md`, the **Joint B Architecture** (status **ACCEPTED**, formally integrated; §3.1). It is **subordinate to, and does not replace,** the B Semantic Ratification V1.3.
+**Controlling B architecture authority:** `PAGAMENOS_M3_5B_B_ARCHITECTURE_CONTRACT_V1_9.md`, the **Joint B Architecture** (status **ACCEPTED**, formally integrated; §3.1), **as narrowly amended by** `PAGAMENOS_M3_5B_B_JBA_AMENDMENT_01_B1S_AUTHORITY.md` (status **ACCEPTED**, formally integrated; §3.2, narrow B-scoped amendment only). Both remain **subordinate to, and do not replace,** the B Semantic Ratification V1.3.
 
-> **Reading rule.** When two artifacts appear to conflict, resolve in this order: (1) §1 base study authority, by its own internal precedence; (2) §2 accepted milestone specifications, each governing its own milestone; (3) §3 B semantic authority, for the B phase only and subject to §1; (4) §3.1 the Joint B Architecture, for the shared B1/B2 architecture only and subject to §3; (5) any future accepted B1S/B2S effective specification, subject to §3.1. An artifact listed in §5 is **never** authority.
+> **Reading rule.** When two artifacts appear to conflict, resolve in this order: (1) §1 base study authority, by its own internal precedence; (2) §2 accepted milestone specifications, each governing its own milestone; (3) §3 B semantic authority, for the B phase only and subject to §1; (4) §3.1 the Joint B Architecture, for the shared B1/B2 architecture only and subject to §3; (5) §3.2 accepted narrow JBA amendments, each controlling only within its own explicitly enumerated scope and otherwise subject to §3.1; (6) any future accepted B1S/B2S effective specification, subject to §3.1 as amended by §3.2. An artifact listed in §5 is **never** authority. This is not a universal amendment doctrine: an amendment's precedence is limited strictly to the scope it explicitly enumerates (see §3.2).
 
 ---
 
@@ -161,6 +161,54 @@ Ratification revisions **V1**, **V1.1** and **V1.2** are `SUPERSEDED HISTORICAL 
 
 **Supersession.** JBA V1.9 supersedes V1.8 **only because its independent acceptance condition — `M3.5B-B JOINT ARCHITECTURE ACCEPT`** — **has now been satisfied.** V1.8 and every earlier JBA candidate revision are non-normative and are not part of this repository's authoritative tree.
 
+### 3.2 Accepted JBA Narrow Amendment 01 — formally integrated
+
+JBA V1.9 (§3.1) **remains the accepted Joint B Architecture, unmodified and unreplaced.** Amendment 01 is a **later, narrow, B-scoped amendment** to it. It has later authority **only** for the scope it explicitly enumerates; it asserts no universal amendment doctrine.
+
+| Item | Value |
+| :-- | :-- |
+| Artifact | `PAGAMENOS_M3_5B_B_JBA_AMENDMENT_01_B1S_AUTHORITY.md` |
+| **Status** | **ACCEPTED AND FORMALLY INTEGRATED** |
+| Accepted candidate commit | `c9d9ba69022b4ac52cb9f730a6440bb0d470bd66` |
+| Candidate tree | `4fe3fc520abbaaf755855ca9e09a97f60f8b072f` |
+| Artifact SHA-256 | `4cdf92f84b26c9c15320f05045c7400e0f8a132e37d75d3bf4e858700cb0f2a0` |
+| Artifact Git blob | `23906cde38cd9b8b23f31e564cc2d5cfd20027d8` |
+| PR | `#12` |
+| Formal protected integration merge | `d64ea203e2022b6f313bc35b32a8ea0f961caecc` |
+| Merge parents (in order) | 1. `dfb6c41d1ebcba7a05051302ca6bd34fc8e8b0a8` — 2. `c9d9ba69022b4ac52cb9f730a6440bb0d470bd66` |
+| Merge tree | `4fe3fc520abbaaf755855ca9e09a97f60f8b072f` |
+| Merged at | `2026-09-09T14:15:01Z` |
+| GitHub signature | verified / valid |
+| Post-merge required checks | `authority-gate` — SUCCESS; `verify` — SUCCESS (GitHub Actions app `15368`) |
+
+**Later authority — strictly limited to two closed surfaces:**
+
+1. **Semantic delta.** CD-3 row 25: `DecompositionManifest`(new) → `DecompositionManifest`(prior), classified **structural endpoint relation**, **eligibility edge = NO**; and the minimal `DC-06` binding of explicit manifest supersession to row 25.
+2. **Consequential mechanical overlay.** M-01…M-08, exactly as accepted by Amendment 01 (count/range corrections consequential on row 25 existing; no independent semantic content).
+
+**All other JBA V1.9 content remains unchanged.** JBA V1.9's own identity (blob, SHA-256, original formal integration merge `fe8ac7af8ee7feb3963e14b8c0e9b16875c4dedf`) is untouched — see §3.1.
+
+**Effective CD-3 state (compact fact only; the full table is not reproduced here — see the amendment §5–§7):**
+
+```
+CD-3 effective role count: 25
+  semantic citations              : rows 1–10
+  structural endpoint relations   : rows 11–14 and 25
+  mere provenance                 : rows 15–24
+```
+
+**§9.3.8 impact:**
+
+```
+NEW §9.3.8 PERSISTED CLASSES FROM AMENDMENT 01: 0
+```
+
+Row 25 is a reference role between already-registered `DecompositionManifest` records (§9.3.8.1 row 6 of the JBA); it adds no new persisted logical B class.
+
+**What this does NOT do.** Amendment 01 does not authorize B1 or B2 implementation, does not accept any B1S/B2S candidate, does not resolve the B1↔B2 cross-contract gate (**P-16** — see §5.1), and does not touch B2 reconciliation, real-world distinctness, `PurchaseOccasion` establishment, candidate emission, `DB-03A`/`DB-03B`, scientific independence, C1, C2, `AnalysisProtocol`, RIVSR, numerator, denominator, opportunity threshold, legal deletion, or timestamp semantics. See §4, §6 and §6.2 below, all of which remain unchanged by this amendment.
+
+**Prior failed candidate.** Commit `45a55c8dbfd6aa73ddfc380b809ec3e116401956` is a **NON-AUTHORITATIVE FAILED AMENDMENT CANDIDATE** (independent verdict: `JBA NARROW AMENDMENT 01 REQUIRES PATCH`). It is **not** an ancestor of the formally integrated Amendment 01 commit `c9d9ba69022b4ac52cb9f730a6440bb0d470bd66`, and carries no authority.
+
 ---
 
 ## 4. Formal B phase spine
@@ -168,10 +216,12 @@ Ratification revisions **V1**, **V1.1** and **V1.2** are `SUPERSEDED HISTORICAL 
 ```
 A1  Protocol / Cohort                                    ACCEPTED
 A2  Intent / Decision                                    ACCEPTED
-B1  Purchase Observation / Occasion Candidate Identity   ARCHITECTURE ACCEPTED (JBA V1.9, see section 3.1)
+B1  Purchase Observation / Occasion Candidate Identity   ARCHITECTURE ACCEPTED — JBA V1.9 as narrowly amended
+                                                          by Amendment 01 (sections 3.1, 3.2)
                                                           EFFECTIVE SPEC (B1S): NOT YET ACCEPTED
                                                           IMPLEMENTATION: NOT AUTHORIZED
-B2  Purchase Occasion & Exposure Reconciliation          ARCHITECTURE ACCEPTED (JBA V1.9, see section 3.1)
+B2  Purchase Occasion & Exposure Reconciliation          ARCHITECTURE ACCEPTED — JBA V1.9 as narrowly amended
+                                                          where applicable (sections 3.1, 3.2)
                                                           EFFECTIVE SPEC (B2S): NOT YET ACCEPTED
                                                           IMPLEMENTATION: NOT AUTHORIZED
 C1  Evidence / Attribution                               NOT AUTHORIZED
@@ -212,6 +262,7 @@ C2  Analysis                                             NOT AUTHORIZED
 | A1 effective specs V1, V2 | `HISTORICAL / NON-NORMATIVE` | `docs/authority/archive/m3.5b-a1/` |
 | Rejected B1 implementation | **`REJECTED IMPLEMENTATION EVIDENCE — NON-AUTHORITATIVE`** | Git history — see below |
 | Failed M3.5B prototype | `EVIDENCE ONLY — NOT A BASELINE` (Codex Sol: **C — NO-GO**) | commit `1ded28d28038d4a385628683da096f846439a100` |
+| `PAGAMENOS_M3_5B_B1_EFFECTIVE_SPEC_V2` | **`NON-AUTHORITATIVE SPECIFICATION EVIDENCE — BLOCKED ON AUTHORITY`** | commit `9fa9d0e9ca52f88f5bb471e625cce92ac7ff47ab` — see §5.2 |
 
 The **blocked B1 diagnostic** does **not** compete with the accepted V1.3 ratification. It is a decision input that identified authority defects; it is not a B1 effective specification.
 
@@ -231,13 +282,31 @@ tree   ae31d6649303d04bd334ef1bf93ec56b915d39fe
 
 **Consequence, now binding:** B architecture and effective specifications require the B-scoped, independently reviewed authority process **before** implementation (**R-B-17**, prohibition **P-17a**). Beginning B1 implementation while the B1-to-B2 cross-contract is unresolved is prohibited (**P-16**).
 
+### 5.2 Non-authoritative B1S V2 candidate
+
+```
+commit 9fa9d0e9ca52f88f5bb471e625cce92ac7ff47ab
+tree   9ce36f03442fa22f3f695f46f716493e61379a83
+```
+
+| Item | Value |
+| :-- | :-- |
+| Artifact | `PAGAMENOS_M3_5B_B1_EFFECTIVE_SPEC_V2.md` |
+| Artifact SHA-256 | `338a7120c84b24311225cd21d7a1ee777d186e4308b57ca770d246c71936595d` |
+| Independent result | `M3.5B-B1 EFFECTIVE SPEC V2 BLOCKED ON AUTHORITY` |
+| **Status** | **`NON-AUTHORITATIVE SPECIFICATION EVIDENCE`** |
+
+**Reachability.** This commit is **not reachable from any `origin` branch** of this repository; it does not sit in the accepted repository's tracked history. It is recorded here only as blocked decision-input evidence, not as part of the authoritative tree.
+
+**It MUST NOT be used as a baseline for the corrected B1S contemplated by §3.2 / §7.1 below.** A corrected B1S specification is authored fresh against JBA V1.9, Amendment 01, and the rest of the accepted authority chain — not against this blocked candidate.
+
 ---
 
 ## 6. Current implementation authorization
 
 - **Accepted and implemented:** M0, M1, M2, M3, M3.5A, M3.5B-A1, M3.5B-A2.
-- **Joint B Architecture V1.9:** **ACCEPTED AND FORMALLY INTEGRATED** (§3.1). Downstream **B1 and B2 effective-specification** work (B1S, B2S) is now authorized to begin. See §7.
-- **Not authorized by JBA acceptance alone:** B1 implementation; B2 implementation. Implementation remains unauthorized until the applicable effective specification (B1S or B2S) is **independently accepted** and every applicable gate — including §6.2's standing engineering pre-condition — is satisfied.
+- **Joint B Architecture V1.9:** **ACCEPTED AND FORMALLY INTEGRATED** (§3.1), **as narrowly amended by JBA Amendment 01** (§3.2). Downstream **B1 and B2 effective-specification** work (B1S, B2S) is now authorized to begin. See §7, §7.1.
+- **Not authorized by JBA acceptance, or by Amendment 01's integration, alone:** B1 implementation; B2 implementation. Amendment 01 is a document-only authority-register synchronization; it authorizes **no** implementation and closes no implementation gate. Implementation remains unauthorized until the applicable effective specification (B1S or B2S) is **independently accepted** and every applicable gate — including §6.2's standing engineering pre-condition and prohibition **P-16** (§5.1) — is satisfied. Acceptance of a future B1S, by itself, still does **not** automatically authorize B1 implementation while P-16's cross-contract condition remains unresolved.
 - **Not authorized:** C1; C2; any `AnalysisProtocol v1` freeze; deployment; Wave 0.
 
 ### 6.1 Frozen status flags
@@ -261,18 +330,21 @@ C1 / C2                            : NOT AUTHORIZED
 
 Before B1/B2 can be formally accepted, the **hosted required-check surface** MUST execute the authoritative real-PostgreSQL integration and adversarial suite (**R-B-16**, rationale **HR-B-10**). `db:migrate:check` or migration-text inspection is **insufficient evidence** for trigger semantics. This tracks the open item recorded as **P35A-06**.
 
+**Amendment 01 does not satisfy this pre-condition.** The `authority-gate` and `verify` checks that ran green on Amendment 01's integration merge (§3.2) establish **Amendment 01 integration integrity only** — they are not, and are not claimed to be, the authoritative real-PostgreSQL integration/adversarial suite this section requires for B1/B2 runtime acceptance. Before actual B1/B2 runtime implementation acceptance or merge, a genuine B-scoped trusted authority mechanism must still be established as required by accepted governance; the frozen A2 exact-head trusted gate is not reused for this purpose.
+
 ---
 
 ## 7. Accepted Joint B Architecture — downstream ownership
 
 ```
 M3.5B-B ARCHITECTURE CONTRACT — B1+B2   (the "Joint B Architecture")
-Status: ACCEPTED AND FORMALLY INTEGRATED — V1.9 (see section 3.1)
+Status: ACCEPTED AND FORMALLY INTEGRATED — V1.9 (see section 3.1),
+        as narrowly amended by JBA Narrow Amendment 01 (see section 3.2)
 ```
 
 The Joint B Architecture is the **first artifact of the B chain**; B1 and B2 effective specifications derive from it, and implementation derives from those. Dependencies run **one direction only**: `JBA → B1S / B2S → implementation`. This register does not restate JBA content; the JBA itself (§3.1) is authority for its own reasoning.
 
-**Closure.** The thirteen JBA-owned open items formerly listed here — `O-01`, `O-02`, `O-03`, `O-04`, `O-06a`, `O-06b-ARCH`, `O-B-DISTINCTNESS`, `O-11`, `O-13`, `O-14`, `O-15`, `O-16`, `O-17` — are **`13 / 13` CLOSED VALIDLY**, and **`O-06a`** is separately **CLOSED VALIDLY** against its own eighteen-function standard. The hard architecture-gate condition (§8.3 of the ratification) — removing the ambiguity in *"one `Outcome` per occasion/Decision"* by distinguishing the **purchase-decision occasion** (A2 / RT-09) from the canonical **`PurchaseOccasion`** (B2) — is **closed**. **No JBA-owned semantic decision remains open for B1S or B2S to make.**
+**Closure.** The thirteen JBA-owned open items formerly listed here — `O-01`, `O-02`, `O-03`, `O-04`, `O-06a`, `O-06b-ARCH`, `O-B-DISTINCTNESS`, `O-11`, `O-13`, `O-14`, `O-15`, `O-16`, `O-17` — are **`13 / 13` CLOSED VALIDLY**, and **`O-06a`** is separately **CLOSED VALIDLY** against its own eighteen-function standard. The hard architecture-gate condition (§8.3 of the ratification) — removing the ambiguity in *"one `Outcome` per occasion/Decision"* by distinguishing the **purchase-decision occasion** (A2 / RT-09) from the canonical **`PurchaseOccasion`** (B2) — is **closed**. **No JBA-owned semantic decision remains open for B1S or B2S to make.** Amendment 01 (§3.2) does not reopen any of these; it supplies exactly one additional structural reference role (CD-3 row 25) that the closed set did not need to resolve.
 
 **Remaining downstream ownership (representation and enforcement, not semantics).**
 
@@ -298,6 +370,19 @@ The Joint B Architecture is the **first artifact of the B chain**; B1 and B2 eff
 **Separations that MUST NOT be recombined.** `O-06b-ARCH` (architecture, **closed**) and `O-06b-SPEC` (B1 representation, **open**) MUST NOT be recombined. `O-B-DISTINCTNESS` (B2, **closed**) and `O-C-INDEPENDENCE` (C2 / `AnalysisProtocol`, **open**) MUST NOT be recombined.
 
 `O-10` opens only if a spec elects receiptless-winner recovery, defaulting to **none, fail closed**.
+
+### 7.1 B1S status after JBA Amendment 01
+
+- **B1S specification work remains authorized** (unchanged by Amendment 01; §6, §7 above).
+- The previously produced **B1S V2 candidate did NOT achieve acceptance** — see §5.2 (`NON-AUTHORITATIVE SPECIFICATION EVIDENCE`, independent result `M3.5B-B1 EFFECTIVE SPEC V2 BLOCKED ON AUTHORITY`).
+- **Amendment 01 repairs the narrow authority gap** exposed by that audit — the missing CD-3 reference role for `DC-06` manifest supersession (§3.2 above).
+- A **corrected B1S specification may now be authored** against: JBA V1.9 (§3.1); JBA Amendment 01 (§3.2); and the rest of the accepted authority chain (§1–§3). It MUST NOT be baselined on the blocked B1S V2 candidate (§5.2).
+- This does **not** declare **O-05** accepted, **O-06b-SPEC** accepted, **B1S** accepted, or **B1 implementation** authorized. Current state remains:
+
+```
+O-05          : B1S-owned / unresolved physically
+O-06b-SPEC    : B1S-owned / unresolved physically
+```
 
 ---
 
