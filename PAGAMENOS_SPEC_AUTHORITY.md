@@ -3,12 +3,13 @@
 This file is the **root authority register**. It records which specification documents are authoritative, their precedence, the independent closure verdicts, the accepted implementation SHAs, and the current implementation authorization. It does **not** restate or modify the specifications.
 
 **Last repaired:** the **R-B-17 authority repair** — see `PAGAMENOS_R_B_17_AUTHORITY_REPAIR_REPORT.md`.
-**Latest authority progression:** **JBA V1.9 + formally integrated JBA Narrow Amendment 01** (§3.1, §3.2), through the protected `m3.5b-b-integration` surface (§8.1) at merge `d64ea203e2022b6f313bc35b32a8ea0f961caecc`; **further followed by the formally integrated A1/A2→M7 Consent Compatibility Amendment 01** (§9.1). JBA V1.9 itself is **not superseded or replaced** by Amendment 01 — see §3.2. **The A1/A2→M7 Consent Compatibility Amendment 01 is upstream compatibility/security authority only — it does NOT accept, and MUST NOT be read as accepting, any M7 effective specification; see §9.**
-**Current protected authority surface:** merge `f54d95abb0a8f7988626597a0eef01d0b0ae3c95` (PR #14, `origin/m3.5b-b-integration`) — see §9.1. This advances the protected surface beyond the JBA Amendment 01 merge `d64ea203e2022b6f313bc35b32a8ea0f961caecc` cited above; neither historical merge identity is rewritten by this line.
+**Latest authority progression:** **JBA V1.9 + formally integrated JBA Narrow Amendment 01** (§3.1, §3.2), through the protected `m3.5b-b-integration` surface (§8.1) at merge `d64ea203e2022b6f313bc35b32a8ea0f961caecc`; **further followed by the formally integrated A1/A2→M7 Consent Compatibility Amendment 01** (§9.1); **further followed by the independently accepted and formally integrated M7 Outcome/Evidence Effective Specification V1.1** (§10). JBA V1.9 itself is **not superseded or replaced** by Amendment 01 — see §3.2. **The A1/A2→M7 Consent Compatibility Amendment 01 is upstream compatibility/security authority only — it does NOT accept, and MUST NOT be read as accepting, any M7 effective specification; see §9.** M7 V1.1 was accepted separately, by its own independent verdict, not by Amendment 01 (§10.1).
+**Protected authority surface (history, oldest first; no identity below is rewritten by a later one):** JBA Amendment 01 merge `d64ea203e2022b6f313bc35b32a8ea0f961caecc` (PR #12) → Consent Compatibility Amendment 01 merge `f54d95abb0a8f7988626597a0eef01d0b0ae3c95` (PR #14; §9.1) → post-Amendment-01 root-sync merge `8990ae0ca5af6862b741a14dedb4aa37831976b9` (PR #15) → **M7 Effective Spec V1.1 merge `f99a7e3080fdb99bd3917820d889d09694bed4af` (PR #16; §10.1)**, all on `origin/m3.5b-b-integration`. The M7 V1.1 merge is the latest **specification** integration recorded by this register.
+**Controlling M7 Outcome/Evidence specification authority:** `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1.md` (status **ACCEPTED**, formally integrated; §10) — **specification only**. `M7 IMPLEMENTATION AUTHORIZED: NO` (§10.7).
 **Controlling B semantic authority:** `PAGAMENOS_M3_5B_B_SEMANTIC_RATIFICATION_V1_3.md` (status **ACCEPTED**).
 **Controlling B architecture authority:** `PAGAMENOS_M3_5B_B_ARCHITECTURE_CONTRACT_V1_9.md`, the **Joint B Architecture** (status **ACCEPTED**, formally integrated; §3.1), **as narrowly amended by** `PAGAMENOS_M3_5B_B_JBA_AMENDMENT_01_B1S_AUTHORITY.md` (status **ACCEPTED**, formally integrated; §3.2, narrow B-scoped amendment only). Both remain **subordinate to, and do not replace,** the B Semantic Ratification V1.3.
 
-> **Reading rule.** This register uses **scope-qualified precedence, not a single universal linear ordering**: an artifact controls only within the scope it was accepted for, and two artifacts whose accepted scopes are orthogonal are never ranked against each other. Within a shared scope, when two artifacts appear to conflict, resolve in this order: (1) §1 base study authority, by its own internal precedence, controlling across every scope; (2) §2 accepted milestone specifications (A1, A2, …), each governing its own milestone's semantics; (3) §3 B semantic authority, for the B phase only and subject to §1; (4) §3.1 the Joint B Architecture, for the shared B1/B2 architecture only and subject to §3; (5) §3.2 accepted narrow JBA amendments, each controlling only within its own explicitly enumerated scope and otherwise subject to §3.1; (6) any future accepted B1S/B2S effective specification, subject to §3.1 as amended by §3.2. Orthogonal to that B-scope chain: (7) the **A1/A2→M7 Consent Compatibility Amendment 01** (§9.1) — subordinate to §1, and to A1 and A2 semantics, and controlling **only** the narrow A1/A2→M7 compatibility/security-capability boundary it explicitly enumerates (§9.1, §9.3); where it appears to alter an A1 or A2 semantic, A1/A2 control instead; (8) a **future accepted M7 effective specification** (none is accepted now — see §9.4, §9.5) — once accepted, governing the M7 Outcome/Evidence domain and M7's own physical/domain choices within its accepted scope, subject to §1, to A1/A2 where applicable, and to Amendment 01 on the compatibility boundary Amendment 01 controls; if a future M7 specification conflicts with Amendment 01 inside that boundary, Amendment 01 controls there. An artifact listed in §5 is **never** authority. No amendment in this register asserts a universal amendment doctrine: each controls strictly the scope it explicitly enumerates (see §3.2, §9.1). Nothing in (7)–(8) alters, or is superior or subordinate to, the B-scope chain (3)–(6); their scopes do not overlap.
+> **Reading rule.** This register uses **scope-qualified precedence, not a single universal linear ordering**: an artifact controls only within the scope it was accepted for, and two artifacts whose accepted scopes are orthogonal are never ranked against each other. Within a shared scope, when two artifacts appear to conflict, resolve in this order: (1) §1 base study authority, by its own internal precedence, controlling across every scope; (2) §2 accepted milestone specifications (A1, A2, …), each governing its own milestone's semantics; (3) §3 B semantic authority, for the B phase only and subject to §1; (4) §3.1 the Joint B Architecture, for the shared B1/B2 architecture only and subject to §3; (5) §3.2 accepted narrow JBA amendments, each controlling only within its own explicitly enumerated scope and otherwise subject to §3.1; (6) any future accepted B1S/B2S effective specification, subject to §3.1 as amended by §3.2. Orthogonal to that B-scope chain: (7) the **A1/A2→M7 Consent Compatibility Amendment 01** (§9.1) — subordinate to §1, and to A1 and A2 semantics, and controlling **only** the narrow A1/A2→M7 compatibility/security-capability boundary it explicitly enumerates (§9.1, §9.3); where it appears to alter an A1 or A2 semantic, A1/A2 control instead; (8) the **accepted M7 Outcome/Evidence Effective Specification V1.1** (§10; the blocked M7 V1 and every non-accepted V1.1 candidate are §5 artifacts, never authority) — governing the M7 Outcome/Evidence domain and M7's own physical/domain choices within its accepted scope, subject to §1, to A1/A2 where their semantics apply, and to Amendment 01 on the compatibility boundary Amendment 01 controls; if M7 V1.1 (or any later accepted M7 specification) conflicts with Amendment 01 inside that boundary, Amendment 01 controls there. An artifact listed in §5 is **never** authority. No amendment in this register asserts a universal amendment doctrine: each controls strictly the scope it explicitly enumerates (see §3.2, §9.1). Nothing in (7)–(8) alters, or is superior or subordinate to, the B-scope chain (3)–(6); their scopes do not overlap.
 
 ---
 
@@ -55,6 +56,8 @@ These annotations discharge open item **O-12**, whose owner was defined as the R
 ## 2. Accepted implementation / specification milestones
 
 Each row is an accepted milestone: its normative specification, its independent verdict, and the exact accepted implementation identity.
+
+*(The accepted M7 Outcome/Evidence Effective Specification V1.1 has an accepted **specification** but **no** accepted or authorized implementation; it is therefore recorded in §10, not in this section.)*
 
 ### 2.1 M3.5A — Immutable Decision Persistence Foundation — **ACCEPTED**
 
@@ -264,6 +267,8 @@ C2  Analysis                                             NOT AUTHORIZED
 | Rejected B1 implementation | **`REJECTED IMPLEMENTATION EVIDENCE — NON-AUTHORITATIVE`** | Git history — see below |
 | Failed M3.5B prototype | `EVIDENCE ONLY — NOT A BASELINE` (Codex Sol: **C — NO-GO**) | commit `1ded28d28038d4a385628683da096f846439a100` |
 | `PAGAMENOS_M3_5B_B1_EFFECTIVE_SPEC_V2` | **`NON-AUTHORITATIVE SPECIFICATION EVIDENCE — BLOCKED ON AUTHORITY`** | commit `9fa9d0e9ca52f88f5bb471e625cce92ac7ff47ab` — see §5.2 |
+| `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1` | **`BLOCKED / NON-AUTHORITATIVE`** — negative/reference evidence only | commit `a2d18357a5fd9a699da0efaf69b4185eb9db8b01` — see §9.4 |
+| `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1` — non-accepted author rounds (verdicts `REQUIRES PATCH`, `REQUIRES PATCH (ROUND 2)` … `(ROUND 5)`) | **`NOT ACCEPTED / NON-AUTHORITATIVE AUDIT EVIDENCE ONLY`** | commits `8e8140fd0567c167c4098e71430758ab5dcf950f`, `de2605046a1f1f034d34a00b3a6870940da150c9`, `20afa33c332fd822ce12157c87684a6e973204ea`, `bf65f3098020c733d9543575a5fb674cfd00f4ad`, `c1cbe6e77e56a3a37c9ab39776ab74845132b715` — see §10.5. Only the exact artifact bytes of §10.1 are accepted |
 
 The **blocked B1 diagnostic** does **not** compete with the accepted V1.3 ratification. It is a decision input that identified authority defects; it is not a B1 effective specification.
 
@@ -308,7 +313,8 @@ tree   9ce36f03442fa22f3f695f46f716493e61379a83
 - **Accepted and implemented:** M0, M1, M2, M3, M3.5A, M3.5B-A1, M3.5B-A2.
 - **Joint B Architecture V1.9:** **ACCEPTED AND FORMALLY INTEGRATED** (§3.1), **as narrowly amended by JBA Amendment 01** (§3.2). Downstream **B1 and B2 effective-specification** work (B1S, B2S) is now authorized to begin. See §7, §7.1.
 - **Not authorized by JBA acceptance, or by Amendment 01's integration, alone:** B1 implementation; B2 implementation. Amendment 01 is a document-only authority-register synchronization; it authorizes **no** implementation and closes no implementation gate. Implementation remains unauthorized until the applicable effective specification (B1S or B2S) is **independently accepted** and every applicable gate — including §6.2's standing engineering pre-condition and prohibition **P-16** (§5.1) — is satisfied. Acceptance of a future B1S, by itself, still does **not** automatically authorize B1 implementation while P-16's cross-contract condition remains unresolved.
-- **Not authorized:** C1; C2; any `AnalysisProtocol v1` freeze; deployment; Wave 0.
+- **M7 Outcome/Evidence Effective Specification V1.1:** **SPECIFICATION ACCEPTED AND FORMALLY INTEGRATED** (§10). **M7 implementation is NOT authorized** by that acceptance or integration; its implementation prerequisites, manifest/control-plane publication gates, selector rotation and runtime/provider/deployment verification all remain outstanding (§10.6, §10.7, §10.8).
+- **Not authorized:** M7 implementation; C1; C2; any `AnalysisProtocol v1` freeze; deployment; Wave 0.
 
 ### 6.1 Frozen status flags
 
@@ -413,6 +419,8 @@ This entry is provenance only. It does not amend `PAGAMENOS_R_B_17_AUTHORITY_REP
 
 This section records the **A1/A2→M7 Consent Compatibility Amendment 01** as authority in force, and the resulting status of the M7 (`Outcomes / Evidence`) domain. It is **upstream compatibility/security authority only**. It is **not** a new consent model, **not** an M7 domain specification, **not** M7 implementation authorization, **not** B authority, and **not** C authority. Nothing in this section modifies §3, §3.1, §3.2, `PAGAMENOS_M3_5B_B_SEMANTIC_RATIFICATION_V1_3`, `PAGAMENOS_M3_5B_B_ARCHITECTURE_CONTRACT_V1_9`/its Amendment 01, or **P-16**.
 
+> **Reading note — later lifecycle event.** §9.4–§9.8 were written at the post-Amendment-01 root sync (merge `8990ae0ca5af6862b741a14dedb4aa37831976b9`, PR #15), **before** M7 V1.1 existed as an accepted artifact. Where they describe M7 V1.1 as not yet accepted or merely design-authorized, they are now **historical**: M7 V1.1 has since been independently accepted and formally integrated (§10). Those subsections are annotated in place below rather than silently rewritten; **§10 is the current M7 status**.
+
 > **Correction notice.** An earlier root-sync candidate, `f8c7e09bc12603cdc3385606dd042b07ba1b3e9c`, is **NON-AUTHORITATIVE AUDIT EVIDENCE ONLY** (independent verdict: `POST M7 CONSENT AMENDMENT 01 ROOT AUTHORITY SYNC REQUIRES PATCH`; findings `ROOTSYNC-AUD-01`, `ROOTSYNC-AUD-02`). It incorrectly implied B1S design itself is blocked pending an M7 upstream dependency, and its reading rule omitted Amendment 01 and a future M7 specification. This section and the header reading rule supersede it; `f8c7e09…` is not an ancestor of this entry and carries no authority.
 
 ### 9.1 Accepted artifact — ACCEPTED, FORMALLY INTEGRATED
@@ -463,7 +471,7 @@ The blocked M7 V1 candidate (§9.4) recorded its consent-compatibility upstream 
 
 This closure does **not** mean M7 V1 is accepted (§9.4).
 
-### 9.4 M7 Effective Spec V1 — status unchanged
+### 9.4 M7 Effective Spec V1 — status unchanged (also unchanged by the acceptance of V1.1)
 
 ```
 M7 EFFECTIVE SPEC V1: BLOCKED / NON-AUTHORITATIVE
@@ -475,20 +483,31 @@ M7 EFFECTIVE SPEC V1: BLOCKED / NON-AUTHORITATIVE
 a2d18357a5fd9a699da0efaf69b4185eb9db8b01 TREATED AS NON-AUTHORITATIVE: YES
 ```
 
-### 9.5 M7 Effective Spec V1.1 — design authorized, implementation not authorized
+**After the acceptance of M7 V1.1 (§10):** M7 V1 **remains `BLOCKED / NON-AUTHORITATIVE`**. The accepted V1.1 artifact does not descend from it (`a2d18357…` is not an ancestor of the accepted candidate `e4f6966df63a4ab575dfdf593819906db817d98b` or of merge `f99a7e3080fdb99bd3917820d889d09694bed4af`), and V1.1's acceptance confers no authority on it.
+
+### 9.5 M7 Effective Spec V1.1 — design authorized, implementation not authorized *(historical status at PR #15; discharged by acceptance — see §10)*
 
 ```
+[HISTORICAL — status as recorded at the post-Amendment-01 root sync]
 M7 EFFECTIVE SPEC V1.1 DESIGN: AUTHORIZED
 M7 IMPLEMENTATION AUTHORIZED : NO
 ```
 
-A new M7 V1.1 specification candidate may now be authored, from the current accepted protected authority tip (merge `f54d95abb0a8f7988626597a0eef01d0b0ae3c95`), addressing the remaining audit obligations of §9.6. This authorizes **specification-design work only** — it is not M7 implementation authorization.
+```
+[CURRENT — see §10]
+M7 EFFECTIVE SPEC V1.1       : ACCEPTED — FORMALLY INTEGRATED (merge f99a7e3080fdb99bd3917820d889d09694bed4af)
+M7 IMPLEMENTATION AUTHORIZED : NO
+```
 
-**Lineage rule.** M7 V1.1 MUST be authored fresh from the accepted protected authority lineage that contains Amendment 01 (the tip identified in §9.1). It MUST NOT descend from the blocked M7 V1 candidate `a2d18357a5fd9a699da0efaf69b4185eb9db8b01` (§9.4). That candidate's useful content may be re-derived or restated; it is not an accepted ancestor.
+**Historical authorization (PR #15 stage).** At the post-Amendment-01 root sync, this register authorized authoring a new M7 V1.1 specification candidate from the then-current accepted protected authority lineage, which contained Amendment 01; the protected tip referenced at that stage was merge `f54d95abb0a8f7988626597a0eef01d0b0ae3c95`. That candidate was to address the remaining audit obligations then listed in §9.6. The authorization covered **specification-design work only** and was never M7 implementation authorization. It is **not** a live instruction to author any further V1.1 candidate.
 
-### 9.6 M7 V1.1 — remaining audit obligations (excluding the closed consent dependency)
+**Historical lineage rule (PR #15 stage).** The register then required that M7 V1.1 be authored fresh from the accepted protected authority lineage containing Amendment 01 (the tip identified in §9.1), and that it not descend from the blocked M7 V1 candidate `a2d18357a5fd9a699da0efaf69b4185eb9db8b01` (§9.4), whose useful content could be re-derived or restated but which was not an accepted ancestor. This rule governed the authoring of the now-accepted V1.1 candidate; it is recorded here as history, not as a new instruction.
 
-Not redesigned here; recorded only as the families a corrected M7 V1.1 candidate must still address, per the prior M7 V1 independent audit, now that `DEP-03` (§9.3) is closed. **None of these is closed by this entry:**
+**Discharge.** This design authorization has been exercised and discharged: the accepted V1.1 candidate `e4f6966df63a4ab575dfdf593819906db817d98b` was authored from baseline `8990ae0ca5af6862b741a14dedb4aa37831976b9` (which contains `f54d95a…` as first parent), satisfied the lineage rule, and received independent specification acceptance (§10.1). It authorized, and still authorizes, **no** M7 implementation.
+
+### 9.6 M7 V1.1 — remaining audit obligations (excluding the closed consent dependency) *(historical list at PR #15; specification-level disposition in §10.6)*
+
+Not redesigned here; recorded only as the families a corrected M7 V1.1 candidate must still address, per the prior M7 V1 independent audit, now that `DEP-03` (§9.3) is closed. **None of these is closed by this entry** *(true of the PR #15 entry that wrote it; their later specification-level disposition, and what remains open after it, is recorded in §10.6)*:
 
 - fixed merchant-universe overreach;
 - trusted participant / uploader / object-store capability;
@@ -505,7 +524,7 @@ Not redesigned here; recorded only as the families a corrected M7 V1.1 candidate
 
 The rejected candidate `f8c7e09…` (see the correction notice above this section) incorrectly stated that B1S itself "remains blocked on an installed/accepted M7 upstream dependency until M7 is specified, implemented, independently accepted, and formally integrated." That is **not** what the accepted Joint B Architecture V1.9 requires. JBA V1.9 already defines a complete two-path structure for **S-2** (`Outcome`, the M7 VS ladder) — this patch restates it, it does not create it:
 
-- **Path A — S-2 grounding.** If a B1S candidate wants S-2 observations to count as grounding evidence — i.e. `SOURCE_GROUNDING_ELIGIBLE` (JBA §9.3.2) — it requires the accepted **M7 ingestion integration contract**, under which B1S obtains re-provable trusted-generation provenance (`DB-03B`) for the M7 `Outcome` write path (JBA definitions table, "M7 ingestion integration contract"; §18.4.7). That contract does not yet exist: no M7 effective specification is accepted (§9.4, §9.5).
+- **Path A — S-2 grounding.** If a B1S candidate wants S-2 observations to count as grounding evidence — i.e. `SOURCE_GROUNDING_ELIGIBLE` (JBA §9.3.2) — it requires the accepted **M7 ingestion integration contract**, under which B1S obtains re-provable trusted-generation provenance (`DB-03B`) for the M7 `Outcome` write path (JBA definitions table, "M7 ingestion integration contract"; §18.4.7). That contract does not yet exist. *(At PR #15 this line read that no M7 effective specification was accepted; that was true then and is no longer current.)* M7 V1.1 has since been accepted (§10), and it states the M7-side trusted-generation facts it would make re-provable (M7 V1.1 §21.3, `M7-TG-1…M7-TG-11`). It does **not**, however, itself constitute or accept the M7 ingestion integration contract, and it expressly leaves to **B1S** whether those facts satisfy `DB-03B` and the contract itself (M7 V1.1 §21.3, §28.2). Those facts are also not implemented: M7 implementation is not authorized (§10.7). See §10.9.
 - **Path B — S-2 non-grounding (default, complete).** If that M7 contract is unavailable, or a B1S candidate elects not to consume it, JBA V1.9 already requires **all S-2 observations to remain non-grounding**: preserved as provenance, `SOURCE_GROUNDING_ELIGIBLE = FALSE`, no candidate emitted, no occurrence support, the deficiency recorded (JBA §9.3.2, "The S-2 case, resolved"; `TE-7`; `CE-2`/`CE-3`). **This path is complete**, and B1S design MAY proceed under it without any M7 dependency.
 
 ```
@@ -521,11 +540,12 @@ B1 IMPLEMENTATION AUTHORIZED: NO
 P-16                        : ACTIVE
 ```
 
-**Scope of this correction.** It applies **only** to the JBA S-2/B1S grounding dependency. It does **not** state that M7, as a project milestone, is unnecessary: M7 retains its own authorized specification-design path (§9.5) and remains required for its own project/scientific obligations (evidence-backed outcomes, S-2 grounding for any B1S candidate that elects to use it, and every remaining audit family in §9.6). "M7 not required for the B1S non-grounding default path" MUST NOT be read as "M7 not required at all."
+**Scope of this correction.** It applies **only** to the JBA S-2/B1S grounding dependency. It does **not** state that M7, as a project milestone, is unnecessary: M7 retains its own specification path (§9.5 at PR #15; now an accepted specification, §10) and remains required for its own project/scientific obligations (evidence-backed outcomes, S-2 grounding for any B1S candidate that elects to use it, and every remaining audit family in §9.6 — closed at specification level since, but with implementation, publication and runtime obligations still open; §10.6). "M7 not required for the B1S non-grounding default path" MUST NOT be read as "M7 not required at all."
 
-### 9.8 Implementation authorization matrix
+### 9.8 Implementation authorization matrix *(historical matrix at PR #15; current matrix §10.10)*
 
 ```
+[HISTORICAL — as recorded at the post-Amendment-01 root sync]
 M7 SPEC V1.1 DESIGN   : YES
 M7 IMPLEMENTATION     : NO
 B1S DESIGN            : YES — MAY use the accepted S-2 non-grounding default (§9.7) absent an
@@ -539,8 +559,171 @@ C2 IMPLEMENTATION     : NO
 P-16                  : ACTIVE
 ```
 
-This matrix records status already established by §6, §7 and §9.1–§9.7; it authorizes nothing beyond them.
+This matrix records status already established by §6, §7 and §9.1–§9.7; it authorizes nothing beyond them. Its `M7 SPEC V1.1 DESIGN : YES` row has been discharged by acceptance (§9.5, §10); every other row is carried forward unchanged into §10.10.
 
 ### 9.9 Machine-readable authority baseline — unchanged
 
-Consistent with §2.4: this documentation sync does **not** invent or rotate `PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA`. If M7 later requires selector rotation, that remains a future implementation/acceptance obligation, not asserted by this entry.
+Consistent with §2.4: this documentation sync does **not** invent or rotate `PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA`. If M7 later requires selector rotation, that remains a future implementation/acceptance obligation, not asserted by this entry. *(M7 V1.1, now accepted, does require machine-readable control-plane publication and a later selector rotation before M7 implementation can be accepted; both remain downstream and not performed — §10.8.)*
+
+---
+
+## 10. M7 Outcome/Evidence Effective Specification V1.1 — ACCEPTED, FORMALLY INTEGRATED (specification only)
+
+This section records a lifecycle transition that has **already occurred**: the independent specification acceptance and the protected integration of M7 V1.1. It registers that artifact as authority for its accepted scope. It does **not** restate, amend or re-open the specification; it does **not** authorize M7 implementation; it does **not** publish machine-readable authority or rotate any selector. Nothing in this section modifies §1, §2, §3, §3.1, §3.2, §9.1–§9.3, the B Semantic Ratification V1.3, JBA V1.9 or its Amendment 01, or **P-16**.
+
+### 10.1 Accepted artifact — exact identity
+
+| Item | Value |
+| :-- | :-- |
+| Artifact | `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1.md` |
+| **Status** | **ACCEPTED — FORMALLY INTEGRATED** (specification) |
+| Independent verdict | `M7 EFFECTIVE SPEC V1.1 — INDEPENDENT SPECIFICATION ACCEPT` |
+| Verdict binds | the **exact artifact bytes** identified by the SHA-256 and Git blob below, and no other bytes |
+| **Accepted artifact SHA-256** | `457f51778fb5d5890b3e3478376e413072f15aef7da88125b5e78963f49394bd` |
+| **Accepted artifact Git blob** | `06e103b0d5e8cfcbb96ab21134d5605b0aae9b26` |
+| Accepted candidate commit | `e4f6966df63a4ab575dfdf593819906db817d98b` (author revision round 5) |
+| Accepted candidate tree | `0b5c3464e4645123eb6ccc82fb472919171c53d4` |
+| Candidate baseline | `8990ae0ca5af6862b741a14dedb4aa37831976b9` (post-Amendment-01 root-sync merge, PR #15) |
+| Integration PR | `#16` |
+| **Formal protected integration merge** | `f99a7e3080fdb99bd3917820d889d09694bed4af` |
+| Merge parents (in order) | 1. `8990ae0ca5af6862b741a14dedb4aa37831976b9` — 2. `e4f6966df63a4ab575dfdf593819906db817d98b` |
+| **Formal integration tree** | `0b5c3464e4645123eb6ccc82fb472919171c53d4` (identical to the accepted candidate tree) |
+| Post-merge required checks | `authority-gate` — SUCCESS; `verify` — SUCCESS (GitHub Actions app `15368`) |
+| Protected integration surface | `origin/m3.5b-b-integration`, the same protected branch as §3.1, §3.2 and §9.1 (see §8.1) |
+
+**What the post-merge checks establish.** As §6.2 records for JBA Amendment 01, `authority-gate` and `verify` on `f99a7e3…` establish **integration integrity of this documentation merge only**. They are not the M7 real-PostgreSQL adversarial suite, the exact-set catalog verification, the manifest gates or the real-provider cases that M7 V1.1 itself requires (M7 V1.1 §24.3, §25, §28.1), and are not claimed to be.
+
+### 10.2 Lifecycle — four distinct stages, never collapsed
+
+| Stage | Meaning | M7 V1.1 status |
+| :-- | :-- | :-- |
+| **SPECIFICATION ACCEPTANCE** | an independent auditor accepted the exact artifact bytes as the controlling M7 specification | **DONE** — `M7 EFFECTIVE SPEC V1.1 — INDEPENDENT SPECIFICATION ACCEPT` (§10.1) |
+| **PROTECTED INTEGRATION** | those exact bytes were merged into the protected integration branch with required checks passing | **DONE** — merge `f99a7e3080fdb99bd3917820d889d09694bed4af`, PR #16 (§10.1) |
+| **IMPLEMENTATION AUTHORIZATION** | permission to begin, and to seek acceptance of, M7 runtime implementation | **NOT GRANTED** — `M7 IMPLEMENTATION AUTHORIZED: NO` (§10.7) |
+| **MACHINE-READABLE AUTHORITY PUBLICATION / SELECTOR ROTATION** | an M7 control-plane manifest published in `authority/` of an accepted authority-baseline commit, and `PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA` rotated to it | **NOT PERFORMED** — downstream acceptance work (§10.8) |
+
+Completion of an earlier stage **never** implies a later one. In particular, acceptance and integration of the Markdown specification is **not** publication of machine-readable authority, and is **not** implementation authorization.
+
+### 10.3 Scope and precedence
+
+Registered under the header reading rule, item (8). **No universal linear hierarchy is asserted.**
+
+- **Governs:** the M7 Outcome/Evidence domain (`Outcome` and its append-only assertions, `SavingEvidence` and its object-storage lifecycle, correction/adjudication, withdrawal/retention/legally authorized deletion, the M7 role/privilege model, the M7 control-plane manifest definition) and M7-owned physical/domain choices, **within the scope the accepted artifact enumerates** (M7 V1.1 §2) and excluding its declared non-goals (M7 V1.1 §3).
+- **Subject to:** §1 base-study authority (Phase 0A-2 chain, by its own internal precedence); A1 and A2 wherever their semantics apply; and the accepted A1/A2→M7 Consent Compatibility Amendment 01 (§9.1) inside its narrow compatibility/security boundary — **inside that boundary, Amendment 01 controls**.
+- **Orthogonal to the B-scope chain** (§3, §3.1, §3.2): M7 V1.1 does not amend B, and B/JBA precedence is unchanged outside any actual overlap. Where B authority describes upstream M7 artifacts (e.g. JBA §7, §16, §18.4), M7 V1.1 conforms to it (M7 V1.1 §4.1) rather than overriding it.
+- **Not authority for:** consent semantics; A1/A2 semantics; B1S/B2S decisions (including S-2 grounding and `DB-03B` sufficiency); C1 verification or `VerifiedValue`; C2 / `AnalysisProtocol`; the value of `PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA` (M7 V1.1 §3, §21, §22, §28.2).
+
+### 10.4 The artifact's authored status header is not edited
+
+The integrated artifact still carries its authored header (`M7 EFFECTIVE SPEC V1.1: CANDIDATE / NOT ACCEPTED`, `AWAITING INDEPENDENT RE-AUDIT`) and its §29 author-side status block. **These are resolved by events, not by edits:** acceptance is an external lifecycle fact recorded by the independent verdict and by this register. The file is deliberately **not** modified — changing any byte would produce a different artifact and break the exact-byte binding of §10.1 (SHA-256 `457f5177…`, blob `06e103b0…`). Where the artifact's header or §29 says "not accepted", read this section.
+
+The artifact's own non-acceptance statements about **other** things — M7 implementation not authorized, the control-plane manifest not accepted/published/rotated, the selector not asserted/rotated, machine-readable authority unchanged — remain **true** after acceptance, and are reaffirmed by §10.7–§10.8.
+
+### 10.5 Non-authoritative M7 candidates
+
+- **M7 V1** `a2d18357a5fd9a699da0efaf69b4185eb9db8b01` — **`BLOCKED / NON-AUTHORITATIVE`** (§9.4); not an ancestor of the accepted candidate.
+- **Non-accepted V1.1 author rounds** — `8e8140fd0567c167c4098e71430758ab5dcf950f` (`REQUIRES PATCH`), `de2605046a1f1f034d34a00b3a6870940da150c9` (`REQUIRES PATCH (ROUND 2)`), `20afa33c332fd822ce12157c87684a6e973204ea` (`REQUIRES PATCH (ROUND 3)`), `bf65f3098020c733d9543575a5fb674cfd00f4ad` (`REQUIRES PATCH (ROUND 4)`), `c1cbe6e77e56a3a37c9ab39776ab74845132b715` (`REQUIRES PATCH (ROUND 5)`) — each **`NOT ACCEPTED / NON-AUTHORITATIVE AUDIT EVIDENCE ONLY`**, as the accepted artifact itself records (M7 V1.1 §1.1, §1.3, §29). None is an ancestor of `e4f6966…` or of `f99a7e3…`. The shared filename does not transfer acceptance: **only** the bytes of §10.1 are accepted.
+
+### 10.6 Prior audit obligations — reconciliation
+
+Five categories are kept distinct. **Only the first is closed by the acceptance recorded here.**
+
+| Category | Meaning | Status after M7 V1.1 acceptance |
+| :-- | :-- | :-- |
+| **(a) Specification closure** | the defect is answered in the normative text of the accepted artifact | **CLOSED AT SPECIFICATION LEVEL** for the families below |
+| **(b) Implementation prerequisites** | conditions that must hold before any M7 implementation is accepted (M7 V1.1 §28.1 `IMP-01…IMP-22`) | **OPEN** — none executed or verified |
+| **(c) Manifest / control-plane publication gates** | review and publication of the M7 control-plane manifest and the proofs a rotation must supply (M7 V1.1 §23, §24.2 `MA-1…MA-18`, §24.3) | **OPEN** — manifest not accepted, not published |
+| **(d) Selector rotation** | rotation of `PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA` to an authority baseline containing the manifest (M7 V1.1 §24.2 `MA-5`, `MA-6`) | **NOT PERFORMED; NOT AUTHORIZED BY THIS ENTRY** |
+| **(e) Runtime / provider / deployment verification** | facts PostgreSQL or the repository cannot establish: real-provider, real-deployment and real-PostgreSQL cases, operational attestations, residuals (M7 V1.1 §25, §26, §28.3) | **OPEN** — not executed |
+
+**(a) Specification-level disposition of the §9.6 families** (the prior M7 V1 audit families, M7 V1.1 §27.1):
+
+| §9.6 family | V1 ID | Specification level | Still open outside specification level |
+| :-- | :-- | :-- | :-- |
+| fixed merchant-universe overreach | AUD-01 | **CLOSED** | vocabulary publication in the manifest and `MA-4` (c) |
+| trusted participant / uploader / object-store capability | AUD-03 | **CLOSED** | object-store ACL and credential scoping `IMP-03`, `IMP-04` (b); real-provider cases (e) |
+| `SECURITY DEFINER` / `search_path` safety | AUD-04 | **CLOSED** | exact-set catalog verification against a real database `IMP-07`, `IMP-11` (b, e) |
+| deletion authorization proof | AUD-05 | **CLOSED** | privacy-authority decisions `IMP-09`, `IMP-10` (b); SLA operation `IMP-08` (b, e) |
+| executable / complete DDL | AUD-06 | **CLOSED** | the DDL is normative specification text, **not an executed migration**; migration authoring and verification (b, e) |
+| storage staging / race / reconciliation | AUD-07 | **CLOSED** | real-PostgreSQL / real-store concurrency and crash cases `IMP-06`, `IMP-21` (e) |
+| evidence correction model | AUD-08 | **CLOSED** | implementation and suite execution (b, e) |
+| role provisioning | AUD-09 | **CLOSED** (fail-closed provisioning specified) | actual role creation and credential separation `IMP-01…IMP-03` (b, e) |
+| persisted-class / candidate accounting | AUD-10 | **CLOSED** | — (implementation must conform) |
+| independently reviewed / published control-plane manifest and selector rotation | AUD-11 | **CLOSED for the manifest's definition only** | review, publication (c) and selector rotation (d) — **explicitly external** per M7 V1.1 §27.1 |
+
+`AUD-02 / DEP-03` (consent compatibility) remains **closed by upstream accepted authority**, not by M7 V1.1 (§9.3).
+
+**(a) Independent V1.1 audit findings** (M7 V1.1 §27.2–§27.7): `M7V11-AUD-01…07`, `M7V11R2-AUD-01…04`, `M7V11R3-AUD-01…04`, `M7V11R4-AUD-01…06` and `M7V11R5-AUD-01…02` are **closed at specification level** by the accepted round-5 text, as that text disposes of them (including supersession of `M7V11R2-AUD-01` by `M7V11R3-AUD-01`). Two limits carried by the accepted artifact itself remain binding and are **not** converted into completed facts:
+
+- **`M7V11R2-AUD-01` / `M7V11R3-AUD-01` are conditional closures.** Their database half is specified; their **provider half** (XC-1, SP-9, SP-10; residual `M7-R-09`; cases T-138b, T-142, T-167; `IMP-15`, `IMP-16`) and **signer half** (XC-5, XC-6; invariant `M7-I119`, class E-E; residual `M7-R-12`; case T-171b; `IMP-18`) may **not** be reported closed for any deployment that has not executed those cases on the real provider and real deployment (M7 V1.1 §28.1, §28.3, §29).
+- **Residuals `M7-R-01…M7-R-17`** (M7 V1.1 §28.3) are accepted as stated bounds, not eliminated.
+
+### 10.7 Implementation remains blocked
+
+```
+M7 IMPLEMENTATION AUTHORIZED: NO
+```
+
+Specification acceptance and protected integration do **not** authorize M7 implementation. Two different gates apply, and they MUST NOT be collapsed into one:
+
+**Gate 1 — permission to begin M7 implementation work (implementation authorization, §10.2).**
+
+- **Status: NO** in this register.
+- Granting it requires a **future, separate, explicit authority transition** recorded in this register.
+- This entry does **not** decide, grant, schedule or pre-condition that transition. It states no prerequisite for beginning implementation beyond what accepted authority itself states; in particular, it does **not** require the Gate 2 items below to be complete before such a transition may occur, because several of them (e.g. role provisioning, the sealed signer deployment, the hosted adversarial suite) can only be satisfied by implementation and deployment work.
+
+**Gate 2 — acceptance of an M7 implementation / runtime acceptance.** Per the accepted M7 V1.1 specification, before any M7 implementation is **accepted**, at minimum the following must hold and be **independently verified** — this register records them as open and authorizes none of them:
+
+- the implementation prerequisites `IMP-01…IMP-22` (M7 V1.1 §28.1: *"must hold before any M7 implementation is accepted"*), including role provisioning, credential separation, object-store conformance per profile, capability-CI extension, the hosted real-PostgreSQL adversarial suite (the M7 analogue of R-B-16), the sealed capability-signer deployment, the lock-graph checks, and the privacy/research-authority decisions `IMP-09`, `IMP-10`;
+- the CI gate additions required by M7 V1.1 §24.3, **to be added by a future M7 implementation candidate** without weakening the accepted `verify` and `authority-gate` checks — **none of these gates exists yet**;
+- manifest / control-plane publication and the applicable `MA-1…MA-18` proofs (M7 V1.1 §24.2: what a later rotation must prove *"before M7 implementation can be accepted"*), and selector rotation where required (§10.8);
+- real-PostgreSQL, real-provider and real-deployment verification (M7 V1.1 §25, §28.1, §28.3), including the conditional provider/signer closures of §10.6;
+- any other acceptance condition the accepted M7 V1.1 specification states.
+
+No artifact of this repository — runtime source, Prisma schema, migration, test, workflow, `scripts-trusted/`, or `authority/` — has been changed by the acceptance or integration of M7 V1.1 (the PR #16 merge added exactly one Markdown file), and none is changed by this root-sync entry; in particular, **no CI workflow was changed in PR #16 or by this entry**.
+
+### 10.8 Machine-readable authority — publication and selector rotation remain downstream
+
+The two-authority architecture of §2.4 is **unchanged**:
+
+- documentation authority in this protected integration lineage is **distinct** from the machine-readable authority baseline;
+- machine-readable artifacts live in the `authority/` namespace of a **separately selected** authority-baseline commit/lineage; `authority/` is absent from this tree (`git ls-tree -r HEAD authority/` is empty at `f99a7e3…`) and is not added or modified by this entry;
+- selection is governed solely by the protected external repository variable `PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA`.
+
+```
+M7 CONTROL-PLANE MANIFEST                       : NOT ACCEPTED, NOT PUBLISHED
+M7 MACHINE-READABLE AUTHORITY PUBLICATION       : NOT PERFORMED — DOWNSTREAM ACCEPTANCE WORK
+PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA VALUE     : NOT ASSERTED BY THIS REGISTER (externally governed; §2.4)
+SELECTOR ROTATION                               : NOT PERFORMED; NOT AUTHORIZED BY THIS ENTRY
+```
+
+This register does **not** infer, invent, default or rotate the selector, and claims no knowledge of its current value. M7 V1.1 requires that a **later**, separately accepted rotation publish the M7 control-plane manifest and prove `MA-1…MA-18` — including that `authority.specSha256` equals the accepted artifact SHA-256 of §10.1 and that `authority.specAcceptanceVerdict` names the verdict of §10.1 (`MA-2`), that pre-existing ledger/registry entries are unchanged (`MA-3`), and that the rotation occurs after independent acceptance by a privileged owner with no candidate-chosen base (`MA-6`). That is downstream acceptance work; none of it has occurred.
+
+### 10.9 Effect on B and C — none beyond the stated S-2 fact
+
+- **B semantic / architecture authority:** unchanged (§3, §3.1, §3.2). JBA V1.9 and its Amendment 01 are not amended.
+- **B1S design:** unchanged — may proceed under the accepted S-2 non-grounding default (§9.7 Path B). **Path A** still requires an **accepted M7 ingestion integration contract**. M7 V1.1 now states, in accepted specification text, the M7-side trusted-generation facts it would make re-provable, in a form B1S may consume (M7 V1.1 §21.3) — **specified, not implemented**; whether they satisfy `DB-03B`, and the contract itself, remain **B1S-owned** and require B-scoped acceptance (M7 V1.1 §28.2). This entry does not decide either.
+- **B2S design:** unchanged (§6, §7).
+- **B1 / B2 implementation:** NOT AUTHORIZED. **P-16: ACTIVE** — unchanged.
+- **C1 / C2:** NOT AUTHORIZED. `AnalysisProtocol v1` UNFROZEN; Wave 0 and deployment NOT AUTHORIZED (§6.1) — unchanged. M7 V1.1 persists no `VerifiedValue` and no VS level (M7 V1.1 §21.5, §22).
+
+### 10.10 Current authorization matrix
+
+```
+M7 EFFECTIVE SPEC V1                    : BLOCKED / NON-AUTHORITATIVE
+M7 EFFECTIVE SPEC V1.1                  : ACCEPTED — SPECIFICATION ACCEPTANCE DONE, PROTECTED INTEGRATION DONE
+                                          (merge f99a7e3080fdb99bd3917820d889d09694bed4af, PR #16)
+M7 IMPLEMENTATION AUTHORIZED            : NO
+M7 CONTROL-PLANE MANIFEST PUBLICATION   : NOT PERFORMED (downstream)
+SELECTOR ROTATION                       : NOT PERFORMED; NOT AUTHORIZED BY THIS ENTRY
+B1S DESIGN                              : YES — MAY use the accepted S-2 non-grounding default (§9.7); Path A only
+                                          with an accepted M7 ingestion integration contract (§10.9)
+B2S DESIGN                              : per existing JBA / P-16 sequencing (§6, §7) — unchanged
+B1 IMPLEMENTATION                       : NO
+B2 IMPLEMENTATION                       : NO
+C1 IMPLEMENTATION                       : NO
+C2 IMPLEMENTATION                       : NO
+P-16                                    : ACTIVE
+```
+
+This matrix records status established by §6, §7, §9 and §10.1–§10.9; it authorizes nothing beyond them.
