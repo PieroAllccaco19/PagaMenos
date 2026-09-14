@@ -1,0 +1,82 @@
+// M7 S01 — source identity and Markdown structure. Identity is verified before anything is extracted;
+// every structural surprise is refused rather than interpreted.
+import { describe, expect, it } from 'vitest';
+
+import { e01Bytes, v11Bytes } from './__fixtures__/accepted-sources';
+import {
+  M7_V1_1,
+  M7_V1_1_ERRATUM_01,
+  SourceIdentityError,
+  SourceStructureError,
+  gitBlobId,
+  parseMarkdown,
+  sha256Hex,
+  verifyBoundArtifact,
+} from './source';
+
+describe('bound artifact identity', () => {
+  it('computes Git blob ids exactly as git does', () => {
+    // `git hash-object /dev/null` and `printf 'hello\n' | git hash-object --stdin`.
+    expect(gitBlobId(new Uint8Array())).toBe('e69de29bb2d1d6434b8b29ae775ad8c2e48c5391');
+    expect(gitBlobId(new TextEncoder().encode('hello\n'))).toBe(
+      'ce013625030ba8dba906f756967f9e9ca394464a',
+    );
+  });
+
+  it('the committed V1.1 bytes are the accepted bytes (blob, SHA-256, size, lines)', () => {
+    expect(gitBlobId(v11Bytes)).toBe('06e103b0d5e8cfcbb96ab21134d5605b0aae9b26');
+    expect(sha256Hex(v11Bytes)).toBe(
+      '457f51778fb5d5890b3e3478376e413072f15aef7da88125b5e78963f49394bd',
+    );
+    expect(() => verifyBoundArtifact(M7_V1_1, v11Bytes)).not.toThrow();
+  });
+
+  it('the committed Erratum 01 bytes are the accepted bytes', () => {
+    expect(gitBlobId(e01Bytes)).toBe('15ee22090d3e37b6a63dd25914f8abb0f4fa9d4b');
+    expect(sha256Hex(e01Bytes)).toBe(
+      'f381cb015adadc7a22463060da7ff55e8711b8ab13879c60f93cabf53eb863e8',
+    );
+    expect(() => verifyBoundArtifact(M7_V1_1_ERRATUM_01, e01Bytes)).not.toThrow();
+  });
+
+  it('refuses a single changed byte before extracting anything', () => {
+    const mutated = Uint8Array.from(v11Bytes);
+    mutated[5000] = mutated[5000] === 0x61 ? 0x62 : 0x61;
+    expect(() => verifyBoundArtifact(M7_V1_1, mutated)).toThrow(SourceIdentityError);
+  });
+
+  it('refuses the erratum bytes presented as the specification', () => {
+    expect(() => verifyBoundArtifact(M7_V1_1, e01Bytes)).toThrow(/git blob/);
+  });
+
+  it('refuses CRLF-converted bytes', () => {
+    const crlf = new TextEncoder().encode(
+      new TextDecoder().decode(v11Bytes).replace(/\n/g, '\r\n'),
+    );
+    expect(() => verifyBoundArtifact(M7_V1_1, crlf)).toThrow(SourceIdentityError);
+  });
+});
+
+describe('Markdown structure parser (fail closed)', () => {
+  it('parses headings and fences with exact line numbers', () => {
+    const s = parseMarkdown('# A\n\n```sql\nSELECT 1;\n# not a heading\n```\n## B\n');
+    expect(s.headings.map((h) => [h.line, h.level, h.text])).toEqual([
+      [1, 1, '# A'],
+      [7, 2, '## B'],
+    ]);
+    expect(s.fences).toEqual([
+      { openLine: 3, closeLine: 6, info: 'sql', body: ['SELECT 1;', '# not a heading'] },
+    ]);
+  });
+
+  it('refuses an unterminated fence', () => {
+    expect(() => parseMarkdown('```sql\nSELECT 1;\n')).toThrow(SourceStructureError);
+  });
+
+  it('refuses indented, tilde or trailing-text fence markers instead of guessing', () => {
+    expect(() => parseMarkdown('  ```sql\nx\n  ```\n')).toThrow(SourceStructureError);
+    expect(() => parseMarkdown('~~~sql\nx\n~~~\n')).toThrow(SourceStructureError);
+    expect(() => parseMarkdown('```sql extra\nx\n```\n')).toThrow(SourceStructureError);
+    expect(() => parseMarkdown('```sql\n  ```\n```\n')).toThrow(SourceStructureError);
+  });
+});

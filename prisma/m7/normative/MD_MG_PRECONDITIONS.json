@@ -1,0 +1,147 @@
+{
+  "schema": "pagamenos.m7.s01.md-mg-preconditions.v1",
+  "status": [
+    "S01 EXTRACTION ARTIFACT — GENERATED; DO NOT EDIT BY HAND",
+    "NOT A MIGRATION; NOT INSTALLED INTO POSTGRESQL; NOT A CONTROL-PLANE MANIFEST",
+    "SATISFIES NO IMP-* OR MA-* ITEM; M7 GATE 2 NOT SATISFIED"
+  ],
+  "scope": "Erratum 01 ER-01 extraction preconditions only. No manifest digest D and no migrationSha256 is computed.",
+  "result": {
+    "placeholder": {
+      "value": "sha256:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "byteLength": 71,
+      "matchesDigestPattern": false,
+      "occurrencesInFragments": 0,
+      "fragmentsContaining": []
+    },
+    "manifestSha256Template": {
+      "occurrencesInFragments": 2,
+      "locations": [
+        {
+          "fragment": "F26",
+          "clause": "19.13.4",
+          "sourceLine": 8851,
+          "column": 58,
+          "call": "c_register_manifest_v1",
+          "argumentIndex": 1,
+          "lineText": "--   SELECT m7.c_register_manifest_v1(<manifestVersion>, <manifestSha256>, ...);"
+        },
+        {
+          "fragment": "F26",
+          "clause": "19.13.4",
+          "sourceLine": 8853,
+          "column": 58,
+          "call": "c_activate_manifest_v1",
+          "argumentIndex": 1,
+          "lineText": "--   SELECT m7.c_activate_manifest_v1(<manifestVersion>, <manifestSha256>);"
+        }
+      ],
+      "installSequenceClause": "19.13.4",
+      "registerCallsInInstallSequence": 1,
+      "activateCallsInInstallSequence": 1
+    },
+    "parameterNames": {
+      "c_register_manifest_v1": [
+        "p_manifest_version",
+        "p_manifest_sha256",
+        "p_policy_version",
+        "p_vocabulary_version",
+        "p_storage_profile_version"
+      ],
+      "c_activate_manifest_v1": [
+        "p_manifest_version",
+        "p_manifest_sha256"
+      ]
+    },
+    "concreteDigestScan": {
+      "prefixedDigestLiteralsInFragments": 0,
+      "bareHex64InFragments": 0,
+      "functionBodiesScanned": 110,
+      "prefixedDigestLiteralsInFunctionBodies": 0,
+      "bareHex64InFunctionBodies": 0
+    },
+    "violations": []
+  },
+  "negativeControls": [
+    {
+      "id": "NC-1",
+      "mutation": "add a third <manifestSha256> argument to the §19.13.4 install sequence",
+      "expectedToFail": true,
+      "failed": true,
+      "violations": [
+        "MD-3: 2 c_activate_manifest_v1 calls in §19.13.4, expected 1",
+        "MD-3/MG-3: 3 <manifestSha256> template arguments, expected exactly 2",
+        "MD-3/MG-3: designated slots are [\"c_register_manifest_v1\",\"c_activate_manifest_v1\",\"c_activate_manifest_v1\"], expected one per call, register before activate"
+      ]
+    },
+    {
+      "id": "NC-2",
+      "mutation": "remove one <manifestSha256> argument (activate call)",
+      "expectedToFail": true,
+      "failed": true,
+      "violations": [
+        "MD-3/MG-3: 1 <manifestSha256> template arguments, expected exactly 2",
+        "MD-3/MG-3: designated slots are [\"c_register_manifest_v1\"], expected one per call, register before activate"
+      ]
+    },
+    {
+      "id": "NC-3",
+      "mutation": "move the register call template to the first (non-designated) argument position",
+      "expectedToFail": true,
+      "failed": true,
+      "violations": [
+        "MD-3/MG-3: <manifestSha256> outside a designated slot at source line(s) 8851",
+        "MD-3/MG-3: designated slots are [\"c_activate_manifest_v1\"], expected one per call, register before activate"
+      ]
+    },
+    {
+      "id": "NC-4",
+      "mutation": "add a <manifestSha256> occurrence outside the install sequence (§19.11.2)",
+      "expectedToFail": true,
+      "failed": true,
+      "violations": [
+        "MD-3/MG-3: 3 <manifestSha256> template arguments, expected exactly 2",
+        "MD-3/MG-3: <manifestSha256> outside a designated slot at source line(s) 5821"
+      ]
+    },
+    {
+      "id": "NC-5",
+      "mutation": "plant the placeholder P in a normative fragment (§19.4)",
+      "expectedToFail": true,
+      "failed": true,
+      "violations": [
+        "MD-1/MG-3(a): P occurs 1 time(s) in F03"
+      ]
+    },
+    {
+      "id": "NC-6",
+      "mutation": "plant a concrete sha256: digest literal inside a function body (§19.11.2)",
+      "expectedToFail": true,
+      "failed": true,
+      "violations": [
+        "MG-3(d): 1 concrete sha256: digest literal(s) in normative SQL",
+        "MG-3(d): 1 bare 64-hex literal(s) in normative SQL"
+      ]
+    },
+    {
+      "id": "NC-7",
+      "mutation": "place both templates in the register call and none in the activate call (cardinality 2, wrong slots)",
+      "expectedToFail": true,
+      "failed": true,
+      "violations": [
+        "MD-3/MG-3: designated slots are [\"c_register_manifest_v1\",\"c_register_manifest_v1\"], expected one per call, register before activate"
+      ]
+    },
+    {
+      "id": "NC-8",
+      "mutation": "rename the §19.11.2 activate parameter p_manifest_sha256",
+      "expectedToFail": true,
+      "failed": true,
+      "violations": [
+        "MD-3: §19.11.2 c_activate_manifest_v1 second parameter is \"p_digest\""
+      ]
+    }
+  ],
+  "allPreconditionsHold": true,
+  "allNegativeControlsRefused": true
+}

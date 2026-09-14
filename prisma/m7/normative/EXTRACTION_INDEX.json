@@ -1,0 +1,524 @@
+{
+  "schema": "pagamenos.m7.s01.normative-ddl-extraction.v1",
+  "status": [
+    "S01 EXTRACTION ARTIFACT — GENERATED; DO NOT EDIT BY HAND",
+    "NOT A MIGRATION; NOT INSTALLED INTO POSTGRESQL; NOT A CONTROL-PLANE MANIFEST",
+    "SATISFIES NO IMP-* OR MA-* ITEM; M7 GATE 2 NOT SATISFIED"
+  ],
+  "generator": "scripts/m7/extract-normative-ddl.ts",
+  "conformanceTarget": "M7 V1.1 + accepted Erratum 01",
+  "sources": {
+    "specification": {
+      "path": "PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1.md",
+      "gitBlob": "06e103b0d5e8cfcbb96ab21134d5605b0aae9b26",
+      "sha256": "457f51778fb5d5890b3e3478376e413072f15aef7da88125b5e78963f49394bd",
+      "bytes": 1143725,
+      "lines": 10626
+    },
+    "erratum01": {
+      "path": "PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_01.md",
+      "gitBlob": "15ee22090d3e37b6a63dd25914f8abb0f4fa9d4b",
+      "sha256": "f381cb015adadc7a22463060da7ff55e8711b8ab13879c60f93cabf53eb863e8",
+      "bytes": 82027,
+      "lines": 604
+    }
+  },
+  "normativeRegion": {
+    "startHeading": "## 19. Complete normative DDL",
+    "startLine": 2365,
+    "endHeadingExclusive": "### 19.14 Object inventory (every normative object defined above)",
+    "endLine": 8873,
+    "fragmentCount": 26,
+    "fencesInDocument": 65,
+    "sqlFencesOutsideRegion": 0
+  },
+  "orderingRule": "Fragments are emitted in ascending source position of their opening fence, which equals the order of the S01 anchor registry (F01…F26); each file name carries its two-digit ordinal and clause. File bodies are the exact fence body lines joined by LF with a final LF. JSON members are written in a fixed order, identifier lists in source order, and the file index in lexicographic path order.",
+  "fragments": [
+    {
+      "id": "F01",
+      "clause": "19.2",
+      "heading": "### 19.2 Preamble — install assertions, schema, accepted-table grants",
+      "headingLine": 2376,
+      "fenceOpenLine": 2378,
+      "fenceCloseLine": 2474,
+      "bodyFirstLine": 2379,
+      "bodyLastLine": 2473,
+      "bodyLines": 95,
+      "bodyBytes": 5059,
+      "sha256": "0d6a919d5aa40d4031bf540868f549b88732ac24ff27c731e7442dcae4e1f1e3",
+      "file": "sql/01_19.2_preamble.sql"
+    },
+    {
+      "id": "F02",
+      "clause": "19.3",
+      "heading": "### 19.3 Enumerated types",
+      "headingLine": 2476,
+      "fenceOpenLine": 2478,
+      "fenceCloseLine": 2529,
+      "bodyFirstLine": 2479,
+      "bodyLastLine": 2528,
+      "bodyLines": 50,
+      "bodyBytes": 4932,
+      "sha256": "02b51d24aabed73e7c2d1390c620f7660729ac971426329e08110061c529f0ff",
+      "file": "sql/02_19.3_enumerated-types.sql"
+    },
+    {
+      "id": "F03",
+      "clause": "19.4",
+      "heading": "### 19.4 Control-plane identity tables",
+      "headingLine": 2533,
+      "fenceOpenLine": 2535,
+      "fenceCloseLine": 2811,
+      "bodyFirstLine": 2536,
+      "bodyLastLine": 2810,
+      "bodyLines": 275,
+      "bodyBytes": 19660,
+      "sha256": "5c09af0076a536b1c7b44f552bdcb4beb8721b36bfd136987c915e284dc214e3",
+      "file": "sql/03_19.4_control-plane-identity-tables.sql"
+    },
+    {
+      "id": "F04",
+      "clause": "19.5",
+      "heading": "### 19.5 Catalog expectation set (manifest-driven, exact)",
+      "headingLine": 2815,
+      "fenceOpenLine": 2819,
+      "fenceCloseLine": 2885,
+      "bodyFirstLine": 2820,
+      "bodyLastLine": 2884,
+      "bodyLines": 65,
+      "bodyBytes": 3471,
+      "sha256": "bdca4c13560257555f810ff213afb1aeb763a651bf1f3e9c63a9ef56fa10bc59",
+      "file": "sql/04_19.5_catalog-expectation-set.sql"
+    },
+    {
+      "id": "F05",
+      "clause": "19.6",
+      "heading": "### 19.6 Session capability tables",
+      "headingLine": 2889,
+      "fenceOpenLine": 2891,
+      "fenceCloseLine": 2926,
+      "bodyFirstLine": 2892,
+      "bodyLastLine": 2925,
+      "bodyLines": 34,
+      "bodyBytes": 2073,
+      "sha256": "8d5ba82eabb4bd9789dc6469c2973fdd509d6069a8c071656e5c700a9aafd7cc",
+      "file": "sql/05_19.6_session-capability-tables.sql"
+    },
+    {
+      "id": "F06",
+      "clause": "19.7",
+      "heading": "### 19.7 Outcome tables",
+      "headingLine": 2930,
+      "fenceOpenLine": 2932,
+      "fenceCloseLine": 3051,
+      "bodyFirstLine": 2933,
+      "bodyLastLine": 3050,
+      "bodyLines": 118,
+      "bodyBytes": 8105,
+      "sha256": "9d8adb7c7bf1b4a66759640a45f4138402c510c5f4f199c690f99caee794bd52",
+      "file": "sql/06_19.7_outcome-tables.sql"
+    },
+    {
+      "id": "F07",
+      "clause": "19.8",
+      "heading": "### 19.8 Evidence candidate, canonical generations, storage and `SavingEvidence` tables",
+      "headingLine": 3052,
+      "fenceOpenLine": 3054,
+      "fenceCloseLine": 3581,
+      "bodyFirstLine": 3055,
+      "bodyLastLine": 3580,
+      "bodyLines": 526,
+      "bodyBytes": 37268,
+      "sha256": "697d1d93278ae4b0a4db55ce8f144b70459e1b5dea678645d4c3f2d4fd067b0f",
+      "file": "sql/07_19.8_evidence-generations-storage-tables.sql"
+    },
+    {
+      "id": "F08",
+      "clause": "19.9",
+      "heading": "### 19.9 Privacy, deletion and outbox tables",
+      "headingLine": 3585,
+      "fenceOpenLine": 3587,
+      "fenceCloseLine": 3905,
+      "bodyFirstLine": 3588,
+      "bodyLastLine": 3904,
+      "bodyLines": 317,
+      "bodyBytes": 21616,
+      "sha256": "d5c8827cd16c70de9020da9b93ba35f8cc7da94ca0f127be92a861b3236effa0",
+      "file": "sql/08_19.9_privacy-deletion-outbox-tables.sql"
+    },
+    {
+      "id": "F09",
+      "clause": "19.10",
+      "heading": "### 19.10 Trigger functions and triggers",
+      "headingLine": 3910,
+      "fenceOpenLine": 3914,
+      "fenceCloseLine": 5039,
+      "bodyFirstLine": 3915,
+      "bodyLastLine": 5038,
+      "bodyLines": 1124,
+      "bodyBytes": 64852,
+      "sha256": "fa1c25f12a203ef616384141d8c5f9d29a7f704776bfb8ca43730f676a507f86",
+      "file": "sql/09_19.10_trigger-functions.sql"
+    },
+    {
+      "id": "F10",
+      "clause": "19.10.1",
+      "heading": "#### 19.10.1 Trigger installation",
+      "headingLine": 5041,
+      "fenceOpenLine": 5043,
+      "fenceCloseLine": 5182,
+      "bodyFirstLine": 5044,
+      "bodyLastLine": 5181,
+      "bodyLines": 138,
+      "bodyBytes": 11213,
+      "sha256": "c2b0fd5bbc71c713572f2571e57909532b5ea4a90cc1adcd4c5a82ce76926c41",
+      "file": "sql/10_19.10.1_trigger-installation.sql"
+    },
+    {
+      "id": "F11",
+      "clause": "19.11.1",
+      "heading": "#### 19.11.1 Internal helpers (SECURITY INVOKER; no EXECUTE grants)",
+      "headingLine": 5209,
+      "fenceOpenLine": 5211,
+      "fenceCloseLine": 5816,
+      "bodyFirstLine": 5212,
+      "bodyLastLine": 5815,
+      "bodyLines": 604,
+      "bodyBytes": 31346,
+      "sha256": "76bdc866222b501df746f27d5e6d4ed6301c338f105b0822514ecda0cdc2e352",
+      "file": "sql/11_19.11.1_internal-helpers.sql"
+    },
+    {
+      "id": "F12",
+      "clause": "19.11.2",
+      "heading": "#### 19.11.2 Control-plane registration and activation (owner-class only; **no login grantee**)",
+      "headingLine": 5818,
+      "fenceOpenLine": 5820,
+      "fenceCloseLine": 6319,
+      "bodyFirstLine": 5821,
+      "bodyLastLine": 6318,
+      "bodyLines": 498,
+      "bodyBytes": 34526,
+      "sha256": "572a9cf7182772f01b263ec367f993522c39e81e27edc74e59ea1ba65b6dd5a9",
+      "file": "sql/12_19.11.2_control-plane-registration.sql"
+    },
+    {
+      "id": "F13",
+      "clause": "19.11.3",
+      "heading": "#### 19.11.3 Session issuer functions (`pagamenos_m7_session_issuer_rt`)",
+      "headingLine": 6321,
+      "fenceOpenLine": 6323,
+      "fenceCloseLine": 6385,
+      "bodyFirstLine": 6324,
+      "bodyLastLine": 6384,
+      "bodyLines": 61,
+      "bodyBytes": 3829,
+      "sha256": "f3adfbcf898828e1abcbf134c25ac3509c1c7f3f3b9bf7c86518f8f471d587eb",
+      "file": "sql/13_19.11.3_session-issuer.sql"
+    },
+    {
+      "id": "F14",
+      "clause": "19.11.4",
+      "heading": "#### 19.11.4 Participant functions (`pagamenos_m7_participant_rt`; reached only through the CCA engine)",
+      "headingLine": 6387,
+      "fenceOpenLine": 6389,
+      "fenceCloseLine": 6765,
+      "bodyFirstLine": 6390,
+      "bodyLastLine": 6764,
+      "bodyLines": 375,
+      "bodyBytes": 25121,
+      "sha256": "0835ba74fba500c36357508ab485b2e1a96a1bbce33938bc9d108740d010ff8a",
+      "file": "sql/14_19.11.4_participant.sql"
+    },
+    {
+      "id": "F15",
+      "clause": "19.11.5",
+      "heading": "#### 19.11.5 Participant privacy request (`pagamenos_m7_privacy_request_rt`; not consent-conditioned)",
+      "headingLine": 6767,
+      "fenceOpenLine": 6769,
+      "fenceCloseLine": 6802,
+      "bodyFirstLine": 6770,
+      "bodyLastLine": 6801,
+      "bodyLines": 32,
+      "bodyBytes": 1776,
+      "sha256": "7688c488cfbbef2434f636f0de80530fcdf6ebc784b208b71477f95671f67a06",
+      "file": "sql/15_19.11.5_privacy-request.sql"
+    },
+    {
+      "id": "F16",
+      "clause": "19.11.6",
+      "heading": "#### 19.11.6 Deletion authority (`pagamenos_m7_deletion_authority_rt`)",
+      "headingLine": 6804,
+      "fenceOpenLine": 6806,
+      "fenceCloseLine": 6831,
+      "bodyFirstLine": 6807,
+      "bodyLastLine": 6830,
+      "bodyLines": 24,
+      "bodyBytes": 1547,
+      "sha256": "093d3f315dd8ac94fd4a6704899c2e0bd2e181c37c2897351cb906b9030fd943",
+      "file": "sql/16_19.11.6_deletion-authority.sql"
+    },
+    {
+      "id": "F17",
+      "clause": "19.11.7",
+      "heading": "#### 19.11.7 Capability signer (`pagamenos_m7_capability_signer_rt`) — the sealed signer edge",
+      "headingLine": 6832,
+      "fenceOpenLine": 6839,
+      "fenceCloseLine": 6932,
+      "bodyFirstLine": 6840,
+      "bodyLastLine": 6931,
+      "bodyLines": 92,
+      "bodyBytes": 5890,
+      "sha256": "eacf99ec3e728cd32881bd339478777935a57c6ad3385373f9a0692b490ece95",
+      "file": "sql/17_19.11.7_capability-signer.sql"
+    },
+    {
+      "id": "F18",
+      "clause": "19.12.1",
+      "heading": "#### 19.12.1 Upload pipeline",
+      "headingLine": 6950,
+      "fenceOpenLine": 6952,
+      "fenceCloseLine": 7323,
+      "bodyFirstLine": 6953,
+      "bodyLastLine": 7322,
+      "bodyLines": 370,
+      "bodyBytes": 23867,
+      "sha256": "8d88295459c55853396637e26fc350a00cbfd8a4118be11c2e46396bffae0a45",
+      "file": "sql/18_19.12.1_upload-pipeline.sql"
+    },
+    {
+      "id": "F19",
+      "clause": "19.12.2",
+      "heading": "#### 19.12.2 Deletion scheduling",
+      "headingLine": 7325,
+      "fenceOpenLine": 7327,
+      "fenceCloseLine": 7544,
+      "bodyFirstLine": 7328,
+      "bodyLastLine": 7543,
+      "bodyLines": 216,
+      "bodyBytes": 13929,
+      "sha256": "e79c9a264a3719d8079a49df3910e7cd2987dda70f147fd6b20f34715611062a",
+      "file": "sql/19_19.12.2_deletion-scheduling.sql"
+    },
+    {
+      "id": "F20",
+      "clause": "19.12.3",
+      "heading": "#### 19.12.3 Outbox leases",
+      "headingLine": 7546,
+      "fenceOpenLine": 7548,
+      "fenceCloseLine": 7638,
+      "bodyFirstLine": 7549,
+      "bodyLastLine": 7637,
+      "bodyLines": 89,
+      "bodyBytes": 5275,
+      "sha256": "5be17cfce152379d4ecbdf711a65dd1da30d70dd8799f3ca706ce5c8c29ffc83",
+      "file": "sql/20_19.12.3_outbox-leases.sql"
+    },
+    {
+      "id": "F21",
+      "clause": "19.12.4",
+      "heading": "#### 19.12.4 Effect confirmation — the load-bearing routing check (SI-3)",
+      "headingLine": 7640,
+      "fenceOpenLine": 7642,
+      "fenceCloseLine": 7789,
+      "bodyFirstLine": 7643,
+      "bodyLastLine": 7788,
+      "bodyLines": 146,
+      "bodyBytes": 9321,
+      "sha256": "163d2c7af596a285e3d21378ea9849b7c79b18d537d6c76b01802a8b328bb8e2",
+      "file": "sql/21_19.12.4_effect-confirmation.sql"
+    },
+    {
+      "id": "F22",
+      "clause": "19.12.5",
+      "heading": "#### 19.12.5 Row mechanisms — the two functions permitted to lock `experiment_assignment` (LO-1)",
+      "headingLine": 7793,
+      "fenceOpenLine": 7795,
+      "fenceCloseLine": 8158,
+      "bodyFirstLine": 7796,
+      "bodyLastLine": 8157,
+      "bodyLines": 362,
+      "bodyBytes": 26982,
+      "sha256": "cce8a66a8155c2dbee904ee21e87c97093ceaa15bf8da5b5aa32114009b97999",
+      "file": "sql/22_19.12.5_row-mechanisms.sql"
+    },
+    {
+      "id": "F23",
+      "clause": "19.12.6",
+      "heading": "#### 19.12.6 Reconciliation",
+      "headingLine": 8164,
+      "fenceOpenLine": 8166,
+      "fenceCloseLine": 8385,
+      "bodyFirstLine": 8167,
+      "bodyLastLine": 8384,
+      "bodyLines": 218,
+      "bodyBytes": 12897,
+      "sha256": "020a61c24cca1430c21153bb62acca962ae97a2598afb658da1cea00caf7c162",
+      "file": "sql/23_19.12.6_reconciliation.sql"
+    },
+    {
+      "id": "F24",
+      "clause": "19.13.2",
+      "heading": "#### 19.13.2 The verifier",
+      "headingLine": 8412,
+      "fenceOpenLine": 8414,
+      "fenceCloseLine": 8662,
+      "bodyFirstLine": 8415,
+      "bodyLastLine": 8661,
+      "bodyLines": 247,
+      "bodyBytes": 14323,
+      "sha256": "13b7d08196e87109ac6f82be3aa2256aa7c62226aec2f5688a8dc6678bb2a77c",
+      "file": "sql/24_19.13.2_catalog-verifier.sql"
+    },
+    {
+      "id": "F25",
+      "clause": "19.13.3",
+      "heading": "#### 19.13.3 Views (owner-only; no grants in V1.1)",
+      "headingLine": 8664,
+      "fenceOpenLine": 8666,
+      "fenceCloseLine": 8813,
+      "bodyFirstLine": 8667,
+      "bodyLastLine": 8812,
+      "bodyLines": 146,
+      "bodyBytes": 8423,
+      "sha256": "ff8dce51a83832e2468f383c9c05634fdb535be6a7d6261dfd184c9de22513f1",
+      "file": "sql/25_19.13.3_views.sql"
+    },
+    {
+      "id": "F26",
+      "clause": "19.13.4",
+      "heading": "#### 19.13.4 Grants and fail-closed completion",
+      "headingLine": 8815,
+      "fenceOpenLine": 8817,
+      "fenceCloseLine": 8871,
+      "bodyFirstLine": 8818,
+      "bodyLastLine": 8870,
+      "bodyLines": 53,
+      "bodyBytes": 2541,
+      "sha256": "f24554d93b606d87fa65d53209fc4c66af327467e91a110e042539e0f24af732",
+      "file": "sql/26_19.13.4_grants-and-completion.sql"
+    }
+  ],
+  "files": [
+    {
+      "path": "ERRATUM_01_OVERRIDES.json",
+      "sha256": "cc2658fc3933c708d1bb6e93acc41ebf6d6da41ab67e02bc3c403c513632598c"
+    },
+    {
+      "path": "INVENTORY.json",
+      "sha256": "282ee1fd0b93bf88ea5493b515f139454ddd37d7580ddf66514364b5855b2a79"
+    },
+    {
+      "path": "MD_MG_PRECONDITIONS.json",
+      "sha256": "8a9f06b698c8053ce40ef03716e8dbe0b6bcff038947269a50d696dbf5ffe405"
+    },
+    {
+      "path": "README.md",
+      "sha256": "c50b14a904baf7c1344126d67dc5cbc8c0cd9a8350f0351992ab20b870f2f220"
+    },
+    {
+      "path": "sql/01_19.2_preamble.sql",
+      "sha256": "0d6a919d5aa40d4031bf540868f549b88732ac24ff27c731e7442dcae4e1f1e3"
+    },
+    {
+      "path": "sql/02_19.3_enumerated-types.sql",
+      "sha256": "02b51d24aabed73e7c2d1390c620f7660729ac971426329e08110061c529f0ff"
+    },
+    {
+      "path": "sql/03_19.4_control-plane-identity-tables.sql",
+      "sha256": "5c09af0076a536b1c7b44f552bdcb4beb8721b36bfd136987c915e284dc214e3"
+    },
+    {
+      "path": "sql/04_19.5_catalog-expectation-set.sql",
+      "sha256": "bdca4c13560257555f810ff213afb1aeb763a651bf1f3e9c63a9ef56fa10bc59"
+    },
+    {
+      "path": "sql/05_19.6_session-capability-tables.sql",
+      "sha256": "8d5ba82eabb4bd9789dc6469c2973fdd509d6069a8c071656e5c700a9aafd7cc"
+    },
+    {
+      "path": "sql/06_19.7_outcome-tables.sql",
+      "sha256": "9d8adb7c7bf1b4a66759640a45f4138402c510c5f4f199c690f99caee794bd52"
+    },
+    {
+      "path": "sql/07_19.8_evidence-generations-storage-tables.sql",
+      "sha256": "697d1d93278ae4b0a4db55ce8f144b70459e1b5dea678645d4c3f2d4fd067b0f"
+    },
+    {
+      "path": "sql/08_19.9_privacy-deletion-outbox-tables.sql",
+      "sha256": "d5c8827cd16c70de9020da9b93ba35f8cc7da94ca0f127be92a861b3236effa0"
+    },
+    {
+      "path": "sql/09_19.10_trigger-functions.sql",
+      "sha256": "fa1c25f12a203ef616384141d8c5f9d29a7f704776bfb8ca43730f676a507f86"
+    },
+    {
+      "path": "sql/10_19.10.1_trigger-installation.sql",
+      "sha256": "c2b0fd5bbc71c713572f2571e57909532b5ea4a90cc1adcd4c5a82ce76926c41"
+    },
+    {
+      "path": "sql/11_19.11.1_internal-helpers.sql",
+      "sha256": "76bdc866222b501df746f27d5e6d4ed6301c338f105b0822514ecda0cdc2e352"
+    },
+    {
+      "path": "sql/12_19.11.2_control-plane-registration.sql",
+      "sha256": "572a9cf7182772f01b263ec367f993522c39e81e27edc74e59ea1ba65b6dd5a9"
+    },
+    {
+      "path": "sql/13_19.11.3_session-issuer.sql",
+      "sha256": "f3adfbcf898828e1abcbf134c25ac3509c1c7f3f3b9bf7c86518f8f471d587eb"
+    },
+    {
+      "path": "sql/14_19.11.4_participant.sql",
+      "sha256": "0835ba74fba500c36357508ab485b2e1a96a1bbce33938bc9d108740d010ff8a"
+    },
+    {
+      "path": "sql/15_19.11.5_privacy-request.sql",
+      "sha256": "7688c488cfbbef2434f636f0de80530fcdf6ebc784b208b71477f95671f67a06"
+    },
+    {
+      "path": "sql/16_19.11.6_deletion-authority.sql",
+      "sha256": "093d3f315dd8ac94fd4a6704899c2e0bd2e181c37c2897351cb906b9030fd943"
+    },
+    {
+      "path": "sql/17_19.11.7_capability-signer.sql",
+      "sha256": "eacf99ec3e728cd32881bd339478777935a57c6ad3385373f9a0692b490ece95"
+    },
+    {
+      "path": "sql/18_19.12.1_upload-pipeline.sql",
+      "sha256": "8d88295459c55853396637e26fc350a00cbfd8a4118be11c2e46396bffae0a45"
+    },
+    {
+      "path": "sql/19_19.12.2_deletion-scheduling.sql",
+      "sha256": "e79c9a264a3719d8079a49df3910e7cd2987dda70f147fd6b20f34715611062a"
+    },
+    {
+      "path": "sql/20_19.12.3_outbox-leases.sql",
+      "sha256": "5be17cfce152379d4ecbdf711a65dd1da30d70dd8799f3ca706ce5c8c29ffc83"
+    },
+    {
+      "path": "sql/21_19.12.4_effect-confirmation.sql",
+      "sha256": "163d2c7af596a285e3d21378ea9849b7c79b18d537d6c76b01802a8b328bb8e2"
+    },
+    {
+      "path": "sql/22_19.12.5_row-mechanisms.sql",
+      "sha256": "cce8a66a8155c2dbee904ee21e87c97093ceaa15bf8da5b5aa32114009b97999"
+    },
+    {
+      "path": "sql/23_19.12.6_reconciliation.sql",
+      "sha256": "020a61c24cca1430c21153bb62acca962ae97a2598afb658da1cea00caf7c162"
+    },
+    {
+      "path": "sql/24_19.13.2_catalog-verifier.sql",
+      "sha256": "13b7d08196e87109ac6f82be3aa2256aa7c62226aec2f5688a8dc6678bb2a77c"
+    },
+    {
+      "path": "sql/25_19.13.3_views.sql",
+      "sha256": "ff8dce51a83832e2468f383c9c05634fdb535be6a7d6261dfd184c9de22513f1"
+    },
+    {
+      "path": "sql/26_19.13.4_grants-and-completion.sql",
+      "sha256": "f24554d93b606d87fa65d53209fc4c66af327467e91a110e042539e0f24af732"
+    }
+  ]
+}
