@@ -28,7 +28,9 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
-    "db:migrate:check": "tsx scripts/migrate-check.ts"
+    "db:migrate:check": "tsx scripts/migrate-check.ts",
+    "m7:ddl:extract": "tsx scripts/m7/extract-normative-ddl.ts",
+    "m7:ddl:check": "tsx scripts/m7/extract-normative-ddl.ts --check"
   },
   "dependencies": {
     "@prisma/client": "^6.2.0",

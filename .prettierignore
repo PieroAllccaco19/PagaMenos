@@ -10,3 +10,6 @@ prisma/generated/
 
 # Authoritative specification & research documents — never reformat.
 *.md
+
+# M7 S01 generated normative extraction artifacts — byte-exact, verified by `pnpm m7:ddl:check`.
+prisma/m7/normative/

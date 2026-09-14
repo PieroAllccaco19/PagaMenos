@@ -1,0 +1,575 @@
+{
+  "schema": "pagamenos.m7.s01.erratum-01-overrides.v1",
+  "status": [
+    "S01 EXTRACTION ARTIFACT — GENERATED; DO NOT EDIT BY HAND",
+    "NOT A MIGRATION; NOT INSTALLED INTO POSTGRESQL; NOT A CONTROL-PLANE MANIFEST",
+    "SATISFIES NO IMP-* OR MA-* ITEM; M7 GATE 2 NOT SATISFIED"
+  ],
+  "conformanceTarget": "M7 V1.1 + accepted Erratum 01",
+  "readingRule": "An Erratum 01 \"After\" text controls only the clause it names (Erratum 01 §4; Register §12). Every other clause is read from the accepted V1.1 bytes.",
+  "records": [
+    {
+      "id": "ER-01",
+      "subject": "manifest digest ↔ migration digest dependency cycle",
+      "amendedClauses": [
+        "V1.1 §23.3 digest row",
+        "V1.1 §23.4 database.migrationSha256 / database.controlPlaneInstall (derivation only)",
+        "V1.1 §19.13.4 install-sequence comment (derivation only)",
+        "V1.1 §23.5 last sentence (derivation only)",
+        "V1.1 §24.2 MA-1 (reproduction procedure named)"
+      ],
+      "s01Reading": {
+        "manifestDigestRules": "MD-1…MD-7",
+        "migrationDigestRules": "MG-1…MG-6",
+        "placeholderP": "sha256:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "fixedPointHashing": false,
+        "rawMigrationFileChecksumIsMigrationSha256": false,
+        "finalManifestDigestComputedByS01": false,
+        "migrationSha256ComputedByS01": false,
+        "manifestAuthoredByS01": false,
+        "s01Scope": "extraction preconditions of MD-3 / MD-4 (a) / MG-3 (a), (d) over the accepted template"
+      },
+      "evidence": [
+        {
+          "check": "Erratum 01 defines MD-1 exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 defines MD-2 exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 defines MD-3 exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 defines MD-4 exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 defines MD-5 exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 defines MD-6 exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 defines MD-7 exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 defines MG-1 exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 defines MG-2 exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 defines MG-3 exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 defines MG-4 exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 defines MG-5 exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 defines MG-6 exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "MD-1 placeholder definition present",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "MD-3 derives exactly two template arguments from V1.1 §19.13.4",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "raw migration file checksum is not migrationSha256",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "no fixed-point search (MD-6 / MG-6)",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "MD/MG extraction preconditions: violations",
+          "observed": [],
+          "expected": [],
+          "pass": true
+        },
+        {
+          "check": "MD/MG negative controls: every control refused",
+          "observed": [],
+          "expected": [],
+          "pass": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "ER-02",
+      "subject": "stale five-credential / five-login-role cardinality",
+      "amendedClauses": [
+        "V1.1 §24.3 third bullet",
+        "V1.1 §25.2 row T-08b (cardinality only)"
+      ],
+      "s01Reading": {
+        "section24_3CredentialEnvKeyCount": 6,
+        "section24_3CredentialEnvKeys": [
+          "M7_CAPABILITY_SIGNER_DATABASE_URL",
+          "M7_DELETION_AUTHORITY_DATABASE_URL",
+          "M7_PARTICIPANT_DATABASE_URL",
+          "M7_PRIVACY_REQUEST_DATABASE_URL",
+          "M7_SESSION_ISSUER_DATABASE_URL",
+          "M7_STORAGE_WORKER_DATABASE_URL"
+        ],
+        "t08bLoginRoleCount": 6,
+        "t08bLoginRoles": [
+          "pagamenos_m7_capability_signer_rt",
+          "pagamenos_m7_deletion_authority_rt",
+          "pagamenos_m7_participant_rt",
+          "pagamenos_m7_privacy_request_rt",
+          "pagamenos_m7_session_issuer_rt",
+          "pagamenos_m7_storage_worker_rt"
+        ],
+        "t08bExpectedDenials": {
+          "cFunctions": 9,
+          "loginRoles": 6,
+          "total": 54,
+          "sqlstate": "42501"
+        },
+        "distinctTIdCount": 209
+      },
+      "evidence": [
+        {
+          "check": "V1.1 §24.3 carries the stale \"five\" bullet (Before)",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 §6.2 After bullet present exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "After bullet keys == V1.1 §18.3 keys",
+          "observed": [
+            "M7_CAPABILITY_SIGNER_DATABASE_URL",
+            "M7_DELETION_AUTHORITY_DATABASE_URL",
+            "M7_PARTICIPANT_DATABASE_URL",
+            "M7_PRIVACY_REQUEST_DATABASE_URL",
+            "M7_SESSION_ISSUER_DATABASE_URL",
+            "M7_STORAGE_WORKER_DATABASE_URL"
+          ],
+          "expected": [
+            "M7_CAPABILITY_SIGNER_DATABASE_URL",
+            "M7_DELETION_AUTHORITY_DATABASE_URL",
+            "M7_PARTICIPANT_DATABASE_URL",
+            "M7_PRIVACY_REQUEST_DATABASE_URL",
+            "M7_SESSION_ISSUER_DATABASE_URL",
+            "M7_STORAGE_WORKER_DATABASE_URL"
+          ],
+          "pass": true
+        },
+        {
+          "check": "V1.1 §18.3 credential env keys",
+          "observed": 6,
+          "expected": 6,
+          "pass": true
+        },
+        {
+          "check": "V1.1 §25.2 T-08b row present exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 T-08b Before row == V1.1 T-08b row (verbatim)",
+          "observed": [
+            "| T-08b | **M7-I87: `c_*` has no login grantee (RS-8)** | — | — | each of the five login roles calls every `m7.c_*` function | `42501` for all 9 × 5 | unchanged | — | verifier `RS-8` row |"
+          ],
+          "expected": [
+            "| T-08b | **M7-I87: `c_*` has no login grantee (RS-8)** | — | — | each of the five login roles calls every `m7.c_*` function | `42501` for all 9 × 5 | unchanged | — | verifier `RS-8` row |"
+          ],
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 T-08b After row present exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "T-08b After roles == V1.1 §18.2 login roles",
+          "observed": [
+            "pagamenos_m7_capability_signer_rt",
+            "pagamenos_m7_deletion_authority_rt",
+            "pagamenos_m7_participant_rt",
+            "pagamenos_m7_privacy_request_rt",
+            "pagamenos_m7_session_issuer_rt",
+            "pagamenos_m7_storage_worker_rt"
+          ],
+          "expected": [
+            "pagamenos_m7_capability_signer_rt",
+            "pagamenos_m7_deletion_authority_rt",
+            "pagamenos_m7_participant_rt",
+            "pagamenos_m7_privacy_request_rt",
+            "pagamenos_m7_session_issuer_rt",
+            "pagamenos_m7_storage_worker_rt"
+          ],
+          "pass": true
+        },
+        {
+          "check": "V1.1 §18.2 login roles",
+          "observed": 6,
+          "expected": 6,
+          "pass": true
+        },
+        {
+          "check": "V1.1 §19.2 v_login array == §18.2 login roles",
+          "observed": [
+            "pagamenos_m7_capability_signer_rt",
+            "pagamenos_m7_deletion_authority_rt",
+            "pagamenos_m7_participant_rt",
+            "pagamenos_m7_privacy_request_rt",
+            "pagamenos_m7_session_issuer_rt",
+            "pagamenos_m7_storage_worker_rt"
+          ],
+          "expected": [
+            "pagamenos_m7_capability_signer_rt",
+            "pagamenos_m7_deletion_authority_rt",
+            "pagamenos_m7_participant_rt",
+            "pagamenos_m7_privacy_request_rt",
+            "pagamenos_m7_session_issuer_rt",
+            "pagamenos_m7_storage_worker_rt"
+          ],
+          "pass": true
+        },
+        {
+          "check": "m7.c_* function count (factor 9)",
+          "observed": 9,
+          "expected": 9,
+          "pass": true
+        },
+        {
+          "check": "T-08b expected denials 9 × 6",
+          "observed": 54,
+          "expected": 54,
+          "pass": true
+        },
+        {
+          "check": "Erratum 01: distinct T-ID total remains 209",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "observed distinct T-IDs",
+          "observed": 209,
+          "expected": 209,
+          "pass": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "ER-03",
+      "subject": "PA-1 lock inventory",
+      "amendedClauses": [
+        "V1.1 §16.2.4 PA-1 row",
+        "V1.1 §16.2.4 consequence (b), first clause"
+      ],
+      "s01Reading": {
+        "pa1ExplicitlyLockedRelations": [
+          "public.experiment_assignment",
+          "public.purchase_intent",
+          "public.analysis_protocol"
+        ],
+        "a1A2RuntimeCodeChangedByS01": false,
+        "lockBehaviourChanged": false
+      },
+      "evidence": [
+        {
+          "check": "V1.1 §16.2.4 carries the incomplete PA-1 inventory (Before)",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 §7.2 PA-1 After row present exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "PA-1 After relations (i)(ii)(iii)",
+          "observed": [
+            "public.experiment_assignment",
+            "public.purchase_intent",
+            "public.analysis_protocol"
+          ],
+          "expected": [
+            "public.experiment_assignment",
+            "public.purchase_intent",
+            "public.analysis_protocol"
+          ],
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 §7.2 consequence (b) After names analysis_protocol",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "E01-PO-1: \"analysis_protocol\" occurrences in V1.1",
+          "observed": 0,
+          "expected": 0,
+          "pass": true
+        },
+        {
+          "check": "E01-PO-1: \"analysis_protocol\" occurrences in normative SQL",
+          "observed": 0,
+          "expected": 0,
+          "pass": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "ER-04",
+      "subject": "meaning of authority.baselineCommit",
+      "amendedClauses": [
+        "V1.1 §23.4 authority row (meaning of baselineCommit)"
+      ],
+      "s01Reading": {
+        "governedBy": "BC-1…BC-6",
+        "baselineCommit": null,
+        "determinedAt": "LC-1, by BC-2 (verified at LC-3)",
+        "chosenOrHardCodedByS01": false
+      },
+      "evidence": [
+        {
+          "check": "Erratum 01 defines BC-1 exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 defines BC-2 exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 defines BC-3 exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 defines BC-4 exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 defines BC-5 exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 defines BC-6 exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "V1.1 names baselineCommit exactly once",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "BC-6: no baseline commit is hard-coded",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "ER-05",
+      "subject": "MA-6 / selector rotation / Gate-2 lifecycle",
+      "amendedClauses": [
+        "V1.1 §24.2 MA-6",
+        "lifecycle event names for V1.1 §23.7 and §24.2"
+      ],
+      "s01Reading": {
+        "lifecycleEvents": [
+          {
+            "id": "LC-1",
+            "name": "IMPLEMENTATION CANDIDATE COMPLETION"
+          },
+          {
+            "id": "LC-2",
+            "name": "PRE-PUBLICATION TECHNICAL VERIFICATION"
+          },
+          {
+            "id": "LC-3",
+            "name": "MANIFEST INDEPENDENT REVIEW AND ACCEPTANCE"
+          },
+          {
+            "id": "LC-4",
+            "name": "MACHINE-READABLE AUTHORITY PUBLICATION"
+          },
+          {
+            "id": "LC-5",
+            "name": "PRIVILEGED SELECTOR ROTATION"
+          },
+          {
+            "id": "LC-6",
+            "name": "POST-ROTATION MA VERIFICATION"
+          },
+          {
+            "id": "LC-7",
+            "name": "GATE-2 M7 IMPLEMENTATION / RUNTIME ACCEPTANCE"
+          }
+        ],
+        "ma6Reading": "selector rotation (LC-5) only after manifest independent review and acceptance (LC-3) and independent review of the publishing authority-baseline commit (LC-4); rotation neither requires nor implies Gate-2 acceptance (LC-7), which it precedes",
+        "lifecycleEventsExecutedByS01": []
+      },
+      "evidence": [
+        {
+          "check": "Erratum 01 §9.0 LC table rows",
+          "observed": [
+            [
+              "LC-1",
+              "IMPLEMENTATION CANDIDATE COMPLETION"
+            ],
+            [
+              "LC-2",
+              "PRE-PUBLICATION TECHNICAL VERIFICATION"
+            ],
+            [
+              "LC-3",
+              "MANIFEST INDEPENDENT REVIEW AND ACCEPTANCE"
+            ],
+            [
+              "LC-4",
+              "MACHINE-READABLE AUTHORITY PUBLICATION"
+            ],
+            [
+              "LC-5",
+              "PRIVILEGED SELECTOR ROTATION"
+            ],
+            [
+              "LC-6",
+              "POST-ROTATION MA VERIFICATION"
+            ],
+            [
+              "LC-7",
+              "GATE-2 M7 IMPLEMENTATION / RUNTIME ACCEPTANCE"
+            ]
+          ],
+          "expected": [
+            [
+              "LC-1",
+              "IMPLEMENTATION CANDIDATE COMPLETION"
+            ],
+            [
+              "LC-2",
+              "PRE-PUBLICATION TECHNICAL VERIFICATION"
+            ],
+            [
+              "LC-3",
+              "MANIFEST INDEPENDENT REVIEW AND ACCEPTANCE"
+            ],
+            [
+              "LC-4",
+              "MACHINE-READABLE AUTHORITY PUBLICATION"
+            ],
+            [
+              "LC-5",
+              "PRIVILEGED SELECTOR ROTATION"
+            ],
+            [
+              "LC-6",
+              "POST-ROTATION MA VERIFICATION"
+            ],
+            [
+              "LC-7",
+              "GATE-2 M7 IMPLEMENTATION / RUNTIME ACCEPTANCE"
+            ]
+          ],
+          "pass": true
+        },
+        {
+          "check": "V1.1 §24.2 carries the ambiguous MA-6 (Before)",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 MA-6 After: LC-5 only after LC-3",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Erratum 01 MA-6 After: rotation precedes Gate 2 (LC-7)",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        }
+      ],
+      "pass": true
+    }
+  ],
+  "allPass": true
+}
