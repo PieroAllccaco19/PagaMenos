@@ -577,7 +577,7 @@ BEGIN
     -- the staging key prefix belongs to THIS backend (the CHECK pins only the row-local shape)
     IF NOT pg_catalog.starts_with(NEW."stagingObjectKey", v_be."stagingPrefix")
        OR NEW."stagingObjectKey" <> v_be."stagingPrefix" || NEW."id"::text || '/'
-            || pg_catalog.substring(NEW."stagingObjectKey" FROM '[0-9a-f]{32}$') THEN
+            || pg_catalog.substring(NEW."stagingObjectKey", '[0-9a-f]{32}$') THEN
         RAISE EXCEPTION 'M7_COHERENCE: staging key does not belong to the bound backend prefix' USING ERRCODE = '23000';
     END IF;
     RETURN NEW;
@@ -628,7 +628,7 @@ BEGIN
     END IF;
     IF NOT pg_catalog.starts_with(NEW."canonicalObjectKey", v_be."evidencePrefix")
        OR NEW."canonicalObjectKey" <> v_be."evidencePrefix" || NEW."uploadIntentId"::text || '/g'
-            || NEW."leaseEpoch"::text || '/' || pg_catalog.substring(NEW."canonicalObjectKey" FROM '[0-9a-f]{32}$') THEN
+            || NEW."leaseEpoch"::text || '/' || pg_catalog.substring(NEW."canonicalObjectKey", '[0-9a-f]{32}$') THEN
         RAISE EXCEPTION 'M7_COHERENCE: canonical key does not belong to the bound backend prefix' USING ERRCODE = '23000';
     END IF;
     RETURN NEW;
@@ -936,7 +936,7 @@ BEGIN
        OR NEW."uploadIntentId" IS DISTINCT FROM v_gr."uploadIntentId"                            -- (3)
        OR NEW."leaseEpoch" IS DISTINCT FROM v_gr."leaseEpoch"                                    -- (3)
        OR NEW."envelopeSha256" IS DISTINCT FROM m7.i_capability_envelope_digest(v_gr)
-       OR NEW."mintSeq" IS DISTINCT FROM pg_catalog.coalesce(v_prev, 0) + 1
+       OR NEW."mintSeq" IS DISTINCT FROM COALESCE(v_prev, 0) + 1
        OR v_i."state" IS DISTINCT FROM 'PROCESSING'
        OR v_i."leaseEpoch" IS DISTINCT FROM v_gr."leaseEpoch"
        OR v_be."retiredAt" IS NOT NULL
