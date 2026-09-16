@@ -6,7 +6,7 @@ DECLARE r record;
 BEGIN
     FOR r IN
         SELECT p.oid::regprocedure AS fn,
-               CASE pg_catalog.substring(p.proname FROM 1 FOR 2)
+               CASE pg_catalog.substring(p.proname, 1, 2)
                     WHEN 'p_' THEN 'pagamenos_m7_participant_rt'
                     WHEN 's_' THEN 'pagamenos_m7_session_issuer_rt'
                     WHEN 'r_' THEN 'pagamenos_m7_privacy_request_rt'

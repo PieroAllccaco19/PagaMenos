@@ -70,7 +70,7 @@ BEGIN
     -- derived from the grant, so two mints of one grant are byte-identical in it (T-169) and a mint of a
     -- DIFFERENT envelope, generation or kind cannot be recorded: its tuple has no referent (23503).
     v_digest := m7.i_capability_envelope_digest(v_gr);
-    SELECT pg_catalog.coalesce(pg_catalog.max(mm."mintSeq"), 0) + 1 INTO v_seq
+    SELECT COALESCE(pg_catalog.max(mm."mintSeq"), 0) + 1 INTO v_seq
       FROM m7.m7_generation_capability_mint mm WHERE mm."grantId" = v_gr."id";
     -- P3. "mintedAt" is supplied for completeness only: t_capability_mint_coherence replaces it with the
     -- trigger's own clock, and m7_generation_capability_mint_expiry_ck then compares THAT instant.

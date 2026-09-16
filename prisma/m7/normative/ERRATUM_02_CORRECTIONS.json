@@ -1,0 +1,1630 @@
+{
+  "schema": "pagamenos.m7.s01.erratum-02-corrections.v1",
+  "status": [
+    "S01 EXTRACTION ARTIFACT — GENERATED; DO NOT EDIT BY HAND",
+    "NOT A MIGRATION; NOT INSTALLED INTO POSTGRESQL; NOT A CONTROL-PLANE MANIFEST",
+    "SATISFIES NO IMP-* OR MA-* ITEM; M7 GATE 2 NOT SATISFIED"
+  ],
+  "conformanceTarget": "M7 V1.1 + accepted Erratum 01 + accepted Erratum 02",
+  "source": {
+    "path": "PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_02.md",
+    "gitBlob": "a0e6fa6720f23ac08485ab7cb696ab9ba4b7e83f",
+    "sha256": "b7b3440ad04181356770f243a6e2870e004aba604d2a62afdefd5330c85c170f",
+    "bytes": 44295,
+    "lines": 515
+  },
+  "readingRule": "An Erratum 02 \"After\" text replaces exactly the \"Before\" substring on exactly the named V1.1 line, for that occurrence only (Erratum 02 §4; Register §14). Every other byte is read from the accepted V1.1 bytes read with Erratum 01.",
+  "correctionCount": 9,
+  "affectedFragments": [
+    "F09",
+    "F11",
+    "F17",
+    "F23",
+    "F26"
+  ],
+  "unaffectedFragments": [
+    "F01",
+    "F02",
+    "F03",
+    "F04",
+    "F05",
+    "F06",
+    "F07",
+    "F08",
+    "F10",
+    "F12",
+    "F13",
+    "F14",
+    "F15",
+    "F16",
+    "F18",
+    "F19",
+    "F20",
+    "F21",
+    "F22",
+    "F24",
+    "F25"
+  ],
+  "documentChecks": [
+    {
+      "check": "§6 correction ids (E02-01…E02-09, in order)",
+      "observed": [
+        "E02-01",
+        "E02-02",
+        "E02-03",
+        "E02-04",
+        "E02-05",
+        "E02-06",
+        "E02-07",
+        "E02-08",
+        "E02-09"
+      ],
+      "expected": [
+        "E02-01",
+        "E02-02",
+        "E02-03",
+        "E02-04",
+        "E02-05",
+        "E02-06",
+        "E02-07",
+        "E02-08",
+        "E02-09"
+      ],
+      "pass": true
+    },
+    {
+      "check": "§5.3 defect inventory ids (in order)",
+      "observed": [
+        "E02-01",
+        "E02-02",
+        "E02-03",
+        "E02-04",
+        "E02-05",
+        "E02-06",
+        "E02-07",
+        "E02-08",
+        "E02-09"
+      ],
+      "expected": [
+        "E02-01",
+        "E02-02",
+        "E02-03",
+        "E02-04",
+        "E02-05",
+        "E02-06",
+        "E02-07",
+        "E02-08",
+        "E02-09"
+      ],
+      "pass": true
+    },
+    {
+      "check": "§5.3 affected fragments == registry",
+      "observed": [
+        "F09",
+        "F11",
+        "F17",
+        "F23",
+        "F26"
+      ],
+      "expected": [
+        "F09",
+        "F11",
+        "F17",
+        "F23",
+        "F26"
+      ],
+      "pass": true
+    }
+  ],
+  "records": [
+    {
+      "id": "E02-01",
+      "fragment": "F09",
+      "clause": "19.10",
+      "specLine": 4494,
+      "fragmentLine": 580,
+      "enclosingObject": "m7.t_upload_intent_coherence()",
+      "subClass": "SX-P",
+      "beforeExpression": "pg_catalog.substring(NEW.\"stagingObjectKey\" FROM '[0-9a-f]{32}$')",
+      "afterExpression": "pg_catalog.substring(NEW.\"stagingObjectKey\", '[0-9a-f]{32}$')",
+      "beforeLine": "            || pg_catalog.substring(NEW.\"stagingObjectKey\" FROM '[0-9a-f]{32}$') THEN",
+      "afterLine": "            || pg_catalog.substring(NEW.\"stagingObjectKey\", '[0-9a-f]{32}$') THEN",
+      "beforeLineSha256": "e1037f04f0244089e6e78559fca34303a859bf0209b0ac11980a98b5f0515761",
+      "afterLineSha256": "b038e2cc511201b23c490c45d897ec881338a3525530ec7c495c8eca4cfbc07d",
+      "byteDelta": -4,
+      "evidence": [
+        {
+          "check": "§6 heading V1.1 line == registry",
+          "observed": 4494,
+          "expected": 4494,
+          "pass": true
+        },
+        {
+          "check": "§5.3 V1.1 line == registry",
+          "observed": 4494,
+          "expected": 4494,
+          "pass": true
+        },
+        {
+          "check": "§5.3 fragment == registry",
+          "observed": "F09",
+          "expected": "F09",
+          "pass": true
+        },
+        {
+          "check": "§6 clause == §5.3 clause == anchor clause",
+          "observed": [
+            "19.10",
+            "19.10"
+          ],
+          "expected": [
+            "19.10",
+            "19.10"
+          ],
+          "pass": true
+        },
+        {
+          "check": "V1.1 line lies inside the fragment body",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "§5.3 fragment line == V1.1 line − bodyFirstLine + 1",
+          "observed": 580,
+          "expected": 580,
+          "pass": true
+        },
+        {
+          "check": "§6 Before line == V1.1 line (byte-exact)",
+          "observed": "            || pg_catalog.substring(NEW.\"stagingObjectKey\" FROM '[0-9a-f]{32}$') THEN",
+          "expected": "            || pg_catalog.substring(NEW.\"stagingObjectKey\" FROM '[0-9a-f]{32}$') THEN",
+          "pass": true
+        },
+        {
+          "check": "Before line SHA-256 reproduces",
+          "observed": "e1037f04f0244089e6e78559fca34303a859bf0209b0ac11980a98b5f0515761",
+          "expected": "e1037f04f0244089e6e78559fca34303a859bf0209b0ac11980a98b5f0515761",
+          "pass": true
+        },
+        {
+          "check": "After line SHA-256 reproduces",
+          "observed": "b038e2cc511201b23c490c45d897ec881338a3525530ec7c495c8eca4cfbc07d",
+          "expected": "b038e2cc511201b23c490c45d897ec881338a3525530ec7c495c8eca4cfbc07d",
+          "pass": true
+        },
+        {
+          "check": "Before expression occurs exactly once on its line",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before expression occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "After line differs from Before line only inside the Before expression",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After expression differs from Before expression",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After expression == §5.3 ordinary-form equivalent",
+          "observed": "pg_catalog.substring(NEW.\"stagingObjectKey\", '[0-9a-f]{32}$')",
+          "expected": "pg_catalog.substring(NEW.\"stagingObjectKey\", '[0-9a-f]{32}$')",
+          "pass": true
+        },
+        {
+          "check": "line byte delta == len(After) − len(Before) == stated delta",
+          "observed": [
+            -4,
+            -4
+          ],
+          "expected": [
+            -4,
+            -4
+          ],
+          "pass": true
+        },
+        {
+          "check": "After line contains no line break",
+          "observed": false,
+          "expected": false,
+          "pass": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "E02-02",
+      "fragment": "F09",
+      "clause": "19.10",
+      "specLine": 4545,
+      "fragmentLine": 631,
+      "enclosingObject": "m7.t_generation_coherence()",
+      "subClass": "SX-P",
+      "beforeExpression": "pg_catalog.substring(NEW.\"canonicalObjectKey\" FROM '[0-9a-f]{32}$')",
+      "afterExpression": "pg_catalog.substring(NEW.\"canonicalObjectKey\", '[0-9a-f]{32}$')",
+      "beforeLine": "            || NEW.\"leaseEpoch\"::text || '/' || pg_catalog.substring(NEW.\"canonicalObjectKey\" FROM '[0-9a-f]{32}$') THEN",
+      "afterLine": "            || NEW.\"leaseEpoch\"::text || '/' || pg_catalog.substring(NEW.\"canonicalObjectKey\", '[0-9a-f]{32}$') THEN",
+      "beforeLineSha256": "6666a59d9ed70c1c797c44840ef4f792057802b252070a9952165e184ca49b7f",
+      "afterLineSha256": "0189b1d52ce080b577981eea5282a448f541e314fb2a6a40e7ccafe1efdd45d6",
+      "byteDelta": -4,
+      "evidence": [
+        {
+          "check": "§6 heading V1.1 line == registry",
+          "observed": 4545,
+          "expected": 4545,
+          "pass": true
+        },
+        {
+          "check": "§5.3 V1.1 line == registry",
+          "observed": 4545,
+          "expected": 4545,
+          "pass": true
+        },
+        {
+          "check": "§5.3 fragment == registry",
+          "observed": "F09",
+          "expected": "F09",
+          "pass": true
+        },
+        {
+          "check": "§6 clause == §5.3 clause == anchor clause",
+          "observed": [
+            "19.10",
+            "19.10"
+          ],
+          "expected": [
+            "19.10",
+            "19.10"
+          ],
+          "pass": true
+        },
+        {
+          "check": "V1.1 line lies inside the fragment body",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "§5.3 fragment line == V1.1 line − bodyFirstLine + 1",
+          "observed": 631,
+          "expected": 631,
+          "pass": true
+        },
+        {
+          "check": "§6 Before line == V1.1 line (byte-exact)",
+          "observed": "            || NEW.\"leaseEpoch\"::text || '/' || pg_catalog.substring(NEW.\"canonicalObjectKey\" FROM '[0-9a-f]{32}$') THEN",
+          "expected": "            || NEW.\"leaseEpoch\"::text || '/' || pg_catalog.substring(NEW.\"canonicalObjectKey\" FROM '[0-9a-f]{32}$') THEN",
+          "pass": true
+        },
+        {
+          "check": "Before line SHA-256 reproduces",
+          "observed": "6666a59d9ed70c1c797c44840ef4f792057802b252070a9952165e184ca49b7f",
+          "expected": "6666a59d9ed70c1c797c44840ef4f792057802b252070a9952165e184ca49b7f",
+          "pass": true
+        },
+        {
+          "check": "After line SHA-256 reproduces",
+          "observed": "0189b1d52ce080b577981eea5282a448f541e314fb2a6a40e7ccafe1efdd45d6",
+          "expected": "0189b1d52ce080b577981eea5282a448f541e314fb2a6a40e7ccafe1efdd45d6",
+          "pass": true
+        },
+        {
+          "check": "Before expression occurs exactly once on its line",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before expression occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "After line differs from Before line only inside the Before expression",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After expression differs from Before expression",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After expression == §5.3 ordinary-form equivalent",
+          "observed": "pg_catalog.substring(NEW.\"canonicalObjectKey\", '[0-9a-f]{32}$')",
+          "expected": "pg_catalog.substring(NEW.\"canonicalObjectKey\", '[0-9a-f]{32}$')",
+          "pass": true
+        },
+        {
+          "check": "line byte delta == len(After) − len(Before) == stated delta",
+          "observed": [
+            -4,
+            -4
+          ],
+          "expected": [
+            -4,
+            -4
+          ],
+          "pass": true
+        },
+        {
+          "check": "After line contains no line break",
+          "observed": false,
+          "expected": false,
+          "pass": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "E02-03",
+      "fragment": "F09",
+      "clause": "19.10",
+      "specLine": 4853,
+      "fragmentLine": 939,
+      "enclosingObject": "m7.t_capability_mint_coherence()",
+      "subClass": "SX-R",
+      "beforeExpression": "pg_catalog.coalesce(v_prev, 0)",
+      "afterExpression": "COALESCE(v_prev, 0)",
+      "beforeLine": "       OR NEW.\"mintSeq\" IS DISTINCT FROM pg_catalog.coalesce(v_prev, 0) + 1",
+      "afterLine": "       OR NEW.\"mintSeq\" IS DISTINCT FROM COALESCE(v_prev, 0) + 1",
+      "beforeLineSha256": "798f622595ef184c28cb6053856e7cc0281db22a141378b111707bd4dcd8cb2d",
+      "afterLineSha256": "e164c507edd7c9549ca548e787b3373330f1a88ed5449f4a59a79f7d15e65597",
+      "byteDelta": -11,
+      "evidence": [
+        {
+          "check": "§6 heading V1.1 line == registry",
+          "observed": 4853,
+          "expected": 4853,
+          "pass": true
+        },
+        {
+          "check": "§5.3 V1.1 line == registry",
+          "observed": 4853,
+          "expected": 4853,
+          "pass": true
+        },
+        {
+          "check": "§5.3 fragment == registry",
+          "observed": "F09",
+          "expected": "F09",
+          "pass": true
+        },
+        {
+          "check": "§6 clause == §5.3 clause == anchor clause",
+          "observed": [
+            "19.10",
+            "19.10"
+          ],
+          "expected": [
+            "19.10",
+            "19.10"
+          ],
+          "pass": true
+        },
+        {
+          "check": "V1.1 line lies inside the fragment body",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "§5.3 fragment line == V1.1 line − bodyFirstLine + 1",
+          "observed": 939,
+          "expected": 939,
+          "pass": true
+        },
+        {
+          "check": "§6 Before line == V1.1 line (byte-exact)",
+          "observed": "       OR NEW.\"mintSeq\" IS DISTINCT FROM pg_catalog.coalesce(v_prev, 0) + 1",
+          "expected": "       OR NEW.\"mintSeq\" IS DISTINCT FROM pg_catalog.coalesce(v_prev, 0) + 1",
+          "pass": true
+        },
+        {
+          "check": "Before line SHA-256 reproduces",
+          "observed": "798f622595ef184c28cb6053856e7cc0281db22a141378b111707bd4dcd8cb2d",
+          "expected": "798f622595ef184c28cb6053856e7cc0281db22a141378b111707bd4dcd8cb2d",
+          "pass": true
+        },
+        {
+          "check": "After line SHA-256 reproduces",
+          "observed": "e164c507edd7c9549ca548e787b3373330f1a88ed5449f4a59a79f7d15e65597",
+          "expected": "e164c507edd7c9549ca548e787b3373330f1a88ed5449f4a59a79f7d15e65597",
+          "pass": true
+        },
+        {
+          "check": "Before expression occurs exactly once on its line",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before expression occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "After line differs from Before line only inside the Before expression",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After expression differs from Before expression",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After expression == §5.3 ordinary-form equivalent",
+          "observed": "COALESCE(v_prev, 0)",
+          "expected": "COALESCE(v_prev, 0)",
+          "pass": true
+        },
+        {
+          "check": "line byte delta == len(After) − len(Before) == stated delta",
+          "observed": [
+            -11,
+            -11
+          ],
+          "expected": [
+            -11,
+            -11
+          ],
+          "pass": true
+        },
+        {
+          "check": "After line contains no line break",
+          "observed": false,
+          "expected": false,
+          "pass": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "E02-04",
+      "fragment": "F11",
+      "clause": "19.11.1",
+      "specLine": 5442,
+      "fragmentLine": 231,
+      "enclosingObject": "m7.i_backend_digest(…)",
+      "subClass": "SX-P",
+      "beforeExpression": "pg_catalog.extract(epoch FROM p_write_completion_window)",
+      "afterExpression": "pg_catalog.extract('epoch', p_write_completion_window)",
+      "beforeLine": "        pg_catalog.extract(epoch FROM p_write_completion_window)::text));",
+      "afterLine": "        pg_catalog.extract('epoch', p_write_completion_window)::text));",
+      "beforeLineSha256": "dd796632286e7ed28fa9921c2ba1b7dfe3124c60ac0369db943e1856ca98844d",
+      "afterLineSha256": "1d833fd9b839119219fa4f370d5f2524cfc31d349f31d98576956a484db7e559",
+      "byteDelta": -2,
+      "evidence": [
+        {
+          "check": "§6 heading V1.1 line == registry",
+          "observed": 5442,
+          "expected": 5442,
+          "pass": true
+        },
+        {
+          "check": "§5.3 V1.1 line == registry",
+          "observed": 5442,
+          "expected": 5442,
+          "pass": true
+        },
+        {
+          "check": "§5.3 fragment == registry",
+          "observed": "F11",
+          "expected": "F11",
+          "pass": true
+        },
+        {
+          "check": "§6 clause == §5.3 clause == anchor clause",
+          "observed": [
+            "19.11.1",
+            "19.11.1"
+          ],
+          "expected": [
+            "19.11.1",
+            "19.11.1"
+          ],
+          "pass": true
+        },
+        {
+          "check": "V1.1 line lies inside the fragment body",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "§5.3 fragment line == V1.1 line − bodyFirstLine + 1",
+          "observed": 231,
+          "expected": 231,
+          "pass": true
+        },
+        {
+          "check": "§6 Before line == V1.1 line (byte-exact)",
+          "observed": "        pg_catalog.extract(epoch FROM p_write_completion_window)::text));",
+          "expected": "        pg_catalog.extract(epoch FROM p_write_completion_window)::text));",
+          "pass": true
+        },
+        {
+          "check": "Before line SHA-256 reproduces",
+          "observed": "dd796632286e7ed28fa9921c2ba1b7dfe3124c60ac0369db943e1856ca98844d",
+          "expected": "dd796632286e7ed28fa9921c2ba1b7dfe3124c60ac0369db943e1856ca98844d",
+          "pass": true
+        },
+        {
+          "check": "After line SHA-256 reproduces",
+          "observed": "1d833fd9b839119219fa4f370d5f2524cfc31d349f31d98576956a484db7e559",
+          "expected": "1d833fd9b839119219fa4f370d5f2524cfc31d349f31d98576956a484db7e559",
+          "pass": true
+        },
+        {
+          "check": "Before expression occurs exactly once on its line",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before expression occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "After line differs from Before line only inside the Before expression",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After expression differs from Before expression",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After expression == §5.3 ordinary-form equivalent",
+          "observed": "pg_catalog.extract('epoch', p_write_completion_window)",
+          "expected": "pg_catalog.extract('epoch', p_write_completion_window)",
+          "pass": true
+        },
+        {
+          "check": "line byte delta == len(After) − len(Before) == stated delta",
+          "observed": [
+            -2,
+            -2
+          ],
+          "expected": [
+            -2,
+            -2
+          ],
+          "pass": true
+        },
+        {
+          "check": "After line contains no line break",
+          "observed": false,
+          "expected": false,
+          "pass": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "E02-05",
+      "fragment": "F17",
+      "clause": "19.11.7",
+      "specLine": 6912,
+      "fragmentLine": 73,
+      "enclosingObject": "m7.x_mint_generation_capability_v1(…)",
+      "subClass": "SX-R",
+      "beforeExpression": "pg_catalog.coalesce(pg_catalog.max(mm.\"mintSeq\"), 0)",
+      "afterExpression": "COALESCE(pg_catalog.max(mm.\"mintSeq\"), 0)",
+      "beforeLine": "    SELECT pg_catalog.coalesce(pg_catalog.max(mm.\"mintSeq\"), 0) + 1 INTO v_seq",
+      "afterLine": "    SELECT COALESCE(pg_catalog.max(mm.\"mintSeq\"), 0) + 1 INTO v_seq",
+      "beforeLineSha256": "fcd0e533ee4834f8b6e330b21ef5165231b20e942afdd27830a368451cfb3b66",
+      "afterLineSha256": "8322b14049da0e6a0d1d51f9a5cdcaf55d3a8c45b8aafba463b58e525bd6f0e2",
+      "byteDelta": -11,
+      "evidence": [
+        {
+          "check": "§6 heading V1.1 line == registry",
+          "observed": 6912,
+          "expected": 6912,
+          "pass": true
+        },
+        {
+          "check": "§5.3 V1.1 line == registry",
+          "observed": 6912,
+          "expected": 6912,
+          "pass": true
+        },
+        {
+          "check": "§5.3 fragment == registry",
+          "observed": "F17",
+          "expected": "F17",
+          "pass": true
+        },
+        {
+          "check": "§6 clause == §5.3 clause == anchor clause",
+          "observed": [
+            "19.11.7",
+            "19.11.7"
+          ],
+          "expected": [
+            "19.11.7",
+            "19.11.7"
+          ],
+          "pass": true
+        },
+        {
+          "check": "V1.1 line lies inside the fragment body",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "§5.3 fragment line == V1.1 line − bodyFirstLine + 1",
+          "observed": 73,
+          "expected": 73,
+          "pass": true
+        },
+        {
+          "check": "§6 Before line == V1.1 line (byte-exact)",
+          "observed": "    SELECT pg_catalog.coalesce(pg_catalog.max(mm.\"mintSeq\"), 0) + 1 INTO v_seq",
+          "expected": "    SELECT pg_catalog.coalesce(pg_catalog.max(mm.\"mintSeq\"), 0) + 1 INTO v_seq",
+          "pass": true
+        },
+        {
+          "check": "Before line SHA-256 reproduces",
+          "observed": "fcd0e533ee4834f8b6e330b21ef5165231b20e942afdd27830a368451cfb3b66",
+          "expected": "fcd0e533ee4834f8b6e330b21ef5165231b20e942afdd27830a368451cfb3b66",
+          "pass": true
+        },
+        {
+          "check": "After line SHA-256 reproduces",
+          "observed": "8322b14049da0e6a0d1d51f9a5cdcaf55d3a8c45b8aafba463b58e525bd6f0e2",
+          "expected": "8322b14049da0e6a0d1d51f9a5cdcaf55d3a8c45b8aafba463b58e525bd6f0e2",
+          "pass": true
+        },
+        {
+          "check": "Before expression occurs exactly once on its line",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before expression occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "After line differs from Before line only inside the Before expression",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After expression differs from Before expression",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After expression == §5.3 ordinary-form equivalent",
+          "observed": "COALESCE(pg_catalog.max(mm.\"mintSeq\"), 0)",
+          "expected": "COALESCE(pg_catalog.max(mm.\"mintSeq\"), 0)",
+          "pass": true
+        },
+        {
+          "check": "line byte delta == len(After) − len(Before) == stated delta",
+          "observed": [
+            -11,
+            -11
+          ],
+          "expected": [
+            -11,
+            -11
+          ],
+          "pass": true
+        },
+        {
+          "check": "After line contains no line break",
+          "observed": false,
+          "expected": false,
+          "pass": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "E02-06",
+      "fragment": "F23",
+      "clause": "19.12.6",
+      "specLine": 8219,
+      "fragmentLine": 53,
+      "enclosingObject": "m7.w_classify_object_key_v1(…)",
+      "subClass": "SX-P",
+      "beforeExpression": "pg_catalog.substring(p_object_key FROM '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/[0-9a-f]{32}$')",
+      "afterExpression": "pg_catalog.substring(p_object_key, '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/[0-9a-f]{32}$')",
+      "beforeLine": "        v_id_text := pg_catalog.substring(p_object_key FROM '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/[0-9a-f]{32}$');",
+      "afterLine": "        v_id_text := pg_catalog.substring(p_object_key, '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/[0-9a-f]{32}$');",
+      "beforeLineSha256": "2437f739f6b6bb38a09b33f0da436ba320be651e2a4d49cdb5f13f40ef427a05",
+      "afterLineSha256": "0b5ba36209e53495aaf43d537a4485b892762428a851635c959de9a854fa838f",
+      "byteDelta": -4,
+      "evidence": [
+        {
+          "check": "§6 heading V1.1 line == registry",
+          "observed": 8219,
+          "expected": 8219,
+          "pass": true
+        },
+        {
+          "check": "§5.3 V1.1 line == registry",
+          "observed": 8219,
+          "expected": 8219,
+          "pass": true
+        },
+        {
+          "check": "§5.3 fragment == registry",
+          "observed": "F23",
+          "expected": "F23",
+          "pass": true
+        },
+        {
+          "check": "§6 clause == §5.3 clause == anchor clause",
+          "observed": [
+            "19.12.6",
+            "19.12.6"
+          ],
+          "expected": [
+            "19.12.6",
+            "19.12.6"
+          ],
+          "pass": true
+        },
+        {
+          "check": "V1.1 line lies inside the fragment body",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "§5.3 fragment line == V1.1 line − bodyFirstLine + 1",
+          "observed": 53,
+          "expected": 53,
+          "pass": true
+        },
+        {
+          "check": "§6 Before line == V1.1 line (byte-exact)",
+          "observed": "        v_id_text := pg_catalog.substring(p_object_key FROM '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/[0-9a-f]{32}$');",
+          "expected": "        v_id_text := pg_catalog.substring(p_object_key FROM '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/[0-9a-f]{32}$');",
+          "pass": true
+        },
+        {
+          "check": "Before line SHA-256 reproduces",
+          "observed": "2437f739f6b6bb38a09b33f0da436ba320be651e2a4d49cdb5f13f40ef427a05",
+          "expected": "2437f739f6b6bb38a09b33f0da436ba320be651e2a4d49cdb5f13f40ef427a05",
+          "pass": true
+        },
+        {
+          "check": "After line SHA-256 reproduces",
+          "observed": "0b5ba36209e53495aaf43d537a4485b892762428a851635c959de9a854fa838f",
+          "expected": "0b5ba36209e53495aaf43d537a4485b892762428a851635c959de9a854fa838f",
+          "pass": true
+        },
+        {
+          "check": "Before expression occurs exactly once on its line",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before expression occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "After line differs from Before line only inside the Before expression",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After expression differs from Before expression",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After expression == §5.3 ordinary-form equivalent",
+          "observed": "pg_catalog.substring(p_object_key, '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/[0-9a-f]{32}$')",
+          "expected": "pg_catalog.substring(p_object_key, '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/[0-9a-f]{32}$')",
+          "pass": true
+        },
+        {
+          "check": "line byte delta == len(After) − len(Before) == stated delta",
+          "observed": [
+            -4,
+            -4
+          ],
+          "expected": [
+            -4,
+            -4
+          ],
+          "pass": true
+        },
+        {
+          "check": "After line contains no line break",
+          "observed": false,
+          "expected": false,
+          "pass": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "E02-07",
+      "fragment": "F23",
+      "clause": "19.12.6",
+      "specLine": 8221,
+      "fragmentLine": 55,
+      "enclosingObject": "m7.w_classify_object_key_v1(…)",
+      "subClass": "SX-P",
+      "beforeExpression": "pg_catalog.substring(p_object_key FROM '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/g[0-9]+/[0-9a-f]{32}$')",
+      "afterExpression": "pg_catalog.substring(p_object_key, '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/g[0-9]+/[0-9a-f]{32}$')",
+      "beforeLine": "        v_id_text    := pg_catalog.substring(p_object_key FROM '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/g[0-9]+/[0-9a-f]{32}$');",
+      "afterLine": "        v_id_text    := pg_catalog.substring(p_object_key, '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/g[0-9]+/[0-9a-f]{32}$');",
+      "beforeLineSha256": "672f7cc4b986c74123542d048e0059831fc9289cae9f69bf054cfa0a8be2b8f6",
+      "afterLineSha256": "4a7361ed06a1e48634fb3f525da295cfa1756285d19eb03aca852237718a8309",
+      "byteDelta": -4,
+      "evidence": [
+        {
+          "check": "§6 heading V1.1 line == registry",
+          "observed": 8221,
+          "expected": 8221,
+          "pass": true
+        },
+        {
+          "check": "§5.3 V1.1 line == registry",
+          "observed": 8221,
+          "expected": 8221,
+          "pass": true
+        },
+        {
+          "check": "§5.3 fragment == registry",
+          "observed": "F23",
+          "expected": "F23",
+          "pass": true
+        },
+        {
+          "check": "§6 clause == §5.3 clause == anchor clause",
+          "observed": [
+            "19.12.6",
+            "19.12.6"
+          ],
+          "expected": [
+            "19.12.6",
+            "19.12.6"
+          ],
+          "pass": true
+        },
+        {
+          "check": "V1.1 line lies inside the fragment body",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "§5.3 fragment line == V1.1 line − bodyFirstLine + 1",
+          "observed": 55,
+          "expected": 55,
+          "pass": true
+        },
+        {
+          "check": "§6 Before line == V1.1 line (byte-exact)",
+          "observed": "        v_id_text    := pg_catalog.substring(p_object_key FROM '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/g[0-9]+/[0-9a-f]{32}$');",
+          "expected": "        v_id_text    := pg_catalog.substring(p_object_key FROM '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/g[0-9]+/[0-9a-f]{32}$');",
+          "pass": true
+        },
+        {
+          "check": "Before line SHA-256 reproduces",
+          "observed": "672f7cc4b986c74123542d048e0059831fc9289cae9f69bf054cfa0a8be2b8f6",
+          "expected": "672f7cc4b986c74123542d048e0059831fc9289cae9f69bf054cfa0a8be2b8f6",
+          "pass": true
+        },
+        {
+          "check": "After line SHA-256 reproduces",
+          "observed": "4a7361ed06a1e48634fb3f525da295cfa1756285d19eb03aca852237718a8309",
+          "expected": "4a7361ed06a1e48634fb3f525da295cfa1756285d19eb03aca852237718a8309",
+          "pass": true
+        },
+        {
+          "check": "Before expression occurs exactly once on its line",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before expression occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "After line differs from Before line only inside the Before expression",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After expression differs from Before expression",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After expression == §5.3 ordinary-form equivalent",
+          "observed": "pg_catalog.substring(p_object_key, '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/g[0-9]+/[0-9a-f]{32}$')",
+          "expected": "pg_catalog.substring(p_object_key, '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/g[0-9]+/[0-9a-f]{32}$')",
+          "pass": true
+        },
+        {
+          "check": "line byte delta == len(After) − len(Before) == stated delta",
+          "observed": [
+            -4,
+            -4
+          ],
+          "expected": [
+            -4,
+            -4
+          ],
+          "pass": true
+        },
+        {
+          "check": "After line contains no line break",
+          "observed": false,
+          "expected": false,
+          "pass": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "E02-08",
+      "fragment": "F23",
+      "clause": "19.12.6",
+      "specLine": 8222,
+      "fragmentLine": 56,
+      "enclosingObject": "m7.w_classify_object_key_v1(…)",
+      "subClass": "SX-P",
+      "beforeExpression": "pg_catalog.substring(p_object_key FROM '/g([0-9]+)/[0-9a-f]{32}$')",
+      "afterExpression": "pg_catalog.substring(p_object_key, '/g([0-9]+)/[0-9a-f]{32}$')",
+      "beforeLine": "        v_epoch_text := pg_catalog.substring(p_object_key FROM '/g([0-9]+)/[0-9a-f]{32}$');",
+      "afterLine": "        v_epoch_text := pg_catalog.substring(p_object_key, '/g([0-9]+)/[0-9a-f]{32}$');",
+      "beforeLineSha256": "ffc93115a621fa3cd697ce5ed07b585dd6c42b58679d364e1c9252b2c3b78275",
+      "afterLineSha256": "4d02a69ae295f224ae94fb640891af3f1325b9583b2951e0f0f69bf91e4d0cb9",
+      "byteDelta": -4,
+      "evidence": [
+        {
+          "check": "§6 heading V1.1 line == registry",
+          "observed": 8222,
+          "expected": 8222,
+          "pass": true
+        },
+        {
+          "check": "§5.3 V1.1 line == registry",
+          "observed": 8222,
+          "expected": 8222,
+          "pass": true
+        },
+        {
+          "check": "§5.3 fragment == registry",
+          "observed": "F23",
+          "expected": "F23",
+          "pass": true
+        },
+        {
+          "check": "§6 clause == §5.3 clause == anchor clause",
+          "observed": [
+            "19.12.6",
+            "19.12.6"
+          ],
+          "expected": [
+            "19.12.6",
+            "19.12.6"
+          ],
+          "pass": true
+        },
+        {
+          "check": "V1.1 line lies inside the fragment body",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "§5.3 fragment line == V1.1 line − bodyFirstLine + 1",
+          "observed": 56,
+          "expected": 56,
+          "pass": true
+        },
+        {
+          "check": "§6 Before line == V1.1 line (byte-exact)",
+          "observed": "        v_epoch_text := pg_catalog.substring(p_object_key FROM '/g([0-9]+)/[0-9a-f]{32}$');",
+          "expected": "        v_epoch_text := pg_catalog.substring(p_object_key FROM '/g([0-9]+)/[0-9a-f]{32}$');",
+          "pass": true
+        },
+        {
+          "check": "Before line SHA-256 reproduces",
+          "observed": "ffc93115a621fa3cd697ce5ed07b585dd6c42b58679d364e1c9252b2c3b78275",
+          "expected": "ffc93115a621fa3cd697ce5ed07b585dd6c42b58679d364e1c9252b2c3b78275",
+          "pass": true
+        },
+        {
+          "check": "After line SHA-256 reproduces",
+          "observed": "4d02a69ae295f224ae94fb640891af3f1325b9583b2951e0f0f69bf91e4d0cb9",
+          "expected": "4d02a69ae295f224ae94fb640891af3f1325b9583b2951e0f0f69bf91e4d0cb9",
+          "pass": true
+        },
+        {
+          "check": "Before expression occurs exactly once on its line",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before expression occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "After line differs from Before line only inside the Before expression",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After expression differs from Before expression",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After expression == §5.3 ordinary-form equivalent",
+          "observed": "pg_catalog.substring(p_object_key, '/g([0-9]+)/[0-9a-f]{32}$')",
+          "expected": "pg_catalog.substring(p_object_key, '/g([0-9]+)/[0-9a-f]{32}$')",
+          "pass": true
+        },
+        {
+          "check": "line byte delta == len(After) − len(Before) == stated delta",
+          "observed": [
+            -4,
+            -4
+          ],
+          "expected": [
+            -4,
+            -4
+          ],
+          "pass": true
+        },
+        {
+          "check": "After line contains no line break",
+          "observed": false,
+          "expected": false,
+          "pass": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "E02-09",
+      "fragment": "F26",
+      "clause": "19.13.4",
+      "specLine": 8826,
+      "fragmentLine": 9,
+      "enclosingObject": "DO $grants$ block",
+      "subClass": "SX-P",
+      "beforeExpression": "pg_catalog.substring(p.proname FROM 1 FOR 2)",
+      "afterExpression": "pg_catalog.substring(p.proname, 1, 2)",
+      "beforeLine": "               CASE pg_catalog.substring(p.proname FROM 1 FOR 2)",
+      "afterLine": "               CASE pg_catalog.substring(p.proname, 1, 2)",
+      "beforeLineSha256": "ad96b7bfcf53565b15f6cc30c95a0042a1311cf023579f3a7a248432b8c9f48f",
+      "afterLineSha256": "de7f3f4cff35d294aa30467d47b13f19472505264456d9eaececf7253b9e4ac2",
+      "byteDelta": -7,
+      "evidence": [
+        {
+          "check": "§6 heading V1.1 line == registry",
+          "observed": 8826,
+          "expected": 8826,
+          "pass": true
+        },
+        {
+          "check": "§5.3 V1.1 line == registry",
+          "observed": 8826,
+          "expected": 8826,
+          "pass": true
+        },
+        {
+          "check": "§5.3 fragment == registry",
+          "observed": "F26",
+          "expected": "F26",
+          "pass": true
+        },
+        {
+          "check": "§6 clause == §5.3 clause == anchor clause",
+          "observed": [
+            "19.13.4",
+            "19.13.4"
+          ],
+          "expected": [
+            "19.13.4",
+            "19.13.4"
+          ],
+          "pass": true
+        },
+        {
+          "check": "V1.1 line lies inside the fragment body",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "§5.3 fragment line == V1.1 line − bodyFirstLine + 1",
+          "observed": 9,
+          "expected": 9,
+          "pass": true
+        },
+        {
+          "check": "§6 Before line == V1.1 line (byte-exact)",
+          "observed": "               CASE pg_catalog.substring(p.proname FROM 1 FOR 2)",
+          "expected": "               CASE pg_catalog.substring(p.proname FROM 1 FOR 2)",
+          "pass": true
+        },
+        {
+          "check": "Before line SHA-256 reproduces",
+          "observed": "ad96b7bfcf53565b15f6cc30c95a0042a1311cf023579f3a7a248432b8c9f48f",
+          "expected": "ad96b7bfcf53565b15f6cc30c95a0042a1311cf023579f3a7a248432b8c9f48f",
+          "pass": true
+        },
+        {
+          "check": "After line SHA-256 reproduces",
+          "observed": "de7f3f4cff35d294aa30467d47b13f19472505264456d9eaececf7253b9e4ac2",
+          "expected": "de7f3f4cff35d294aa30467d47b13f19472505264456d9eaececf7253b9e4ac2",
+          "pass": true
+        },
+        {
+          "check": "Before expression occurs exactly once on its line",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before expression occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "After line differs from Before line only inside the Before expression",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After expression differs from Before expression",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After expression == §5.3 ordinary-form equivalent",
+          "observed": "pg_catalog.substring(p.proname, 1, 2)",
+          "expected": "pg_catalog.substring(p.proname, 1, 2)",
+          "pass": true
+        },
+        {
+          "check": "line byte delta == len(After) − len(Before) == stated delta",
+          "observed": [
+            -7,
+            -7
+          ],
+          "expected": [
+            -7,
+            -7
+          ],
+          "pass": true
+        },
+        {
+          "check": "After line contains no line break",
+          "observed": false,
+          "expected": false,
+          "pass": true
+        }
+      ],
+      "pass": true
+    }
+  ],
+  "postconditions": [
+    {
+      "check": "E02-01: effective F09 line 580 == After line",
+      "observed": "            || pg_catalog.substring(NEW.\"stagingObjectKey\", '[0-9a-f]{32}$') THEN",
+      "expected": "            || pg_catalog.substring(NEW.\"stagingObjectKey\", '[0-9a-f]{32}$') THEN",
+      "pass": true
+    },
+    {
+      "check": "E02-01: stale Before expression occurrences in effective fragments",
+      "observed": 0,
+      "expected": 0,
+      "pass": true
+    },
+    {
+      "check": "E02-01: After expression occurrences on its effective line",
+      "observed": 1,
+      "expected": 1,
+      "pass": true
+    },
+    {
+      "check": "E02-02: effective F09 line 631 == After line",
+      "observed": "            || NEW.\"leaseEpoch\"::text || '/' || pg_catalog.substring(NEW.\"canonicalObjectKey\", '[0-9a-f]{32}$') THEN",
+      "expected": "            || NEW.\"leaseEpoch\"::text || '/' || pg_catalog.substring(NEW.\"canonicalObjectKey\", '[0-9a-f]{32}$') THEN",
+      "pass": true
+    },
+    {
+      "check": "E02-02: stale Before expression occurrences in effective fragments",
+      "observed": 0,
+      "expected": 0,
+      "pass": true
+    },
+    {
+      "check": "E02-02: After expression occurrences on its effective line",
+      "observed": 1,
+      "expected": 1,
+      "pass": true
+    },
+    {
+      "check": "E02-03: effective F09 line 939 == After line",
+      "observed": "       OR NEW.\"mintSeq\" IS DISTINCT FROM COALESCE(v_prev, 0) + 1",
+      "expected": "       OR NEW.\"mintSeq\" IS DISTINCT FROM COALESCE(v_prev, 0) + 1",
+      "pass": true
+    },
+    {
+      "check": "E02-03: stale Before expression occurrences in effective fragments",
+      "observed": 0,
+      "expected": 0,
+      "pass": true
+    },
+    {
+      "check": "E02-03: After expression occurrences on its effective line",
+      "observed": 1,
+      "expected": 1,
+      "pass": true
+    },
+    {
+      "check": "E02-04: effective F11 line 231 == After line",
+      "observed": "        pg_catalog.extract('epoch', p_write_completion_window)::text));",
+      "expected": "        pg_catalog.extract('epoch', p_write_completion_window)::text));",
+      "pass": true
+    },
+    {
+      "check": "E02-04: stale Before expression occurrences in effective fragments",
+      "observed": 0,
+      "expected": 0,
+      "pass": true
+    },
+    {
+      "check": "E02-04: After expression occurrences on its effective line",
+      "observed": 1,
+      "expected": 1,
+      "pass": true
+    },
+    {
+      "check": "E02-05: effective F17 line 73 == After line",
+      "observed": "    SELECT COALESCE(pg_catalog.max(mm.\"mintSeq\"), 0) + 1 INTO v_seq",
+      "expected": "    SELECT COALESCE(pg_catalog.max(mm.\"mintSeq\"), 0) + 1 INTO v_seq",
+      "pass": true
+    },
+    {
+      "check": "E02-05: stale Before expression occurrences in effective fragments",
+      "observed": 0,
+      "expected": 0,
+      "pass": true
+    },
+    {
+      "check": "E02-05: After expression occurrences on its effective line",
+      "observed": 1,
+      "expected": 1,
+      "pass": true
+    },
+    {
+      "check": "E02-06: effective F23 line 53 == After line",
+      "observed": "        v_id_text := pg_catalog.substring(p_object_key, '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/[0-9a-f]{32}$');",
+      "expected": "        v_id_text := pg_catalog.substring(p_object_key, '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/[0-9a-f]{32}$');",
+      "pass": true
+    },
+    {
+      "check": "E02-06: stale Before expression occurrences in effective fragments",
+      "observed": 0,
+      "expected": 0,
+      "pass": true
+    },
+    {
+      "check": "E02-06: After expression occurrences on its effective line",
+      "observed": 1,
+      "expected": 1,
+      "pass": true
+    },
+    {
+      "check": "E02-07: effective F23 line 55 == After line",
+      "observed": "        v_id_text    := pg_catalog.substring(p_object_key, '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/g[0-9]+/[0-9a-f]{32}$');",
+      "expected": "        v_id_text    := pg_catalog.substring(p_object_key, '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/g[0-9]+/[0-9a-f]{32}$');",
+      "pass": true
+    },
+    {
+      "check": "E02-07: stale Before expression occurrences in effective fragments",
+      "observed": 0,
+      "expected": 0,
+      "pass": true
+    },
+    {
+      "check": "E02-07: After expression occurrences on its effective line",
+      "observed": 1,
+      "expected": 1,
+      "pass": true
+    },
+    {
+      "check": "E02-08: effective F23 line 56 == After line",
+      "observed": "        v_epoch_text := pg_catalog.substring(p_object_key, '/g([0-9]+)/[0-9a-f]{32}$');",
+      "expected": "        v_epoch_text := pg_catalog.substring(p_object_key, '/g([0-9]+)/[0-9a-f]{32}$');",
+      "pass": true
+    },
+    {
+      "check": "E02-08: stale Before expression occurrences in effective fragments",
+      "observed": 0,
+      "expected": 0,
+      "pass": true
+    },
+    {
+      "check": "E02-08: After expression occurrences on its effective line",
+      "observed": 1,
+      "expected": 1,
+      "pass": true
+    },
+    {
+      "check": "E02-09: effective F26 line 9 == After line",
+      "observed": "               CASE pg_catalog.substring(p.proname, 1, 2)",
+      "expected": "               CASE pg_catalog.substring(p.proname, 1, 2)",
+      "pass": true
+    },
+    {
+      "check": "E02-09: stale Before expression occurrences in effective fragments",
+      "observed": 0,
+      "expected": 0,
+      "pass": true
+    },
+    {
+      "check": "E02-09: After expression occurrences on its effective line",
+      "observed": 1,
+      "expected": 1,
+      "pass": true
+    },
+    {
+      "check": "changed lines (fragment:V1.1 line) == the nine registered occurrences, no tenth",
+      "observed": [
+        "F09:4494",
+        "F09:4545",
+        "F09:4853",
+        "F11:5442",
+        "F17:6912",
+        "F23:8219",
+        "F23:8221",
+        "F23:8222",
+        "F26:8826"
+      ],
+      "expected": [
+        "F09:4494",
+        "F09:4545",
+        "F09:4853",
+        "F11:5442",
+        "F17:6912",
+        "F23:8219",
+        "F23:8221",
+        "F23:8222",
+        "F26:8826"
+      ],
+      "pass": true
+    },
+    {
+      "check": "fragments whose bytes changed",
+      "observed": [
+        "F09",
+        "F11",
+        "F17",
+        "F23",
+        "F26"
+      ],
+      "expected": [
+        "F09",
+        "F11",
+        "F17",
+        "F23",
+        "F26"
+      ],
+      "pass": true
+    },
+    {
+      "check": "line count unchanged in every fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "fragment count",
+      "observed": 26,
+      "expected": 26,
+      "pass": true
+    },
+    {
+      "check": "every fragment matches its pinned effective SHA-256",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "pinned effective SHA-256 differs from V1.1 pin exactly for the affected fragments",
+      "observed": [
+        "F09",
+        "F11",
+        "F17",
+        "F23",
+        "F26"
+      ],
+      "expected": [
+        "F09",
+        "F11",
+        "F17",
+        "F23",
+        "F26"
+      ],
+      "pass": true
+    }
+  ],
+  "informativePinCrossCheck": [
+    {
+      "check": "§9 pin table fragments",
+      "observed": [
+        "F09",
+        "F11",
+        "F17",
+        "F23",
+        "F26"
+      ],
+      "expected": [
+        "F09",
+        "F11",
+        "F17",
+        "F23",
+        "F26"
+      ],
+      "pass": true
+    },
+    {
+      "check": "§9 F09: file, V1.1 pin, bytes, effective SHA-256, bytes after, lines",
+      "observed": [
+        "sql/09_19.10_trigger-functions.sql",
+        "fa1c25f12a203ef616384141d8c5f9d29a7f704776bfb8ca43730f676a507f86",
+        64852,
+        "c2bb8b38feaf6cbb1559ae0c1396d34344094008a75e81f7406f9a239225c75c",
+        64833,
+        1124
+      ],
+      "expected": [
+        "sql/09_19.10_trigger-functions.sql",
+        "fa1c25f12a203ef616384141d8c5f9d29a7f704776bfb8ca43730f676a507f86",
+        64852,
+        "c2bb8b38feaf6cbb1559ae0c1396d34344094008a75e81f7406f9a239225c75c",
+        64833,
+        1124
+      ],
+      "pass": true
+    },
+    {
+      "check": "§9 F11: file, V1.1 pin, bytes, effective SHA-256, bytes after, lines",
+      "observed": [
+        "sql/11_19.11.1_internal-helpers.sql",
+        "76bdc866222b501df746f27d5e6d4ed6301c338f105b0822514ecda0cdc2e352",
+        31346,
+        "4803e194d62b3b3926e3b98a84d00ede902a485e04aed5de73533207f950be0a",
+        31344,
+        604
+      ],
+      "expected": [
+        "sql/11_19.11.1_internal-helpers.sql",
+        "76bdc866222b501df746f27d5e6d4ed6301c338f105b0822514ecda0cdc2e352",
+        31346,
+        "4803e194d62b3b3926e3b98a84d00ede902a485e04aed5de73533207f950be0a",
+        31344,
+        604
+      ],
+      "pass": true
+    },
+    {
+      "check": "§9 F17: file, V1.1 pin, bytes, effective SHA-256, bytes after, lines",
+      "observed": [
+        "sql/17_19.11.7_capability-signer.sql",
+        "eacf99ec3e728cd32881bd339478777935a57c6ad3385373f9a0692b490ece95",
+        5890,
+        "ca844588d08e5eb3e40d82676daf4dbf767539d576902372738b9f15b715175c",
+        5879,
+        92
+      ],
+      "expected": [
+        "sql/17_19.11.7_capability-signer.sql",
+        "eacf99ec3e728cd32881bd339478777935a57c6ad3385373f9a0692b490ece95",
+        5890,
+        "ca844588d08e5eb3e40d82676daf4dbf767539d576902372738b9f15b715175c",
+        5879,
+        92
+      ],
+      "pass": true
+    },
+    {
+      "check": "§9 F23: file, V1.1 pin, bytes, effective SHA-256, bytes after, lines",
+      "observed": [
+        "sql/23_19.12.6_reconciliation.sql",
+        "020a61c24cca1430c21153bb62acca962ae97a2598afb658da1cea00caf7c162",
+        12897,
+        "1e0891b67d2aff6deea2db244a464b0de4dd1e0da5415c9048f861d04fcc75c5",
+        12885,
+        218
+      ],
+      "expected": [
+        "sql/23_19.12.6_reconciliation.sql",
+        "020a61c24cca1430c21153bb62acca962ae97a2598afb658da1cea00caf7c162",
+        12897,
+        "1e0891b67d2aff6deea2db244a464b0de4dd1e0da5415c9048f861d04fcc75c5",
+        12885,
+        218
+      ],
+      "pass": true
+    },
+    {
+      "check": "§9 F26: file, V1.1 pin, bytes, effective SHA-256, bytes after, lines",
+      "observed": [
+        "sql/26_19.13.4_grants-and-completion.sql",
+        "f24554d93b606d87fa65d53209fc4c66af327467e91a110e042539e0f24af732",
+        2541,
+        "3a463c0c3b9602daccfef772da49420fea2284304947bad1d8973bf0358a449f",
+        2534,
+        53
+      ],
+      "expected": [
+        "sql/26_19.13.4_grants-and-completion.sql",
+        "f24554d93b606d87fa65d53209fc4c66af327467e91a110e042539e0f24af732",
+        2541,
+        "3a463c0c3b9602daccfef772da49420fea2284304947bad1d8973bf0358a449f",
+        2534,
+        53
+      ],
+      "pass": true
+    }
+  ],
+  "allPass": true
+}

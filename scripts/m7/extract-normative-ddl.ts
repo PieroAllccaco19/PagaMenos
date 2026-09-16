@@ -3,9 +3,10 @@
 //   pnpm m7:ddl:extract   regenerate prisma/m7/normative/ from the accepted specification bytes
 //   pnpm m7:ddl:check     fail (exit 1) if the committed artifacts differ from a fresh generation
 //
-// Offline and DB-free. It reads only the two accepted documents, verifies their exact identities
-// before extracting, and writes only inside prisma/m7/normative/. It never touches prisma/migrations/,
-// authority/ or any specification markdown, and installs nothing into PostgreSQL.
+// Offline and DB-free. It reads only the three accepted documents (M7 V1.1, Erratum 01, Erratum 02),
+// verifies their exact identities before extracting, and writes only inside prisma/m7/normative/. It
+// never touches prisma/migrations/, authority/ or any specification markdown, and installs nothing into
+// PostgreSQL.
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 
@@ -15,7 +16,17 @@ import {
   generateNormativeArtifacts,
   isClean,
 } from '../../src/m7/normative/generate';
-import { M7_V1_1, M7_V1_1_ERRATUM_01 } from '../../src/m7/normative/source';
+import {
+  findStaleErratum02Bytes,
+  readErratum02Corrections,
+} from '../../src/m7/normative/erratum-02-corrections';
+import { selectNormativeFragments } from '../../src/m7/normative/fragments';
+import {
+  M7_V1_1,
+  M7_V1_1_ERRATUM_01,
+  M7_V1_1_ERRATUM_02,
+  verifyBoundArtifact,
+} from '../../src/m7/normative/source';
 
 const ROOT = process.cwd();
 const OUT = join(ROOT, NORMATIVE_OUTPUT_DIR);
@@ -50,25 +61,39 @@ function main(): void {
   }
 
   let generated;
+  let staleScan: (files: ReadonlyMap<string, string>) => string[];
   try {
+    const v11Bytes = readFileSync(join(ROOT, M7_V1_1.path));
+    const e02Bytes = readFileSync(join(ROOT, M7_V1_1_ERRATUM_02.path));
     generated = generateNormativeArtifacts(
-      readFileSync(join(ROOT, M7_V1_1.path)),
+      v11Bytes,
       readFileSync(join(ROOT, M7_V1_1_ERRATUM_01.path)),
+      e02Bytes,
     );
+    const v11Text = verifyBoundArtifact(M7_V1_1, v11Bytes);
+    const { corrections } = readErratum02Corrections(
+      v11Text,
+      verifyBoundArtifact(M7_V1_1_ERRATUM_02, e02Bytes),
+      selectNormativeFragments(v11Text),
+    );
+    staleScan = (files) => findStaleErratum02Bytes(files, corrections);
   } catch (error) {
     console.error(`[m7:ddl] ${error instanceof Error ? error.message : String(error)}`);
     process.exit(2);
   }
 
   if (check) {
-    const drift = diffArtifacts(generated.files, readActual());
-    if (!isClean(drift)) {
+    const actual = readActual();
+    const drift = diffArtifacts(generated.files, actual);
+    const stale = staleScan(actual);
+    if (!isClean(drift) || stale.length > 0) {
       console.error(
         `[m7:ddl:check] FAIL: ${NORMATIVE_OUTPUT_DIR} drifted from the accepted source`,
       );
       for (const p of drift.missing) console.error(`  missing:    ${p}`);
       for (const p of drift.unexpected) console.error(`  unexpected: ${p}`);
       for (const p of drift.changed) console.error(`  changed:    ${p}`);
+      for (const s of stale) console.error(`  stale:      ${s}`);
       process.exit(1);
     }
     console.log(`[m7:ddl:check] OK: ${generated.files.size} artifacts match the accepted source`);

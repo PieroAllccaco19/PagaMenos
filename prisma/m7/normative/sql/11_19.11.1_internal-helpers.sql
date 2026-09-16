@@ -228,7 +228,7 @@ BEGIN
     RETURN m7.i_request_hash(pg_catalog.jsonb_build_array(
         'M7_STORAGE_BACKEND_V1', p_provider_class::text, p_container_id, p_region_id,
         p_endpoint_identity, p_staging_prefix, p_evidence_prefix,
-        pg_catalog.extract(epoch FROM p_write_completion_window)::text));
+        pg_catalog.extract('epoch', p_write_completion_window)::text));
 END
 $fn$;
 

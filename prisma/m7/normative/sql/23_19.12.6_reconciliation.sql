@@ -50,10 +50,10 @@ BEGIN
     -- P1 (class 4): the owning intent, when the key names one -- BEFORE class 10 (M7V11R4-AUD-02; round 3
     -- took class 10 first and then waited on this lock)
     IF p_zone = 'STAGING' THEN
-        v_id_text := pg_catalog.substring(p_object_key FROM '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/[0-9a-f]{32}$');
+        v_id_text := pg_catalog.substring(p_object_key, '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/[0-9a-f]{32}$');
     ELSE
-        v_id_text    := pg_catalog.substring(p_object_key FROM '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/g[0-9]+/[0-9a-f]{32}$');
-        v_epoch_text := pg_catalog.substring(p_object_key FROM '/g([0-9]+)/[0-9a-f]{32}$');
+        v_id_text    := pg_catalog.substring(p_object_key, '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/g[0-9]+/[0-9a-f]{32}$');
+        v_epoch_text := pg_catalog.substring(p_object_key, '/g([0-9]+)/[0-9a-f]{32}$');
     END IF;
     IF v_id_text IS NOT NULL AND (p_zone = 'STAGING' OR v_epoch_text IS NOT NULL) THEN
         SELECT * INTO v_i FROM m7.m7_evidence_upload_intent WHERE "id" = v_id_text::uuid FOR UPDATE;
