@@ -3,13 +3,13 @@
 This file is the **root authority register**. It records which specification documents are authoritative, their precedence, the independent closure verdicts, the accepted implementation SHAs, and the current implementation authorization. It does **not** restate or modify the specifications.
 
 **Last repaired:** the **R-B-17 authority repair** — see `PAGAMENOS_R_B_17_AUTHORITY_REPAIR_REPORT.md`.
-**Latest authority progression:** **JBA V1.9 + formally integrated JBA Narrow Amendment 01** (§3.1, §3.2), through the protected `m3.5b-b-integration` surface (§8.1) at merge `d64ea203e2022b6f313bc35b32a8ea0f961caecc`; **further followed by the formally integrated A1/A2→M7 Consent Compatibility Amendment 01** (§9.1); **further followed by the independently accepted and formally integrated M7 Outcome/Evidence Effective Specification V1.1** (§10); **further followed by the M7 V1.1 Implementation Work Authorization transition** (§11) — **Gate 1 only: permission to build, not acceptance of anything built**; **further followed by the independently accepted and protected-integrated M7 V1.1 Implementation-Readiness Erratum 01** (§12) — a **clause-scoped** erratum read **together with** the unedited accepted M7 V1.1 bytes, not a replacement of them, and **not** CCA implementation authorization (§12.7); **further followed by the A1/A2→M7 Consent Compatibility Amendment 01 Implementation Work Authorization transition** (§13) — **permission to build conforming CCA runtime/enforcement machinery only (`CCA IMPLEMENTATION WORK: AUTHORIZED`), not acceptance of anything built (`CCA IMPLEMENTATION: NOT ACCEPTED`)**; the accepted CCA bytes are not edited (§13.2). JBA V1.9 itself is **not superseded or replaced** by Amendment 01 — see §3.2. **The A1/A2→M7 Consent Compatibility Amendment 01 is upstream compatibility/security authority only — it does NOT accept, and MUST NOT be read as accepting, any M7 effective specification; see §9.** M7 V1.1 was accepted separately, by its own independent verdict, not by Amendment 01 (§10.1). **Further followed by the protected integration of the §13 CCA transition (PR #21; §14.1) and by the independently accepted and protected-integrated M7 V1.1 SQL Executability Erratum 02** (§14) — an **occurrence-scoped** erratum that supersedes **exactly nine** enumerated SQL occurrences and nothing else, read **together with** the unedited accepted M7 V1.1 bytes and the accepted Erratum 01, not a replacement of either; it makes the pre-Erratum-02 M7-S01 extraction artifacts **non-current for conformance** (§14.6) and keeps M7-S03 **blocked** (§14.7).
-**Protected authority surface (history, oldest first; no identity below is rewritten by a later one):** JBA Amendment 01 merge `d64ea203e2022b6f313bc35b32a8ea0f961caecc` (PR #12) → Consent Compatibility Amendment 01 merge `f54d95abb0a8f7988626597a0eef01d0b0ae3c95` (PR #14; §9.1) → post-Amendment-01 root-sync merge `8990ae0ca5af6862b741a14dedb4aa37831976b9` (PR #15) → **M7 Effective Spec V1.1 merge `f99a7e3080fdb99bd3917820d889d09694bed4af` (PR #16; §10.1)** → **Post-M7 V1.1 root authority sync merge `e7423b81edf11559d46d3bc595a491ab1a538ea6` (PR #17; §11.1)** → **M7 V1.1 Implementation Work Authorization (Gate 1) merge `ca1be1bcbef7f6a98a0396d446816bf099075c40` (PR #18; §12.1)** → **M7 V1.1 Erratum 01 merge `3ef0b3ad0fb02cba84a60d0529fe054427b9f68c` (PR #19; §12.1)** → **Post-Erratum-01 root authority sync merge `30034041df3280286fa9c85ac937894ef767e890` (PR #20; §13.1)** → **CCA Implementation Work Authorization merge `f1fd894b60b70e07143d474992ff8b3c5dd88fe1` (PR #21; §14.1)** → **M7 V1.1 SQL Executability Erratum 02 merge `b8df77538671b957b03294fee0fae40929d29bd3` (PR #24; §14.2)**, all on `origin/m3.5b-b-integration`. The Erratum 02 merge is the latest **specification** integration recorded by this register; the PR #21 merge is the latest **protected integration of this register** recorded by it. *(At PR #21 this line ended at the PR #20 merge, named the Erratum 01 merge as the latest specification integration and the PR #20 merge as the latest protected integration of this register, and stated that the §13 entry recorded no merge, PR or acceptance identity of its own (§13.1); §13 has since been protected-integrated by PR #21 and Erratum 02 by PR #24 — §14.1, §14.2.)* *(At PR #18 this line named the M7 V1.1 merge `f99a7e3…` and the PR #17 merge respectively, and stated that the §11 transition recorded no merge identity of its own; §11 has since been protected-integrated by PR #18 — §12.1.)* *(At PR #20 this line ended at the Erratum 01 merge, named the PR #18 merge as the latest protected integration of this register, and stated that the §12 entry recorded no merge, PR or acceptance identity of its own (§12.10); §12 has since been protected-integrated by PR #20 — §13.1.)* The §14 entry is **not** part of this history: it records no merge, PR or acceptance identity of its own (§14.1).
-**Controlling M7 Outcome/Evidence specification authority:** `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1.md` (status **ACCEPTED**, formally integrated; §10) — the accepted **base** specification, bytes unedited — **read together with** `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_01.md` (status **ACCEPTED + PROTECTED-INTEGRATED**; §12) **for the clauses Erratum 01 normatively amends, and only for those clauses**, **and together with** `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_02.md` (status **ACCEPTED + PROTECTED-INTEGRATED**; §14) **for the nine SQL occurrences Erratum 02 enumerates, and only for those occurrences** — **specification only**. `M7 IMPLEMENTATION AUTHORIZED: YES` **in the Gate 1 sense only** — `M7 IMPLEMENTATION WORK: AUTHORIZED — GATE 1 ONLY (PERMISSION TO BUILD)`; `M7 IMPLEMENTATION / RUNTIME: NOT ACCEPTED — GATE 2 OPEN`; the effective M7 conformance target is **M7 V1.1 + accepted Erratum 01 + accepted Erratum 02** (§14.5); `M7-S01 PRE-ERRATUM-02 EXTRACTION: HISTORICALLY ACCEPTED, NOW SUPERSEDED FOR CURRENT CONFORMANCE` (§14.6); `M7-S03: BLOCKED` (§14.7); nothing accepted at Gate 2, published, rotated or deployed (§11, §12, §14.8). *(At PR #21 this line read "any future M7 implementation candidate MUST conform to **M7 V1.1 + accepted Erratum 01** (§12.6); nothing implemented, published, rotated or deployed (§11, §12)"; that was true then and is superseded, for the conformance target and the implementation-line slice record only, by §14.)* `CCA IMPLEMENTATION WORK: AUTHORIZED` — permission to build conforming runtime/enforcement machinery implementing the exact accepted CCA Amendment 01 only (§13.3); `CCA IMPLEMENTATION: NOT ACCEPTED`; `CCA RUNTIME ACCEPTANCE: NOT PERFORMED` (§13.8). *(At PR #20 this line read `CCA IMPLEMENTATION AUTHORIZATION: NOT YET GRANTED` (§12.7); that was true then and is superseded, for implementation-work authorization only, by §13.)* *(At PR #17 this line read `M7 IMPLEMENTATION AUTHORIZED: NO` (§10.7); that was true then and is superseded by §11. At PR #18 it named M7 V1.1 alone; Erratum 01 did not then exist as accepted authority.)*
+**Latest authority progression:** **JBA V1.9 + formally integrated JBA Narrow Amendment 01** (§3.1, §3.2), through the protected `m3.5b-b-integration` surface (§8.1) at merge `d64ea203e2022b6f313bc35b32a8ea0f961caecc`; **further followed by the formally integrated A1/A2→M7 Consent Compatibility Amendment 01** (§9.1); **further followed by the independently accepted and formally integrated M7 Outcome/Evidence Effective Specification V1.1** (§10); **further followed by the M7 V1.1 Implementation Work Authorization transition** (§11) — **Gate 1 only: permission to build, not acceptance of anything built**; **further followed by the independently accepted and protected-integrated M7 V1.1 Implementation-Readiness Erratum 01** (§12) — a **clause-scoped** erratum read **together with** the unedited accepted M7 V1.1 bytes, not a replacement of them, and **not** CCA implementation authorization (§12.7); **further followed by the A1/A2→M7 Consent Compatibility Amendment 01 Implementation Work Authorization transition** (§13) — **permission to build conforming CCA runtime/enforcement machinery only (`CCA IMPLEMENTATION WORK: AUTHORIZED`), not acceptance of anything built (`CCA IMPLEMENTATION: NOT ACCEPTED`)**; the accepted CCA bytes are not edited (§13.2). JBA V1.9 itself is **not superseded or replaced** by Amendment 01 — see §3.2. **The A1/A2→M7 Consent Compatibility Amendment 01 is upstream compatibility/security authority only — it does NOT accept, and MUST NOT be read as accepting, any M7 effective specification; see §9.** M7 V1.1 was accepted separately, by its own independent verdict, not by Amendment 01 (§10.1). **Further followed by the protected integration of the §13 CCA transition (PR #21; §14.1) and by the independently accepted and protected-integrated M7 V1.1 SQL Executability Erratum 02** (§14) — an **occurrence-scoped** erratum that supersedes **exactly nine** enumerated SQL occurrences and nothing else, read **together with** the unedited accepted M7 V1.1 bytes and the accepted Erratum 01, not a replacement of either; it makes the pre-Erratum-02 M7-S01 extraction artifacts **non-current for conformance** (§14.6) and keeps M7-S03 **blocked** (§14.7). **Further followed by the protected integration of the §14 Erratum 02 root authority synchronization (PR #25; §15.1) and by the independently accepted and protected-integrated M7 V1.1 Erratum 03** (§15; candidate `df6b4b0f9c71e5286d8925ad20cbb3fcc6b14eff`, merge `6115b843c709bbfb1d169df27bc4e3db7e0f2b8a`, PR #28) — an **occurrence-scoped** erratum that supersedes **exactly fourteen** enumerated occurrences (`E03-01…E03-09`) and nothing else, read **together with** the unedited accepted M7 V1.1 bytes, the accepted Erratum 01 and the accepted Erratum 02, not a replacement of any of them; it makes the Erratum-02-conforming M7-S01 extraction artifacts **non-current for Erratum 03 conformance** (§15.5) and keeps M7-S03 **blocked** (§15.6).
+**Protected authority surface (history, oldest first; no identity below is rewritten by a later one):** JBA Amendment 01 merge `d64ea203e2022b6f313bc35b32a8ea0f961caecc` (PR #12) → Consent Compatibility Amendment 01 merge `f54d95abb0a8f7988626597a0eef01d0b0ae3c95` (PR #14; §9.1) → post-Amendment-01 root-sync merge `8990ae0ca5af6862b741a14dedb4aa37831976b9` (PR #15) → **M7 Effective Spec V1.1 merge `f99a7e3080fdb99bd3917820d889d09694bed4af` (PR #16; §10.1)** → **Post-M7 V1.1 root authority sync merge `e7423b81edf11559d46d3bc595a491ab1a538ea6` (PR #17; §11.1)** → **M7 V1.1 Implementation Work Authorization (Gate 1) merge `ca1be1bcbef7f6a98a0396d446816bf099075c40` (PR #18; §12.1)** → **M7 V1.1 Erratum 01 merge `3ef0b3ad0fb02cba84a60d0529fe054427b9f68c` (PR #19; §12.1)** → **Post-Erratum-01 root authority sync merge `30034041df3280286fa9c85ac937894ef767e890` (PR #20; §13.1)** → **CCA Implementation Work Authorization merge `f1fd894b60b70e07143d474992ff8b3c5dd88fe1` (PR #21; §14.1)** → **M7 V1.1 SQL Executability Erratum 02 merge `b8df77538671b957b03294fee0fae40929d29bd3` (PR #24; §14.2)** → **Post-Erratum-02 root authority sync merge `1be2f40216ac7093962739d4312d77219ae14d4d` (PR #25; §15.1)** → **M7 V1.1 Erratum 03 merge `6115b843c709bbfb1d169df27bc4e3db7e0f2b8a` (PR #28; §15.1)**, all on `origin/m3.5b-b-integration`. The Erratum 03 merge is the latest **specification** integration recorded by this register; the PR #25 merge is the latest **protected integration of this register** recorded by it. *(At PR #25 this line ended at the Erratum 02 merge, named the Erratum 02 merge as the latest specification integration and the PR #21 merge as the latest protected integration of this register, and stated that the §14 entry recorded no merge, PR or acceptance identity of its own (§14.1); §14 has since been protected-integrated by PR #25 and Erratum 03 by PR #28 — §15.1.)* *(At PR #21 this line ended at the PR #20 merge, named the Erratum 01 merge as the latest specification integration and the PR #20 merge as the latest protected integration of this register, and stated that the §13 entry recorded no merge, PR or acceptance identity of its own (§13.1); §13 has since been protected-integrated by PR #21 and Erratum 02 by PR #24 — §14.1, §14.2.)* *(At PR #18 this line named the M7 V1.1 merge `f99a7e3…` and the PR #17 merge respectively, and stated that the §11 transition recorded no merge identity of its own; §11 has since been protected-integrated by PR #18 — §12.1.)* *(At PR #20 this line ended at the Erratum 01 merge, named the PR #18 merge as the latest protected integration of this register, and stated that the §12 entry recorded no merge, PR or acceptance identity of its own (§12.10); §12 has since been protected-integrated by PR #20 — §13.1.)* The §15 entry is **not** part of this history: it records no merge, PR or acceptance identity of its own (§15.1).
+**Controlling M7 Outcome/Evidence specification authority:** `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1.md` (status **ACCEPTED**, formally integrated; §10) — the accepted **base** specification, bytes unedited — **read together with** `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_01.md` (status **ACCEPTED + PROTECTED-INTEGRATED**; §12) **for the clauses Erratum 01 normatively amends, and only for those clauses**, **and together with** `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_02.md` (status **ACCEPTED + PROTECTED-INTEGRATED**; §14) **for the nine SQL occurrences Erratum 02 enumerates, and only for those occurrences**, **and together with** `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_03.md` (status **ACCEPTED + PROTECTED-INTEGRATED**; §15) **for the fourteen occurrences Erratum 03 enumerates, and only for those occurrences** — **specification only**. `M7 IMPLEMENTATION AUTHORIZED: YES` **in the Gate 1 sense only** — `M7 IMPLEMENTATION WORK: AUTHORIZED — GATE 1 ONLY (PERMISSION TO BUILD)`; `M7 IMPLEMENTATION / RUNTIME: NOT ACCEPTED — GATE 2 OPEN`; the effective M7 conformance target is **M7 V1.1 + accepted Erratum 01 + accepted Erratum 02 + accepted Erratum 03** (§15.2); `M7-S01 (ERRATUM 02 REGENERATION): INDEPENDENTLY RE-ACCEPTED / INTEGRATED IN STAGING, NOW SUPERSEDED FOR ERRATUM 03 CONFORMANCE — NOT REJECTED`; `M7-S01 ERRATUM 03 REGENERATION: REQUIRED — NOT PERFORMED` (§15.5); `M7-S03: BLOCKED` (§15.6); nothing accepted at Gate 2, published, rotated or deployed (§11, §12, §14.8, §15.7). *(At PR #25 this line read "the effective M7 conformance target is **M7 V1.1 + accepted Erratum 01 + accepted Erratum 02** (§14.5); `M7-S01 PRE-ERRATUM-02 EXTRACTION: HISTORICALLY ACCEPTED, NOW SUPERSEDED FOR CURRENT CONFORMANCE` (§14.6); `M7-S03: BLOCKED` (§14.7); nothing accepted at Gate 2, published, rotated or deployed (§11, §12, §14.8)"; that was true then and is superseded, for the specification reading, the conformance target and the implementation-line slice record only, by §15.)* *(At PR #21 this line read "any future M7 implementation candidate MUST conform to **M7 V1.1 + accepted Erratum 01** (§12.6); nothing implemented, published, rotated or deployed (§11, §12)"; that was true then and is superseded, for the conformance target and the implementation-line slice record only, by §14.)* `CCA IMPLEMENTATION WORK: AUTHORIZED` — permission to build conforming runtime/enforcement machinery implementing the exact accepted CCA Amendment 01 only (§13.3); `CCA IMPLEMENTATION: NOT ACCEPTED`; `CCA RUNTIME ACCEPTANCE: NOT PERFORMED` (§13.8). *(At PR #20 this line read `CCA IMPLEMENTATION AUTHORIZATION: NOT YET GRANTED` (§12.7); that was true then and is superseded, for implementation-work authorization only, by §13.)* *(At PR #17 this line read `M7 IMPLEMENTATION AUTHORIZED: NO` (§10.7); that was true then and is superseded by §11. At PR #18 it named M7 V1.1 alone; Erratum 01 did not then exist as accepted authority.)*
 **Controlling B semantic authority:** `PAGAMENOS_M3_5B_B_SEMANTIC_RATIFICATION_V1_3.md` (status **ACCEPTED**).
 **Controlling B architecture authority:** `PAGAMENOS_M3_5B_B_ARCHITECTURE_CONTRACT_V1_9.md`, the **Joint B Architecture** (status **ACCEPTED**, formally integrated; §3.1), **as narrowly amended by** `PAGAMENOS_M3_5B_B_JBA_AMENDMENT_01_B1S_AUTHORITY.md` (status **ACCEPTED**, formally integrated; §3.2, narrow B-scoped amendment only). Both remain **subordinate to, and do not replace,** the B Semantic Ratification V1.3.
 
-> **Reading rule.** This register uses **scope-qualified precedence, not a single universal linear ordering**: an artifact controls only within the scope it was accepted for, and two artifacts whose accepted scopes are orthogonal are never ranked against each other. Within a shared scope, when two artifacts appear to conflict, resolve in this order: (1) §1 base study authority, by its own internal precedence, controlling across every scope; (2) §2 accepted milestone specifications (A1, A2, …), each governing its own milestone's semantics; (3) §3 B semantic authority, for the B phase only and subject to §1; (4) §3.1 the Joint B Architecture, for the shared B1/B2 architecture only and subject to §3; (5) §3.2 accepted narrow JBA amendments, each controlling only within its own explicitly enumerated scope and otherwise subject to §3.1; (6) any future accepted B1S/B2S effective specification, subject to §3.1 as amended by §3.2. Orthogonal to that B-scope chain: (7) the **A1/A2→M7 Consent Compatibility Amendment 01** (§9.1) — subordinate to §1, and to A1 and A2 semantics, and controlling **only** the narrow A1/A2→M7 compatibility/security-capability boundary it explicitly enumerates (§9.1, §9.3); where it appears to alter an A1 or A2 semantic, A1/A2 control instead; (8) the **accepted M7 Outcome/Evidence Effective Specification V1.1** (§10; the blocked M7 V1 and every non-accepted V1.1 candidate are §5 artifacts, never authority) — governing the M7 Outcome/Evidence domain and M7's own physical/domain choices within its accepted scope, subject to §1, to A1/A2 where their semantics apply, and to Amendment 01 on the compatibility boundary Amendment 01 controls; if M7 V1.1 (or any later accepted M7 specification) conflicts with Amendment 01 inside that boundary, Amendment 01 controls there; (8a) the **accepted M7 V1.1 Erratum 01** (§12) — clause-scoped within (8): where an Erratum 01 "After" text replaces or narrows an enumerated M7 V1.1 clause, the Erratum 01 text controls **for that clause only**; every clause Erratum 01 does not enumerate is governed by the accepted M7 V1.1 bytes exactly as they are (save only the nine occurrences item (8b) assigns to Erratum 02, none of which lies in a clause Erratum 01 amends); and an apparent conflict outside the enumerated clauses is resolved in favour of the accepted V1.1 bytes and is an erratum defect, not a matter for interpretation (Erratum 01 §1.2, §4). Erratum 01 is subject to everything (8) is subject to and gains no scope beyond (8); (8b) the **accepted M7 V1.1 Erratum 02** (§14) — occurrence-scoped within (8) as read with (8a): where an Erratum 02 `E02-01…E02-09` "After" text replaces the enumerated "Before" substring on the named V1.1 line, the Erratum 02 text controls **for that occurrence only**; every other byte of V1.1 is governed by the accepted V1.1 bytes read with Erratum 01, which continue to control; Erratum 01 is unaffected by Erratum 02; and an apparent conflict outside the nine enumerated occurrences is resolved in favour of the accepted V1.1 bytes read with Erratum 01 and is an erratum defect, not a matter for interpretation (Erratum 02 §4). Erratum 02 is subject to everything (8) and (8a) are subject to and gains no scope beyond (8). An artifact listed in §5 is **never** authority. No amendment in this register asserts a universal amendment doctrine: each controls strictly the scope it explicitly enumerates (see §3.2, §9.1). Nothing in (7)–(8b) alters, or is superior or subordinate to, the B-scope chain (3)–(6); their scopes do not overlap. Implementation-work authorizations recorded in this register (§11 for M7, §13 for the CCA) are lifecycle transitions, not precedence items: they add no item to, and change no scope within, (1)–(8b). Implementation-line slice artifacts (§14.6) are never authority and are not precedence items.
+> **Reading rule.** This register uses **scope-qualified precedence, not a single universal linear ordering**: an artifact controls only within the scope it was accepted for, and two artifacts whose accepted scopes are orthogonal are never ranked against each other. Within a shared scope, when two artifacts appear to conflict, resolve in this order: (1) §1 base study authority, by its own internal precedence, controlling across every scope; (2) §2 accepted milestone specifications (A1, A2, …), each governing its own milestone's semantics; (3) §3 B semantic authority, for the B phase only and subject to §1; (4) §3.1 the Joint B Architecture, for the shared B1/B2 architecture only and subject to §3; (5) §3.2 accepted narrow JBA amendments, each controlling only within its own explicitly enumerated scope and otherwise subject to §3.1; (6) any future accepted B1S/B2S effective specification, subject to §3.1 as amended by §3.2. Orthogonal to that B-scope chain: (7) the **A1/A2→M7 Consent Compatibility Amendment 01** (§9.1) — subordinate to §1, and to A1 and A2 semantics, and controlling **only** the narrow A1/A2→M7 compatibility/security-capability boundary it explicitly enumerates (§9.1, §9.3); where it appears to alter an A1 or A2 semantic, A1/A2 control instead; (8) the **accepted M7 Outcome/Evidence Effective Specification V1.1** (§10; the blocked M7 V1 and every non-accepted V1.1 candidate are §5 artifacts, never authority) — governing the M7 Outcome/Evidence domain and M7's own physical/domain choices within its accepted scope, subject to §1, to A1/A2 where their semantics apply, and to Amendment 01 on the compatibility boundary Amendment 01 controls; if M7 V1.1 (or any later accepted M7 specification) conflicts with Amendment 01 inside that boundary, Amendment 01 controls there; (8a) the **accepted M7 V1.1 Erratum 01** (§12) — clause-scoped within (8): where an Erratum 01 "After" text replaces or narrows an enumerated M7 V1.1 clause, the Erratum 01 text controls **for that clause only**; every clause Erratum 01 does not enumerate is governed by the accepted M7 V1.1 bytes exactly as they are (save only the nine occurrences item (8b) assigns to Erratum 02 and the fourteen occurrences item (8c) assigns to Erratum 03, none of which lies in a clause Erratum 01 amends); and an apparent conflict outside the enumerated clauses is resolved in favour of the accepted V1.1 bytes and is an erratum defect, not a matter for interpretation (Erratum 01 §1.2, §4). Erratum 01 is subject to everything (8) is subject to and gains no scope beyond (8); (8b) the **accepted M7 V1.1 Erratum 02** (§14) — occurrence-scoped within (8) as read with (8a): where an Erratum 02 `E02-01…E02-09` "After" text replaces the enumerated "Before" substring on the named V1.1 line, the Erratum 02 text controls **for that occurrence only**; every other byte of V1.1 is governed by the accepted V1.1 bytes read with Erratum 01 (save only the fourteen occurrences item (8c) assigns to Erratum 03, none of which is an Erratum 02 occurrence), which continue to control; Erratum 01 is unaffected by Erratum 02; and an apparent conflict outside the nine enumerated occurrences is resolved in favour of the accepted V1.1 bytes read with Erratum 01 and is an erratum defect, not a matter for interpretation (Erratum 02 §4). Erratum 02 is subject to everything (8) and (8a) are subject to and gains no scope beyond (8); (8c) the **accepted M7 V1.1 Erratum 03** (§15) — occurrence-scoped within (8) as read with (8a) and (8b): where an Erratum 03 `E03-01…E03-09` "After" block replaces the enumerated "Before" lines of one of its fourteen occurrences at the named V1.1 lines, the Erratum 03 text controls **for that occurrence only**; every other byte of V1.1 is governed by the accepted V1.1 bytes read with Erratum 01 and Erratum 02, which continue to control; Erratum 01 and Erratum 02 are unaffected by Erratum 03; and an apparent conflict outside the fourteen enumerated occurrences is resolved in favour of the accepted V1.1 bytes read with Erratum 01 and Erratum 02 and is an erratum defect, not a matter for interpretation (Erratum 03 §3). Erratum 03 is subject to everything (8), (8a) and (8b) are subject to and gains no scope beyond (8). An artifact listed in §5 is **never** authority. No amendment in this register asserts a universal amendment doctrine: each controls strictly the scope it explicitly enumerates (see §3.2, §9.1). Nothing in (7)–(8c) alters, or is superior or subordinate to, the B-scope chain (3)–(6); their scopes do not overlap. Implementation-work authorizations recorded in this register (§11 for M7, §13 for the CCA) are lifecycle transitions, not precedence items: they add no item to, and change no scope within, (1)–(8c). Implementation-line slice artifacts (§14.6, §15.4) are never authority and are not precedence items.
 
 ---
 
@@ -316,11 +316,12 @@ tree   9ce36f03442fa22f3f695f46f716493e61379a83
 - **Accepted and implemented:** M0, M1, M2, M3, M3.5A, M3.5B-A1, M3.5B-A2.
 - **Joint B Architecture V1.9:** **ACCEPTED AND FORMALLY INTEGRATED** (§3.1), **as narrowly amended by JBA Amendment 01** (§3.2). Downstream **B1 and B2 effective-specification** work (B1S, B2S) is now authorized to begin. See §7, §7.1.
 - **Not authorized by JBA acceptance, or by Amendment 01's integration, alone:** B1 implementation; B2 implementation. Amendment 01 is a document-only authority-register synchronization; it authorizes **no** implementation and closes no implementation gate. Implementation remains unauthorized until the applicable effective specification (B1S or B2S) is **independently accepted** and every applicable gate — including §6.2's standing engineering pre-condition and prohibition **P-16** (§5.1) — is satisfied. Acceptance of a future B1S, by itself, still does **not** automatically authorize B1 implementation while P-16's cross-contract condition remains unresolved.
-- **M7 Outcome/Evidence Effective Specification V1.1:** **SPECIFICATION ACCEPTED AND FORMALLY INTEGRATED** (§10). Specification acceptance and integration did not by themselves authorize implementation (§10.7). **M7 implementation work is AUTHORIZED — Gate 1 only** — by the separate, explicit transition of §11: permission to build conforming implementation candidates for later independent verification. **No complete M7 implementation candidate exists (LC-1 NOT OCCURRED), and no M7 implementation is ACCEPTED (Gate 2 OPEN)**; the implementation-line slices M7-S01 and M7-S02 recorded in §14.6 are staging slices, not an implementation candidate and not Gate-2 acceptance; its implementation prerequisites, §24.3 CI additions, manifest/control-plane publication gates, selector rotation and runtime/provider/deployment verification all remain outstanding (§10.6, §10.7, §10.8, §11.4). *(At PR #21 this bullet read "**No M7 implementation exists, and none is ACCEPTED (Gate 2 OPEN)**"; that was true then; the M7-S01/M7-S02 slices were integrated into implementation staging afterwards — §14.6.)*
+- **M7 Outcome/Evidence Effective Specification V1.1:** **SPECIFICATION ACCEPTED AND FORMALLY INTEGRATED** (§10). Specification acceptance and integration did not by themselves authorize implementation (§10.7). **M7 implementation work is AUTHORIZED — Gate 1 only** — by the separate, explicit transition of §11: permission to build conforming implementation candidates for later independent verification. **No complete M7 implementation candidate exists (LC-1 NOT OCCURRED), and no M7 implementation is ACCEPTED (Gate 2 OPEN)**; the implementation-line slices M7-S01 and M7-S02 recorded in §14.6 and §15.4 are staging slices, not an implementation candidate and not Gate-2 acceptance; its implementation prerequisites, §24.3 CI additions, manifest/control-plane publication gates, selector rotation and runtime/provider/deployment verification all remain outstanding (§10.6, §10.7, §10.8, §11.4). *(At PR #21 this bullet read "**No M7 implementation exists, and none is ACCEPTED (Gate 2 OPEN)**"; that was true then; the M7-S01/M7-S02 slices were integrated into implementation staging afterwards — §14.6.)*
 - **M7 V1.1 Implementation-Readiness Erratum 01:** **ACCEPTED AND PROTECTED-INTEGRATED** (§12) — clause-scoped; M7 V1.1 is now read together with it for the clauses it amends. It does **not** revoke Gate 1 and does **not** open, close or satisfy any Gate 2 item. *(At PR #21 this bullet ended "future M7 implementation candidates MUST conform to **M7 V1.1 + accepted Erratum 01** (§12.6)"; the conformance target is now stated in the next bullet — §14.5.)*
-- **M7 V1.1 SQL Executability Erratum 02:** **ACCEPTED AND PROTECTED-INTEGRATED** (§14) — occurrence-scoped; supersedes exactly the nine SQL occurrences `E02-01…E02-09` and nothing else. It does **not** revoke Gate 1 and does **not** open, close or satisfy any Gate 2 item. Future M7 implementation candidates, and every M7 implementation-line artifact relied upon for conformance, MUST conform to **M7 V1.1 + accepted Erratum 01 + accepted Erratum 02** (§14.5). `M7-S01 PRE-ERRATUM-02 EXTRACTION: HISTORICALLY ACCEPTED, NOW SUPERSEDED FOR CURRENT CONFORMANCE` — regeneration and independent re-acceptance required (§14.6); `M7-S02`: accepted/integrated infrastructure, unchanged (§14.6); **`M7-S03: BLOCKED`** (§14.7).
+- **M7 V1.1 SQL Executability Erratum 02:** **ACCEPTED AND PROTECTED-INTEGRATED** (§14) — occurrence-scoped; supersedes exactly the nine SQL occurrences `E02-01…E02-09` and nothing else. It does **not** revoke Gate 1 and does **not** open, close or satisfy any Gate 2 item. *(At PR #25 this bullet continued: "Future M7 implementation candidates, and every M7 implementation-line artifact relied upon for conformance, MUST conform to **M7 V1.1 + accepted Erratum 01 + accepted Erratum 02** (§14.5). `M7-S01 PRE-ERRATUM-02 EXTRACTION: HISTORICALLY ACCEPTED, NOW SUPERSEDED FOR CURRENT CONFORMANCE` — regeneration and independent re-acceptance required (§14.6); `M7-S02`: accepted/integrated infrastructure, unchanged (§14.6); **`M7-S03: BLOCKED`** (§14.7)." That was true then; the Erratum 02 regeneration of M7-S01 has since been performed, independently re-accepted and integrated into implementation staging (§15.4), and the conformance target and slice statuses are now stated in the next bullet — §15.2, §15.5, §15.6.)*
+- **M7 V1.1 Erratum 03:** **ACCEPTED AND PROTECTED-INTEGRATED** (§15) — occurrence-scoped; supersedes exactly the fourteen occurrences `E03-01…E03-09` (classes E03-A…E03-I) and nothing else. It does **not** revoke Gate 1 and does **not** open, close or satisfy any Gate 2 item. Future M7 implementation candidates, and every M7 implementation-line artifact relied upon for conformance, MUST conform to **M7 V1.1 + accepted Erratum 01 + accepted Erratum 02 + accepted Erratum 03** (§15.2). `M7-S01 (ERRATUM 02 REGENERATION): INDEPENDENTLY RE-ACCEPTED / INTEGRATED IN STAGING, NOW SUPERSEDED FOR ERRATUM 03 CONFORMANCE — NOT REJECTED`; `M7-S01 ERRATUM 03 REGENERATION: REQUIRED — NOT PERFORMED`, independent re-acceptance required (§15.5); `M7-S02`: accepted/integrated infrastructure, unchanged (§15.5); **`M7-S03: BLOCKED`** (§15.6).
 - **CCA implementation authorization:** **CCA IMPLEMENTATION WORK: AUTHORIZED** by the separate, explicit transition of §13 — permission to build conforming runtime/enforcement machinery implementing the exact accepted CCA Amendment 01, within the accepted CCA §50.1 scope, and to submit a future implementation candidate for independent verification. **CCA IMPLEMENTATION: NOT ACCEPTED; CCA RUNTIME ACCEPTANCE: NOT PERFORMED** (§13.8). *(At PR #20 this bullet read: "**NOT YET GRANTED** — not decided by Erratum 01, not granted by §11 or by this register; a separate authority transition decides it (§12.7)." That was true then; §13 is that separate transition.)*
-- **Not authorized:** acceptance of any M7 implementation/runtime (Gate 2, §11.4); resumption of M7-S03 (§14.7); reliance on the pre-Erratum-02 M7-S01 extraction artifacts as the current conformance artifact set (§14.6); M7 control-plane manifest acceptance or publication; selector rotation; acceptance of any CCA implementation or runtime (§13.8), and any change outside the accepted CCA scope (§13.6); C1; C2; any `AnalysisProtocol v1` freeze; deployment; Wave 0. *(At PR #20 the CCA item in this list read "CCA implementation (§12.7)"; implementation **work** is now authorized by §13, and acceptance remains unauthorized.)*
+- **Not authorized:** acceptance of any M7 implementation/runtime (Gate 2, §11.4); resumption of M7-S03 (§14.7, §15.6); reliance on the pre-Erratum-02 M7-S01 extraction artifacts as the current conformance artifact set (§14.6); reliance on the Erratum-02-conforming M7-S01 extraction artifacts as the Erratum 03 conformance artifact set (§15.5); M7 control-plane manifest acceptance or publication; selector rotation; acceptance of any CCA implementation or runtime (§13.8), and any change outside the accepted CCA scope (§13.6); C1; C2; any `AnalysisProtocol v1` freeze; deployment; Wave 0. *(At PR #20 the CCA item in this list read "CCA implementation (§12.7)"; implementation **work** is now authorized by §13, and acceptance remains unauthorized.)*
 
 ### 6.1 Frozen status flags
 
@@ -559,7 +560,7 @@ P-16                        : ACTIVE
 
 **Scope of this correction.** It applies **only** to the JBA S-2/B1S grounding dependency. It does **not** state that M7, as a project milestone, is unnecessary: M7 retains its own specification path (§9.5 at PR #15; now an accepted specification, §10) and remains required for its own project/scientific obligations (evidence-backed outcomes, S-2 grounding for any B1S candidate that elects to use it, and every remaining audit family in §9.6 — closed at specification level since, but with implementation, publication and runtime obligations still open; §10.6). "M7 not required for the B1S non-grounding default path" MUST NOT be read as "M7 not required at all."
 
-### 9.8 Implementation authorization matrix *(historical matrix at PR #15; current matrix §14.14)*
+### 9.8 Implementation authorization matrix *(historical matrix at PR #15; current matrix §15.11)*
 
 ```
 [HISTORICAL — as recorded at the post-Amendment-01 root sync]
@@ -576,7 +577,7 @@ C2 IMPLEMENTATION     : NO
 P-16                  : ACTIVE
 ```
 
-This matrix records status already established by §6, §7 and §9.1–§9.7; it authorizes nothing beyond them. Its `M7 SPEC V1.1 DESIGN : YES` row has been discharged by acceptance (§9.5, §10); every other row is carried forward unchanged into §10.10. *(Its `M7 IMPLEMENTATION : NO` row is superseded, Gate 1 only, by §11; the current matrix is §14.14.)*
+This matrix records status already established by §6, §7 and §9.1–§9.7; it authorizes nothing beyond them. Its `M7 SPEC V1.1 DESIGN : YES` row has been discharged by acceptance (§9.5, §10); every other row is carried forward unchanged into §10.10. *(Its `M7 IMPLEMENTATION : NO` row is superseded, Gate 1 only, by §11; the current matrix is §15.11.)*
 
 ### 9.9 Machine-readable authority baseline — unchanged
 
@@ -593,6 +594,8 @@ This section records a lifecycle transition that has **already occurred**: the i
 > **Reading note — Erratum 01.** M7 V1.1 has since been read together with the accepted, protected-integrated Erratum 01 (§12). The §10.1 identity is **unchanged**: the accepted V1.1 bytes are not edited and not superseded wholesale. Wherever §10 cites an M7 V1.1 clause that Erratum 01 enumerates (V1.1 §16.2.4 PA-1, §19.13.4, §23.3, §23.4, §23.5, §24.2 MA-1 and MA-6, §24.3, §25.2 T-08b — §12.3), that clause is read as amended by Erratum 01, for that clause only. The one restatement in §10 that carried the MA-6 ambiguity Erratum 01 identified (ER-05; Erratum 01 §9.0 citing "Register §10.8") has been synchronized **in place, with its prior wording preserved as an annotation** (§10.8); the combined "publication / selector rotation" stage of §10.2 is read as the distinct lifecycle events of §12.5. No status in §10 is changed by this synchronization.
 
 > **Reading note — Erratum 02.** M7 V1.1 is now also read together with the accepted, protected-integrated Erratum 02 (§14) for the nine SQL occurrences `E02-01…E02-09` it enumerates, and only for those occurrences (header reading rule, item (8b); §14.3). The §10.1 identity is **unchanged**; the accepted V1.1 bytes are not edited, and no errata text is flattened into them. No status in §10 is changed by this note.
+
+> **Reading note — Erratum 03.** M7 V1.1 is now also read together with the accepted, protected-integrated Erratum 03 (§15) for the fourteen occurrences `E03-01…E03-09` it enumerates, and only for those occurrences (header reading rule, item (8c); §15.2). The §10.1 identity is **unchanged**; the accepted V1.1 bytes are not edited, and no errata text is flattened into them. No status in §10 is changed by this note.
 
 ### 10.1 Accepted artifact — exact identity
 
@@ -731,7 +734,7 @@ This register does **not** infer, invent, default or rotate the selector, and cl
 - **B1 / B2 implementation:** NOT AUTHORIZED. **P-16: ACTIVE** — unchanged.
 - **C1 / C2:** NOT AUTHORIZED. `AnalysisProtocol v1` UNFROZEN; Wave 0 and deployment NOT AUTHORIZED (§6.1) — unchanged. M7 V1.1 persists no `VerifiedValue` and no VS level (M7 V1.1 §21.5, §22).
 
-### 10.10 Current authorization matrix *(historical matrix at PR #17; current matrix §14.14)*
+### 10.10 Current authorization matrix *(historical matrix at PR #17; current matrix §15.11)*
 
 ```
 [HISTORICAL — as recorded at PR #17; M7 IMPLEMENTATION row superseded, Gate 1 only, by §11]
@@ -759,7 +762,7 @@ This matrix records status established by §6, §7, §9 and §10.1–§10.9; it 
 
 This section is the **future, separate, explicit authority transition** that §10.7 requires before M7 implementation work may begin. It performs **Gate 1 only**. It grants permission to **build**; it accepts **nothing built**. It does **not** restate, amend or re-open the accepted M7 V1.1 specification; it does **not** implement M7; it does **not** publish machine-readable authority, create or modify `authority/`, assert or rotate `PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA`, or authorize deployment. Nothing in this section modifies §1, §2, §3, §3.1, §3.2, §9.1–§9.3, §10.1, §10.6 categories (b)–(e), the §10.7 Gate 2 list, §10.8, the B Semantic Ratification V1.3, JBA V1.9 or its Amendment 01, B1S/B2S ownership, S-2 Path A / Path B, **P-16**, or C1/C2 authority.
 
-> **Reading note — later lifecycle events (PR #18 integration; Erratum 01).** §11 was written as an author candidate against protected tip `e7423b8…`. It has since been **protected-integrated by merge `ca1be1bcbef7f6a98a0396d446816bf099075c40` (PR #18; §12.1)**; the statements of §11.1 "This entry's own status" that it records no PR or merge identity are therefore historical and are preserved rather than rewritten. The Gate 1 authorization of §11 is **unchanged and not revoked** by Erratum 01. Wherever §11 names "the accepted M7 V1.1 specification" as the conformance target of implementation work (§11.1, §11.2, §11.3, §11.4), that target is now **M7 V1.1 read together with the accepted Erratum 01 for the clauses it amends** (§12.6) — the V1.1 bytes of §11.1 remain the only accepted base bytes, and authorization still does not extend to any non-accepted bytes. The combined "MACHINE-READABLE AUTHORITY PUBLICATION / SELECTOR ROTATION" stage of §11.2 and the rotation references of §11.4 and §11.5 are read as the distinct lifecycle events of §12.5. The §11.7 matrix is historical as recorded at PR #18; the current matrix is §14.14. No Gate 2 item in §11.4 changes status. *(Later events — Erratum 02 and the M7-S01/M7-S02 slices, §14: that conformance target is now **M7 V1.1 + accepted Erratum 01 + accepted Erratum 02** (§14.5); the Gate 1 authorization of §11 is unchanged and not revoked. The §11.2 statement "NO implementation exists" and the §11.7 `no implementation exists` row were true when written; they are read with §14.6 — the implementation-line slices integrated into staging since are not a completed implementation candidate (LC-1 NOT OCCURRED), and no M7 implementation is accepted.)*
+> **Reading note — later lifecycle events (PR #18 integration; Erratum 01).** §11 was written as an author candidate against protected tip `e7423b8…`. It has since been **protected-integrated by merge `ca1be1bcbef7f6a98a0396d446816bf099075c40` (PR #18; §12.1)**; the statements of §11.1 "This entry's own status" that it records no PR or merge identity are therefore historical and are preserved rather than rewritten. The Gate 1 authorization of §11 is **unchanged and not revoked** by Erratum 01. Wherever §11 names "the accepted M7 V1.1 specification" as the conformance target of implementation work (§11.1, §11.2, §11.3, §11.4), that target is now **M7 V1.1 read together with the accepted Erratum 01 for the clauses it amends** (§12.6) — the V1.1 bytes of §11.1 remain the only accepted base bytes, and authorization still does not extend to any non-accepted bytes. The combined "MACHINE-READABLE AUTHORITY PUBLICATION / SELECTOR ROTATION" stage of §11.2 and the rotation references of §11.4 and §11.5 are read as the distinct lifecycle events of §12.5. The §11.7 matrix is historical as recorded at PR #18; the current matrix is §15.11. No Gate 2 item in §11.4 changes status. *(Later events — Erratum 02 and the M7-S01/M7-S02 slices, §14: that conformance target is now **M7 V1.1 + accepted Erratum 01 + accepted Erratum 02** (§14.5); the Gate 1 authorization of §11 is unchanged and not revoked. The §11.2 statement "NO implementation exists" and the §11.7 `no implementation exists` row were true when written; they are read with §14.6 — the implementation-line slices integrated into staging since are not a completed implementation candidate (LC-1 NOT OCCURRED), and no M7 implementation is accepted.)* *(Later events — Erratum 03, §15: that conformance target is now **M7 V1.1 + accepted Erratum 01 + accepted Erratum 02 + accepted Erratum 03** (§15.2); the Gate 1 authorization of §11 is unchanged and not revoked.)*
 
 > **Two words that MUST NOT be interchanged.** In this register, **AUTHORIZED** (for M7 implementation) means only *permitted to build and to submit for review*. **ACCEPTED** means *independently verified and accepted*. `M7 IMPLEMENTATION WORK: AUTHORIZED` never implies, and MUST NOT be cited as evidence of, `M7 IMPLEMENTATION: ACCEPTED`. Any statement of the form "M7 is authorized" that omits which gate is meant MUST be read as Gate 1 only.
 
@@ -922,7 +925,7 @@ M7 implementation-work authorization **does not leak** into B or C authorization
 - **C1 implementation:** NO. **C2 implementation:** NO. `AnalysisProtocol v1`: **UNFROZEN** (§6.1) — unchanged.
 - **Wave 0 / deployment:** **NOT AUTHORIZED** (§6.1) — unchanged.
 
-### 11.7 Current authorization matrix *(historical matrix at PR #18; current matrix §14.14)*
+### 11.7 Current authorization matrix *(historical matrix at PR #18; current matrix §15.11)*
 
 ```
 M7 EFFECTIVE SPEC V1                    : BLOCKED / NON-AUTHORITATIVE
@@ -963,9 +966,11 @@ This matrix records status established by §6, §7, §9, §10 and §11.1–§11.
 
 This section records a lifecycle transition that has **already occurred**: the independent acceptance and the protected integration of Erratum 01 to the accepted M7 V1.1 specification. It synchronizes this register with that fact. It does **not** restate, amend or re-open Erratum 01 or M7 V1.1; it does **not** duplicate Erratum 01's normative algorithms; it does **not** implement M7, author a manifest, publish machine-readable authority, create or modify `authority/`, assert or rotate `PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA`, or authorize CCA implementation. Nothing in this section modifies §1, §2, §3, §3.1, §3.2, §9.1–§9.3, the §10.1 identity, §10.6 categories (b)–(e), the §10.7 Gate 2 list, the Gate 1 grant of §11, the B Semantic Ratification V1.3, JBA V1.9 or its Amendment 01, the A1/A2→M7 Consent Compatibility Amendment 01, B1S/B2S ownership, S-2 Path A / Path B, **P-16**, or C1/C2 authority.
 
-> **Reading note — later lifecycle events (PR #20 integration; §13).** §12 was written as an author candidate against protected tip `3ef0b3a…`. It has since been **protected-integrated by merge `30034041df3280286fa9c85ac937894ef767e890` (PR #20; §13.1)**; the statements of §12.10 that it records no PR or merge identity are therefore historical and are preserved rather than rewritten. **§12.7 (`CCA IMPLEMENTATION AUTHORIZATION: NOT YET GRANTED`) was true when written and is preserved as historical**; it is superseded, **for implementation-work authorization only**, by §13, which is the separate, explicit authority transition §12.7 anticipated (and addresses Erratum 01 obligation `E01-DO-6`, subject to §13.1). The last bullet of §12.6 — which left undecided whether an M7 implementation step depending on CCA runtime machinery may proceed before that transition — is read with §13.7. The §12.11 matrix is historical as recorded at PR #20; the current matrix is §14.14. Everything else in §12 — §12.1–§12.5, the M7 Gate 1 / Gate 2 statements of §12.6, §12.8 and §12.9 — **remains current and unchanged** by §13.
+> **Reading note — later lifecycle events (PR #20 integration; §13).** §12 was written as an author candidate against protected tip `3ef0b3a…`. It has since been **protected-integrated by merge `30034041df3280286fa9c85ac937894ef767e890` (PR #20; §13.1)**; the statements of §12.10 that it records no PR or merge identity are therefore historical and are preserved rather than rewritten. **§12.7 (`CCA IMPLEMENTATION AUTHORIZATION: NOT YET GRANTED`) was true when written and is preserved as historical**; it is superseded, **for implementation-work authorization only**, by §13, which is the separate, explicit authority transition §12.7 anticipated (and addresses Erratum 01 obligation `E01-DO-6`, subject to §13.1). The last bullet of §12.6 — which left undecided whether an M7 implementation step depending on CCA runtime machinery may proceed before that transition — is read with §13.7. The §12.11 matrix is historical as recorded at PR #20; the current matrix is §15.11. Everything else in §12 — §12.1–§12.5, the M7 Gate 1 / Gate 2 statements of §12.6, §12.8 and §12.9 — **remains current and unchanged** by §13.
 
 > **Reading note — later lifecycle events (Erratum 02; §14).** Erratum 02 does **not** amend Erratum 01 and leaves ER-01…ER-05, §12.1–§12.5, §12.8 and §12.9 unchanged. The §12.6 "Conformance target" bullet (`M7 V1.1 + accepted Erratum 01`) was true when written and is preserved as historical; the current conformance target is **M7 V1.1 + accepted Erratum 01 + accepted Erratum 02** (§14.5), and the §12.6 currency consequence applies equally to Erratum 02. The §12.5 LC-1 annotation "no M7 implementation candidate exists" and the §12.6 bullet "No implementation exists" are read with §14.6: the M7-S01 and M7-S02 implementation-line slices integrated into implementation staging after PR #21 are **not** a completed implementation candidate, and **LC-1 has NOT OCCURRED**. The Gate 1 / Gate 2 statements of §12.6 remain current.
+
+> **Reading note — later lifecycle events (Erratum 03; §15).** Erratum 03 does **not** amend Erratum 01 and leaves ER-01…ER-05, §12.1–§12.5, §12.8 and §12.9 unchanged. The conformance-target statements of §12.6 and of the preceding note (§14.5) were true when written and are preserved as historical; the current conformance target is **M7 V1.1 + accepted Erratum 01 + accepted Erratum 02 + accepted Erratum 03** (§15.2), and the §12.6 currency consequence applies equally to Erratum 03. **LC-1 has NOT OCCURRED** (§15.7). The Gate 1 / Gate 2 statements of §12.6 remain current.
 
 ### 12.1 Exact identities
 
@@ -1124,7 +1129,7 @@ This entry is an **author candidate** for a root authority synchronization. It r
 
 It was authored against the protected tip `origin/m3.5b-b-integration` = `3ef0b3ad0fb02cba84a60d0529fe054427b9f68c`. It changes exactly one file, this register. It changes no specification artifact (M7 V1.1, Erratum 01, the Consent Compatibility Amendment 01, JBA V1.9 or its Amendment 01, the B Semantic Ratification V1.3), and no runtime source, Prisma schema, migration, test, `.github/` workflow, `scripts-trusted/` file, `authority/` artifact, repository configuration or external repository variable.
 
-### 12.11 Current authorization matrix *(historical matrix at PR #20; current matrix §14.14)*
+### 12.11 Current authorization matrix *(historical matrix at PR #20; current matrix §15.11)*
 
 ```
 [HISTORICAL — as recorded at PR #20; CCA IMPLEMENTATION AUTHORIZATION row superseded, implementation work only, by §13]
@@ -1175,7 +1180,7 @@ This matrix records status established by §6, §7, §9, §10, §11 and §12.1�
 
 This section is the **separate, explicit authority transition** that §12.7 records as deciding implementation authorization for the A1/A2→M7 Consent Compatibility Amendment 01 (the "CCA", §9.1). It grants permission to **build** conforming runtime/enforcement machinery implementing the exact accepted CCA; it accepts **nothing built**. It does **not** restate, amend, re-open or edit the accepted CCA artifact; it does **not** implement the CCA or M7; it does **not** begin any M7 implementation slice, including M7-S01; it does **not** author, accept or publish any manifest, create or modify `authority/`, assert or rotate `PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA`, or authorize deployment. Apart from the reading notes, annotations and pointer updates enumerated in §13.11, nothing in this section modifies §1, §2.1–§2.4, §3, §3.1, §3.2, §9.1–§9.3, the §10.1 identity, §10.6 categories (b)–(e), the §10.7 Gate 2 list, §10.8, the Gate 1 grant of §11, §11.4, §12.1–§12.6, §12.8, §12.9, the B Semantic Ratification V1.3, JBA V1.9 or its Amendment 01, M7 V1.1, Erratum 01, the A1 or A2 specifications, B1S/B2S ownership, S-2 Path A / Path B, **P-16**, or C1/C2 authority.
 
-> **Reading note — later lifecycle events (PR #21 integration; M7-S01/M7-S02; Erratum 02; §14).** §13 was written as an author candidate against protected tip `3003404…`. It has since been **protected-integrated by merge `f1fd894b60b70e07143d474992ff8b3c5dd88fe1` (PR #21; §14.1)**; the statements of §13.1 "This entry's own status" that it records no PR or merge identity, and that the §12.7 state remains the protected state, are therefore historical and are preserved rather than rewritten. The CCA grant of §13.3–§13.10 is **unchanged**: `CCA IMPLEMENTATION WORK: AUTHORIZED`; `CCA IMPLEMENTATION: NOT ACCEPTED`. The statements that M7-S01 is not executed and that no M7 implementation slice has been executed (§13 introduction, §13.3 table, §13.7 last bullet, §13.13 `M7-S01` row) were true when written and are preserved as historical: M7-S01 and M7-S02 were subsequently executed, independently accepted and integrated into implementation staging (§14.6); neither is a completed implementation candidate (LC-1 NOT OCCURRED) or Gate-2 acceptance. Wherever §13 names **M7 V1.1 + accepted Erratum 01** as the M7 conformance target (§13.4, §13.7), that target is now **M7 V1.1 + accepted Erratum 01 + accepted Erratum 02** (§14.5). The §13.13 matrix is historical as recorded at PR #21; the current matrix is §14.14.
+> **Reading note — later lifecycle events (PR #21 integration; M7-S01/M7-S02; Erratum 02; §14).** §13 was written as an author candidate against protected tip `3003404…`. It has since been **protected-integrated by merge `f1fd894b60b70e07143d474992ff8b3c5dd88fe1` (PR #21; §14.1)**; the statements of §13.1 "This entry's own status" that it records no PR or merge identity, and that the §12.7 state remains the protected state, are therefore historical and are preserved rather than rewritten. The CCA grant of §13.3–§13.10 is **unchanged**: `CCA IMPLEMENTATION WORK: AUTHORIZED`; `CCA IMPLEMENTATION: NOT ACCEPTED`. The statements that M7-S01 is not executed and that no M7 implementation slice has been executed (§13 introduction, §13.3 table, §13.7 last bullet, §13.13 `M7-S01` row) were true when written and are preserved as historical: M7-S01 and M7-S02 were subsequently executed, independently accepted and integrated into implementation staging (§14.6); neither is a completed implementation candidate (LC-1 NOT OCCURRED) or Gate-2 acceptance. Wherever §13 names **M7 V1.1 + accepted Erratum 01** as the M7 conformance target (§13.4, §13.7), that target is now **M7 V1.1 + accepted Erratum 01 + accepted Erratum 02** (§14.5). The §13.13 matrix is historical as recorded at PR #21; the current matrix is §15.11. *(Later events — Erratum 03, §15: that target is now **M7 V1.1 + accepted Erratum 01 + accepted Erratum 02 + accepted Erratum 03** (§15.2); the CCA grant of §13.3–§13.10 is unchanged.)*
 
 > **Two words that MUST NOT be interchanged — CCA.** In this register, `CCA … ACCEPTED` (§9.1) refers to the **specification** only. `CCA IMPLEMENTATION WORK: AUTHORIZED` means only *permitted to build conforming machinery and to submit it for independent verification*. It never implies, and MUST NOT be cited as evidence of, `CCA IMPLEMENTATION: ACCEPTED` or CCA runtime acceptance. Any statement of the form "the CCA is authorized" that omits what is meant MUST be read as implementation work only; any statement of the form "the CCA is accepted" MUST be read as the specification only.
 
@@ -1426,7 +1431,7 @@ No earlier entry is silently rewritten. The following edits accompany this entry
 
 This entry changes exactly one file, this register. It changes no specification artifact — in particular not `PAGAMENOS_A1_A2_M7_CONSENT_COMPATIBILITY_AMENDMENT_01.md`, `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1.md`, `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_01.md`, the A1 or A2 specifications, JBA V1.9 or its Amendment 01, or the B Semantic Ratification V1.3 — and no runtime source, Prisma schema, migration, test, `.github/` workflow, `scripts-trusted/` file, `authority/` artifact, repository configuration or external repository variable.
 
-### 13.13 Current authorization matrix *(historical matrix at PR #21; current matrix §14.14)*
+### 13.13 Current authorization matrix *(historical matrix at PR #21; current matrix §15.11)*
 
 ```
 [HISTORICAL — as recorded at PR #21; M7 SPECIFICATION READING, conformance-target and M7-S01 rows superseded by §14]
@@ -1486,9 +1491,11 @@ This matrix records status established by §6, §7, §9, §10, §11, §12 and §
 
 ---
 
-## 14. M7 V1.1 SQL Executability Erratum 02 — ACCEPTED, PROTECTED-INTEGRATED (occurrence-scoped; specification only) — current M7 conformance state
+## 14. M7 V1.1 SQL Executability Erratum 02 — ACCEPTED, PROTECTED-INTEGRATED (occurrence-scoped; specification only) — current M7 conformance state *(current at PR #25; the current M7 conformance state is §15)*
 
 This section records a lifecycle transition that has **already occurred**: the independent acceptance and the protected integration of Erratum 02 to the accepted M7 V1.1 specification. It synchronizes this register with that fact and with its consequence for the M7 implementation-line slices. It does **not** restate, amend or re-open Erratum 02, Erratum 01 or M7 V1.1; it does **not** reproduce Erratum 02's "Before"/"After" texts, proofs or pinned values; it does **not** implement M7, regenerate M7-S01, resume M7-S03, modify implementation staging, author a manifest, publish machine-readable authority, create or modify `authority/`, or assert or rotate `PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA`. Apart from the reading notes, annotations and pointer updates enumerated in §14.12, nothing in this section modifies §1, §2, §3, §3.1, §3.2, §9.1–§9.3, the §10.1 identity, §10.6 categories (b)–(e), the §10.7 Gate 2 list, §10.8, the Gate 1 grant of §11, §11.4, §12.1–§12.5, §12.8, §12.9, the CCA grant of §13.3–§13.10, the B Semantic Ratification V1.3, JBA V1.9 or its Amendment 01, M7 V1.1, Erratum 01, the CCA, the A1 or A2 specifications, B1S/B2S ownership, S-2 Path A / Path B, **P-16**, or C1/C2 authority.
+
+> **Reading note — later lifecycle events (PR #25 integration; PR #26 / PR #27 implementation-staging events; Erratum 03; §15).** §14 was written as an author candidate against protected tip `b8df775…`. It has since been **protected-integrated by merge `1be2f40216ac7093962739d4312d77219ae14d4d` (PR #25; §15.1)**; the statements of §14.1 "This entry's own status" that it records no PR or merge identity are therefore historical and are preserved rather than rewritten. Erratum 02 and its registration in §14.2–§14.4 are **unchanged** and remain current for the nine occurrences `E02-01…E02-09`. The §14.7 prerequisites 1–5 have since been discharged — PR #25, the Erratum 02 staging synchronization (PR #26) and the independently re-accepted Erratum 02 regeneration of M7-S01 (PR #27; §15.4) — but M7-S03 was not resumed under §14.7. The §14.5 conformance target, the §14.6 `M7-S01 CURRENT-CONFORMANCE ARTIFACT SET: NONE` and `M7-S01 REGENERATION: NOT PERFORMED` statements, the §14.7 blocking reasons and prerequisite list, the §14.10 staging tip and the §14.14 matrix were true when written and are preserved as historical; the current statements are §15.2, §15.4–§15.6 and §15.11. The §14.8, §14.9 and §14.11 lifecycle, machine-readable-authority and B/C statements remain true and are reaffirmed by §15.7–§15.8.
 
 ### 14.1 Starting point, provenance and this entry's own status
 
@@ -1725,9 +1732,10 @@ No earlier entry is silently rewritten. The following edits accompany this entry
 
 This entry changes exactly one file, this register. It changes no specification artifact — in particular not `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1.md`, `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_01.md`, `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_02.md`, `PAGAMENOS_A1_A2_M7_CONSENT_COMPATIBILITY_AMENDMENT_01.md`, the A1 or A2 specifications, JBA V1.9 or its Amendment 01, or the B Semantic Ratification V1.3 — and no runtime source, Prisma schema, migration, test, M7-S01 or M7-S02 artifact, `.github/` workflow, `scripts-trusted/` file, `authority/` artifact, implementation staging branch, repository configuration or external repository variable.
 
-### 14.14 Current authorization matrix
+### 14.14 Current authorization matrix *(historical matrix at PR #25; current matrix §15.11)*
 
 ```
+[HISTORICAL — as recorded at PR #25; M7 SPECIFICATION READING, conformance-target, M7-S01, M7-S01 regeneration, M7-S03 and implementation-work rows superseded by §15]
 M7 EFFECTIVE SPEC V1                    : BLOCKED / NON-AUTHORITATIVE
 M7 V1.1 BASE SPEC                       : ACCEPTED — SPECIFICATION ACCEPTANCE DONE, PROTECTED INTEGRATION DONE
                                           (merge f99a7e3080fdb99bd3917820d889d09694bed4af, PR #16); bytes unedited
@@ -1801,3 +1809,349 @@ P-16                                    : ACTIVE
 ```
 
 This matrix records status established by §6, §7, §9, §10, §11, §12, §13 and §14.1–§14.13; it authorizes nothing beyond them. Relative to §13.13, it adds the Erratum 02, `E02-01…E02-09` and M7 conformance-target rows; extends the M7 specification-reading and implementation-work rows to Erratum 02; replaces the historical `M7-S01 : NOT EXECUTED` row with the M7-S01, M7-S01 regeneration, M7-S02 and M7-S03 rows; splits `LC-1…LC-7` into LC-1 and LC-2…LC-7 without changing either; and records the PR #21 merge on the CCA implementation-authorization row. It changes no Gate 1, Gate 2, `IMP-*`, `MA-*`, LC, manifest, machine-readable authority, selector, CCA, B, C, P-16 or deployment status.
+
+---
+
+## 15. M7 V1.1 Erratum 03 — ACCEPTED, PROTECTED-INTEGRATED (occurrence-scoped; specification only) — current M7 conformance state
+
+This section records a lifecycle transition that has **already occurred**: the independent acceptance and the protected integration of Erratum 03 to the accepted M7 V1.1 specification. It synchronizes this register with that fact, with the protected integration of the §14 entry, and with the consequence of both for the M7 implementation-line slices. It does **not** restate, amend or re-open Erratum 03, Erratum 02, Erratum 01 or M7 V1.1; it does **not** reproduce Erratum 03's "Before"/"After" blocks, proofs, evidence or informative pinned values; it does **not** implement M7, regenerate M7-S01, resume M7-S03, modify implementation staging, author a manifest, publish machine-readable authority, create or modify `authority/`, or assert or rotate `PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA`. Apart from the reading notes, annotations and pointer updates enumerated in §15.9, nothing in this section modifies §1, §2, §3, §3.1, §3.2, §9.1–§9.3, the §10.1 identity, §10.6 categories (b)–(e), the §10.7 Gate 2 list, §10.8, the Gate 1 grant of §11, §11.4, §12.1–§12.5, §12.8, §12.9, the CCA grant of §13.3–§13.10, §14.2–§14.4, the B Semantic Ratification V1.3, JBA V1.9 or its Amendment 01, M7 V1.1, Erratum 01, Erratum 02, the CCA, the A1 or A2 specifications, B1S/B2S ownership, S-2 Path A / Path B, **P-16**, or C1/C2 authority.
+
+### 15.1 Protected facts — starting point, this entry's own status, and identities
+
+**This entry's own status.** This entry is an **author candidate** for a root authority synchronization. It records **no** acceptance verdict, commit, PR or merge identity of its own, and MUST NOT be read as independently accepted or protected-integrated by virtue of its text. As with every prior entry in this register, it is authority only as recorded in this register at the protected integration surface following independent acceptance of the exact register bytes.
+
+**Starting point.** Authored against the protected tip `origin/m3.5b-b-integration` = `6115b843c709bbfb1d169df27bc4e3db7e0f2b8a` (tree `9d85dcb91b3cc37a7c2e8df29aa94505d647133a`; parents, in order, 1. `1be2f40216ac7093962739d4312d77219ae14d4d` — 2. `df6b4b0f9c71e5286d8925ad20cbb3fcc6b14eff`). The rejected historical commit `a586b3119da2cc1aa4668485b129dbe625ab5cae` is not an ancestor of that tip.
+
+**Erratum 02 root authority synchronization — now protected-integrated** (this is the entry that wrote §14). Recorded from Git history as provenance only; no identity below is rewritten.
+
+| Item | Value |
+| :-- | :-- |
+| Entry | Post-Erratum-02 root authority synchronization — `docs(authority): sync M7 Erratum 02 acceptance` (§14) |
+| Synchronization candidate commit | `47e0076777c1a6cf4ab9bdc88306ed5b490c69c5` |
+| Candidate sole parent (authoring baseline) | `b8df77538671b957b03294fee0fae40929d29bd3` (PR #24 merge) |
+| Candidate tree | `95bb58adab0139237372c7441fbf9773c1af67b1` |
+| `PAGAMENOS_SPEC_AUTHORITY.md` Git blob at the candidate and at the merge | `162e65aeb1e7ae2f4fa04da6272f814121a57ccc` |
+| PR | `#25` — *docs(authority): integrate M7 Erratum 02 root authority sync* |
+| **Formal protected integration merge** | `1be2f40216ac7093962739d4312d77219ae14d4d` |
+| Merge parents (in order) | 1. `b8df77538671b957b03294fee0fae40929d29bd3` — 2. `47e0076777c1a6cf4ab9bdc88306ed5b490c69c5` |
+| **Merge tree** | `95bb58adab0139237372c7441fbf9773c1af67b1` (identical to the candidate tree) |
+| Paths changed by the merge relative to `b8df775…` | exactly one: `PAGAMENOS_SPEC_AUTHORITY.md` |
+| GitHub signature | signed GitHub merge commit |
+| Post-merge `push` CI run on the protected surface | `35113637029` — SUCCESS |
+| Protected integration surface | `origin/m3.5b-b-integration` (see §8.1) |
+
+**Exact identities — Erratum 03.**
+
+| Item | Value |
+| :-- | :-- |
+| Artifact | `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_03.md` |
+| **Status** | **ACCEPTED + PROTECTED-INTEGRATED** (install, catalog-verifier and verification-contract executability erratum; occurrence-scoped; specification only) |
+| Independent acceptance | **PERFORMED** — independent offline audit, followed by an independent differential re-audit of the reworked candidate; the verdict binds the **exact artifact bytes** identified by the SHA-256 and Git blob below, and no other bytes |
+| **Accepted erratum SHA-256** | `b4debcb5a02e777e780e14002c5e9cdbb90f2140f5b7516592b8e05e67366160` |
+| **Accepted erratum Git blob** | `8ba87adc9b87cee749c214d9326b0aa750ceabf0` |
+| Size | 72,201 bytes; 779 LF-terminated lines |
+| Accepted author candidate commit | `df6b4b0f9c71e5286d8925ad20cbb3fcc6b14eff` |
+| Candidate sole parent (authoring baseline) | `1be2f40216ac7093962739d4312d77219ae14d4d` (PR #25 merge) |
+| Candidate tree | `9d85dcb91b3cc37a7c2e8df29aa94505d647133a` |
+| Superseded earlier candidate | `f98c2ec9daf10c5571bb72ab228081b67275daba` — received one blocking audit finding (IA-06 domain prose, class `E03-C`) and was replaced by amendment; it is **not** an ancestor of the merge and is **not** authority |
+| Candidate-branch `push` CI run | `35166864639` — SUCCESS (`verify`, `authority-gate`) |
+| Integration PR | `#28` — *docs(m7): add V1.1 Erratum 03 executability corrections* |
+| **Formal protected integration merge** | `6115b843c709bbfb1d169df27bc4e3db7e0f2b8a` |
+| Merge parents (in order) | 1. `1be2f40216ac7093962739d4312d77219ae14d4d` — 2. `df6b4b0f9c71e5286d8925ad20cbb3fcc6b14eff` |
+| **Merge tree** | `9d85dcb91b3cc37a7c2e8df29aa94505d647133a` (identical to the accepted candidate tree) |
+| Paths changed by the merge relative to `1be2f40…` | exactly one, added: `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_03.md` |
+| GitHub signature | signed GitHub merge commit |
+| Post-merge required checks | run `35167368972`: `verify` — SUCCESS; `authority-gate` — SUCCESS |
+| Corrections | **14 occurrences** (`E03-01…E03-09`) in **9 correction classes** (`E03-A…E03-I`) |
+| Normative SQL fragments affected | **3 / 26** — **F01, F11, F24** |
+| Normative SQL fragments unaffected | **23 / 26** — F02–F10, F12–F23, F25, F26 |
+| Protected integration surface | `origin/m3.5b-b-integration` (see §8.1) |
+
+**Accepted artifacts — unchanged by Erratum 03 and by this entry.** Identical at `1be2f40…` and at `6115b84…`:
+
+| Artifact | Git blob | SHA-256 |
+| :-- | :-- | :-- |
+| `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1.md` (§10.1) | `06e103b0d5e8cfcbb96ab21134d5605b0aae9b26` | `457f51778fb5d5890b3e3478376e413072f15aef7da88125b5e78963f49394bd` |
+| `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_01.md` (§12.1) | `15ee22090d3e37b6a63dd25914f8abb0f4fa9d4b` | `f381cb015adadc7a22463060da7ff55e8711b8ab13879c60f93cabf53eb863e8` |
+| `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_02.md` (§14.2) | `a0e6fa6720f23ac08485ab7cb696ab9ba4b7e83f` | `b7b3440ad04181356770f243a6e2870e004aba604d2a62afdefd5330c85c170f` |
+| `PAGAMENOS_A1_A2_M7_CONSENT_COMPATIBILITY_AMENDMENT_01.md` (§9.1, §13.2) | `2f0ff3c886c5ac9b1cbba797404e9024c0b83732` | `3a6003494f4817907401a9afda5b9d9a1647ade5ff9196f2aee2ba3b1b2ca1ad` |
+
+**What the checks establish.** As for §6.2, §10.1, §12.1, §13.1 and §14.2: `verify` and `authority-gate` on `1be2f40…`, `df6b4b0…` and `6115b84…` establish **integration integrity of these documentation commits only**. They are not any §24.3 CI addition, manifest gate, real-PostgreSQL, real-provider or real-deployment verification, and do not install or execute the corrected SQL; they are not claimed to be.
+
+### 15.2 Effective reading — occurrence-scoped precedence and conformance target
+
+```
+M7 V1.1 BASE SPECIFICATION        : ACCEPTED — REMAINS THE ACCEPTED BASE (§10.1); BYTES NOT EDITED
+ERRATUM 01                        : ACCEPTED + PROTECTED-INTEGRATED — CLAUSE-SCOPED; UNAFFECTED BY ERRATUM 03; BYTES NOT EDITED
+ERRATUM 02                        : ACCEPTED + PROTECTED-INTEGRATED — OCCURRENCE-SCOPED (E02-01…E02-09 ONLY); UNAFFECTED BY ERRATUM 03; BYTES NOT EDITED
+ERRATUM 03                        : ACCEPTED + PROTECTED-INTEGRATED — OCCURRENCE-SCOPED (E03-01…E03-09; FOURTEEN OCCURRENCES ONLY)
+READING                           : M7 V1.1 READ WITH ERRATUM 01 FOR THE CLAUSES IT AMENDS,
+                                    WITH ERRATUM 02 FOR THE NINE OCCURRENCES IT ENUMERATES,
+                                    AND WITH ERRATUM 03 FOR THE FOURTEEN OCCURRENCES IT ENUMERATES
+ERRATA FLATTENED INTO V1.1 BYTES  : NO
+M7 CONFORMANCE TARGET             : M7 V1.1 + ACCEPTED ERRATUM 01 + ACCEPTED ERRATUM 02 + ACCEPTED ERRATUM 03
+```
+
+- **The accepted V1.1 bytes are not edited and are not superseded wholesale.** No erratum rewrites them; each is read **beside** them (Erratum 03 §3 rule 1; Erratum 02 §4 rule 1; Erratum 01 §1.2).
+- **Erratum 01 and Erratum 02 remain accepted and applicable.** No Erratum 03 occurrence lies in a clause Erratum 01 amends or on a line Erratum 02 corrects; ER-01…ER-05, Erratum 01's MD-*/MG-* rules and `E02-01…E02-09` apply unchanged, including to migration bytes that contain the Erratum 03 corrections (Erratum 03 §3 rule 4, §7).
+- **Occurrence-scoped control.** Erratum 03 supersedes **exactly** the "Before" lines of its fourteen enumerated occurrences, at the named V1.1 lines, and **nothing else**; where an "After" block is longer than its "Before" block, the extra lines are inserted immediately after the last quoted line (Erratum 03 §3 rules 2–3, 5).
+- **Everything else is V1.1 + Erratum 01 + Erratum 02 exactly as accepted.** Outside the fourteen occurrences, the accepted V1.1 bytes read with Erratum 01 and Erratum 02 continue to control; an apparent conflict there is an erratum defect to be reported, not resolved by interpretation (Erratum 03 §3 rule 6). Erratum 03 introduces no broader amendment doctrine.
+- **Precedence** is registered under the header reading rule, item (8c): Erratum 03 inherits the scope and subordination of M7 V1.1 (§10.3) as read with Erratum 01 and Erratum 02, and gains none beyond it.
+- **Target.** Any M7 implementation candidate, and every M7 implementation-line artifact relied upon as conforming (including normative extraction artifacts), MUST conform to **M7 V1.1 + accepted Erratum 01 + accepted Erratum 02 + accepted Erratum 03**. An artifact that carries the pre-Erratum-03 bytes of any affected SQL occurrence, or applies a correction partially or at a different location, is **not** conforming.
+- **Supersedes the prior target.** The prior target **M7 V1.1 + accepted Erratum 01 + accepted Erratum 02** (§14.5; header, §6, §11–§13 reading notes and §14.14 as recorded at PR #25) was correct when recorded and is preserved as historical; it is superseded **for conformance purposes only**.
+- **Currency.** Consistently with §11.3, §12.6 and §14.5, an implementation candidate or manifest whose documentation-authority baseline does not incorporate accepted Erratum 03 does not meet the current conformance target. This entry restates that consequence; it adds no gate.
+- **Gate 1 unchanged.** Erratum 03 does **not** revoke, narrow, re-grant or re-condition the §11 Gate 1 authorization; `M7 GATE 1: AUTHORIZED`.
+- **Authored status statements resolved by events, not edits.** The integrated erratum still carries its authored header (`AUTHOR CANDIDATE — NOT YET AUTHORITATIVE`, `NOT SELF-ACCEPTED — AWAITING INDEPENDENT AUDIT`) and its §14 author-side status block (`INDEPENDENT ACCEPTANCE : NOT PERFORMED`, `PROTECTED INTEGRATION : NOT PERFORMED`, `ROOT AUTHORITY SYNC : NOT PERFORMED`, `M7 CONFORMANCE TARGET (UNTIL ACCEPTED) : M7 V1.1 + ACCEPTED ERRATUM 01 + ACCEPTED ERRATUM 02 (unchanged)`). As with M7 V1.1 (§10.4), Erratum 01 (§12.2) and Erratum 02 (§14.3), the first two are resolved by the independent acceptance and protected integration recorded in §15.1; the file is deliberately **not** modified, because any byte change would break the exact-byte binding. `ROOT AUTHORITY SYNC` and the "until accepted" conformance target are addressed by this entry, and are resolved only when this entry is itself independently accepted and protected-integrated (§15.1). Its statements about **other** things — M7-S01 regeneration under Erratum 03 not performed, M7-S03 blocked, `IMP-*` and `MA-*` open, manifest not authored/accepted/published, machine-readable authority unchanged, selector not asserted or rotated, Gate 2 open, LC-1 not occurred, deployment and Wave 0 not authorized, CCA implementation not accepted, B1/B2 and C1/C2 not authorized, P-16 active — remain **true** and are reaffirmed by §15.5–§15.8.
+
+### 15.3 Scope of Erratum 03 — E03-01…E03-09 incorporated
+
+`E03-01…E03-09` are incorporated **according to Erratum 03**, which is the sole authority for their content (Erratum 03 §4–§6, §8). This register records only their existence, class and location; it does **not** restate their "Before"/"After" blocks, line SHA-256 values, proofs, evidence or the informative pinned fragment values of Erratum 03 §10, and any paraphrase below yields to the accepted erratum text.
+
+| ID | Class | V1.1 clause | V1.1 lines changed (inserted) | Normative SQL fragment |
+| :-- | :-- | :-- | :-- | :-- |
+| `E03-01` | E03-A — PL/pgSQL composite `INTO` | §19.11.1 `m7.i_assert_control_plane` | 5233, 5235 (+2 after 5238) | F11 |
+| `E03-02` | E03-B — `acldefault` argument type | §19.13.2 `REL-ACL` branch | 8496 | F24 |
+| `E03-03a` | E03-C — IA-06 quantified-role domain | §19.13.2 IA-06 branch | 8607 | F24 |
+| `E03-03b` | E03-C | §18.4 IA-06 row | 2313 | — |
+| `E03-04a` | E03-D — constraint-class domain (PostgreSQL 18 `NOT NULL`) | §19.13.2 constraint sub-query | 8545 | F24 |
+| `E03-04b` | E03-D, E03-E | §18.4 IA-11 row | 2319 | — |
+| `E03-04c` | E03-D | §19.13.1 surface table, constraints row | 8403 | — |
+| `E03-05a` | E03-E — PRIMARY KEY / UNIQUE backing-index domain | §19.13.2 index sub-query | 8551 (+3 after 8551) | F24 |
+| `E03-05b` | E03-E | §19.13.1 surface table, indexes row | 8404 | — |
+| `E03-06a` | E03-F — M7 owner default EXECUTE privilege | §19.2 default privileges | 2471 | F01 |
+| `E03-06b` | E03-F | §18.1 RS-3 | 2231 | — |
+| `E03-07` | E03-G — T-137 expected rows | §25.17 | 9639 | — |
+| `E03-08` | E03-H — T-05 actor, operation and expected result | §25.2 | 9414 | — |
+| `E03-09` | E03-I — T-82 setup | §25.9 | 9527 | — |
+
+**Registered effect.** Fourteen occurrences: six normative SQL occurrences in fragments F01, F11 and F24, five normative prose occurrences in §18.1, §18.4 and §19.13.1, and three verification-case rows in §25 — 15 V1.1 lines changed and 5 lines inserted. Erratum 03 §7 (interaction) and §8 (findings dispositioned without a normative delta) remain binding as written there, including their statements that no table, enum, function, function signature, trigger, constraint, index, view, role, grant, lock, lock order, runtime API, consent / A1 / A2 / CCA / B / C semantic, manifest field, `IMP-*` / `MA-*` gate or lifecycle event is added, removed or changed; that no T-ID is added or removed; that §19.2 is not reordered; that no synthetic or test manifest is authorized; and that no IA-14 detector is added. The V1.1 §19.14 object counts are unchanged. This entry adds no count of its own.
+
+### 15.4 M7 implementation-line status — recorded as provenance
+
+The events below occurred on the implementation staging branch `origin/m7-v1.1-implementation` after the §14 entry was authored. That branch is **not** a protected authority surface; the identities are recorded **from Git history as provenance only**, the independent acceptance verdicts are held outside this register and are not restated here, and nothing in this subsection makes any slice artifact register authority, adds a §2 row, or constitutes LC-1 or Gate-2 acceptance.
+
+| Item | Erratum 02 authority sync into staging | M7-S01 regeneration under Erratum 02 |
+| :-- | :-- | :-- |
+| Candidate commit | `ef2ab3ba70e50b40f1e4293dc42289d6c644bd0a` (*chore(m7): sync Erratum 02 authority into implementation staging*; parents 1. `14d846a…` — 2. `1be2f40…`) | `60781eb599f7a385e18174adb8d0da0faf833000` (*feat(m7): regenerate S01 extraction for Erratum 02*; sole parent `0cc711e…`) |
+| Candidate tree | `24b1b72159f18ae6fc52e55bef58dc9fb81dded5` | `670b9db8f4d9b6132f982ae2f40cb851679396ec` |
+| Staging integration PR | `#26` | `#27` |
+| Staging integration merge | `0cc711e2ab42152d0b71d9630fdfff5931fe9b6a` (parents 1. `14d846a…` — 2. `ef2ab3b…`) | `dd5fc7278ac4fc0607aeae1fc885bb46c181968e` (parents 1. `0cc711e…` — 2. `60781eb…`; tree `670b9db…`) |
+| Independent acceptance | — (synchronization) | **PERFORMED** — independent re-acceptance under the then-current conformance target **M7 V1.1 + accepted Erratum 01 + accepted Erratum 02** |
+| Recorded conformance target | — | `M7 V1.1 + accepted Erratum 01 + accepted Erratum 02` (`prisma/m7/normative/EXTRACTION_INDEX.json`, SHA-256 `a4313a20b8da04cf617f251a895efc2bd0ea4a5272a74d60cc18f5109419c6d0`) |
+
+```
+IMPLEMENTATION STAGING TIP        : origin/m7-v1.1-implementation = dd5fc7278ac4fc0607aeae1fc885bb46c181968e
+                                    (tree 670b9db8f4d9b6132f982ae2f40cb851679396ec; PR #27)
+CONTAINS PR #25 MERGE 1be2f40…    : YES (through PR #26)
+CONTAINS PR #28 MERGE 6115b84…    : NO — Erratum 03 is not synchronized into implementation staging
+```
+
+- These events discharged items 1–5 of the §14.7 prerequisite list for Erratum 02. They did **not** resume M7-S03 under §14.7.
+- An M7-S03 execution against `dd5fc72…` stopped with `S03 BLOCKED — SPEC-DEFECT` (fragment F11, `42601`) and produced no candidate commit; a subsequent non-authoritative M7-S03 remaining-blocker diagnostic is the evidence Erratum 03 §1.4 names. Neither is authority, and neither is recorded here as an implementation candidate.
+- M7-S02 (§14.6) is unchanged.
+
+### 15.5 M7-S01 consequence — Erratum 02 regeneration superseded for Erratum 03 conformance
+
+```
+M7-S01 PRE-ERRATUM-02 EXTRACTION (PR #22)   : HISTORICALLY ACCEPTED — SUPERSEDED (§14.6; unchanged)
+M7-S01 ERRATUM 02 REGENERATION (PR #27)     : INDEPENDENTLY RE-ACCEPTED / INTEGRATED IN STAGING BEFORE ERRATUM 03 —
+                                              NOW SUPERSEDED FOR ERRATUM 03 CONFORMANCE — STALE — NOT REJECTED
+M7-S01 ERRATUM 03 CURRENT-CONFORMANCE ARTIFACT SET : NONE
+M7-S01 ERRATUM 03 REGENERATION              : REQUIRED — NOT PERFORMED
+M7-S01 ERRATUM 03 INDEPENDENT RE-ACCEPTANCE : REQUIRED — NOT PERFORMED
+```
+
+- **History is not rewritten.** The Erratum 02 regeneration of M7-S01 was independently re-accepted under the conformance target then current (**M7 V1.1 + accepted Erratum 01 + accepted Erratum 02**) and integrated into implementation staging (PR #27). That acceptance was valid when performed; the regeneration is **not** rejected, and its process is **not** recorded as invalid.
+- **Subsequent authority change.** Erratum 03 changes the effective normative SQL at six occurrences in fragments **F01, F11 and F24** (`E03-06a`; `E03-01`; `E03-02`, `E03-03a`, `E03-04a`, `E03-05a`). The integrated Erratum 02 regeneration faithfully extracts V1.1 + Erratum 01 + Erratum 02, and therefore does **not** contain those corrections.
+- **Consequence.** That artifact set is **STALE** relative to the current conformance target (§15.2) and is **no longer the current conformance artifact set**. It MUST NOT be relied upon as conforming for any later slice, installation, manifest derivation or acceptance.
+- **Activated prerequisite.** With this synchronization, Erratum 03 §10 applies once this entry is itself independently accepted and protected-integrated: M7-S01 MUST be **regenerated only from the accepted effective authority** **M7 V1.1 + accepted Erratum 01 + accepted Erratum 02 + accepted Erratum 03** and **independently re-accepted** before reliance — regeneration, not hand-editing; the accepted Erratum 03 identity recorded beside the unchanged V1.1, Erratum 01 and Erratum 02 identities; exactly the pins of the affected fragments **F01, F11 and F24** updated; F02–F10, F12–F23, F25 and F26 byte-identical; stale bytes failing the deterministic checks; V1.1 §19.14.1 counts unchanged. Erratum 03 §10 is the authority for those requirements; this register does not restate its informative pins or weaken them.
+- **Not performed here.** This entry performs no regeneration and modifies no M7-S01 artifact.
+
+**M7-S02.**
+
+```
+M7-S02: INDEPENDENTLY ACCEPTED / INTEGRATED IMPLEMENTATION INFRASTRUCTURE — UNCHANGED
+M7-S02 REGENERATION: NOT REQUIRED
+```
+
+- Erratum 03 does **not** amend M7-S02's PostgreSQL harness, roles template, migrator or multi-session infrastructure, and no authority artifact makes M7-S02 depend on the corrected bytes. Erratum 03 §8 records that a migration role able to exercise the owner's privileges before `SET LOCAL ROLE`, and object-creating or role-granting injections executed with the required owner identity or `ADMIN OPTION`, are harness/provisioning setup, not normative deltas; any such S03 harness choice is later implementation-line work and is not decided here.
+- M7-S02 acceptance remains **infrastructure acceptance only**: it is not LC-1, satisfies no `IMP-*`, `MA-*` or Gate-2 item, and is not real-PostgreSQL verification of an M7 implementation candidate.
+
+### 15.6 M7-S03 — BLOCKED; prerequisites before resume
+
+```
+M7-S03: BLOCKED
+M7-S03 RESUME: NOT AUTHORIZED BY THIS ENTRY
+```
+
+**Reason.** The current M7-S01 normative artifacts do not contain the Erratum 03 corrections (§15.5), and Erratum 03 §11 keeps M7-S03 blocked. This root synchronization does **not**, by existing, authorize M7-S03.
+
+**M7-S03 MAY resume only after at least all of the following, in this order:**
+
+1. this Erratum 03 root authority synchronization (§15) is independently accepted and **protected-integrated**;
+2. implementation staging (`origin/m7-v1.1-implementation`) is **synchronized** with the resulting authority baseline, by its own separate transition;
+3. the M7-S01 artifacts are **regenerated** from **M7 V1.1 + accepted Erratum 01 + accepted Erratum 02 + accepted Erratum 03** (§15.5; Erratum 03 §10);
+4. the regenerated M7-S01 is **independently re-accepted**;
+5. the regenerated M7-S01 is **integrated into implementation staging**;
+6. a **subsequent, separate implementation-line authorization** to resume M7-S03 is given.
+
+These prerequisites are cumulative with, and no weaker than, Erratum 03 §10–§11. Satisfying them makes resumption **permissible**; it does not schedule or start M7-S03. A resumed M7-S03 MUST install the corrected text, MUST NOT patch normative SQL locally, and MUST stop and report any further defect (Erratum 03 §11 item 2).
+
+**Recorded, not resolved.** Erratum 03 §8 and §11 item 3 record that, under the accepted lifecycle, M7-S03 cannot complete the V1.1 §19.13.4 fail-closed completion without an active control plane, and that Erratum 03 authorizes **no** synthetic or test manifest and changes no LC-1…LC-7 event. This entry records that implication; it does **not** resolve that work-package / lifecycle sequencing question, and satisfying items 1–6 above does not resolve it either.
+
+### 15.7 Lifecycle isolation — unchanged
+
+**None of the following changes status, and this entry performs none of the events it names.**
+
+```
+M7 GATE 1                                    : AUTHORIZED — implementation work only (§11; unchanged, not revoked)
+M7 GATE 2                                    : OPEN / NOT SATISFIED (§11.4, §12.6; unchanged)
+LC-1  IMPLEMENTATION CANDIDATE COMPLETION    : NOT OCCURRED — the implementation-line slices are not a completed candidate
+LC-2…LC-7                                    : NOT OCCURRED (§12.5)
+IMP-01…IMP-22                                : OPEN — none satisfied by Erratum 03 or by this entry
+MA-1…MA-18                                   : OPEN — none satisfied by Erratum 03 or by this entry
+§24.3 CI ADDITIONS                           : OPEN
+REAL-PROVIDER / REAL-DEPLOYMENT VERIFICATION : NOT PERFORMED
+FINAL CONTROL-PLANE MANIFEST                 : NOT AUTHORED / NOT ACCEPTED / NOT PUBLISHED
+MACHINE-READABLE AUTHORITY                   : NOT PUBLISHED — UNCHANGED
+PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA        : NOT ASSERTED
+SELECTOR                                     : NOT ASSERTED / NOT ROTATED
+DEPLOYMENT / WAVE 0                          : NOT AUTHORIZED
+CCA IMPLEMENTATION WORK                      : AUTHORIZED (§13.3; unchanged)
+CCA IMPLEMENTATION                           : NOT ACCEPTED (§13.8; unchanged)
+```
+
+No implementation or runtime acceptance has occurred. Erratum 03, the acceptance of any M7-S01 regeneration or of M7-S02, and this entry each satisfy **no** `IMP-*`, `MA-*` or Gate-2 requirement.
+
+The two-authority architecture of §2.4, §10.8, §11.5, §12.8, §13.9 and §14.9 is unchanged. `authority/` is absent from this documentation lineage (`git ls-tree -r HEAD authority/` is empty at `6115b84…`) and is neither created nor modified by Erratum 03 or by this entry. This entry does **not** infer, invent, obtain, default or rotate the external selector, creates no machine-readable baseline, and claims no knowledge of the selector's value. Any future manifest, `prosrc` digest or `migrationSha256` MUST be derived from migration bytes conforming to the corrected text (Erratum 03 §10 item 7), under Erratum 01 MD-*/MG-*; none has been produced.
+
+This entry does **not** modify `origin/m7-v1.1-implementation`, does not merge protected authority into it, and does not regenerate or edit `prisma/m7/normative/`, `src/m7/`, `scripts/m7/`, `package.json` or `pnpm-lock.yaml`.
+
+### 15.8 B, C, P-16, CCA and deployment — unchanged; no leakage
+
+Erratum 03 and this entry do **not** alter the B Semantic Ratification V1.3, JBA V1.9, JBA Amendment 01, B1S/B2S ownership (§7), S-2 Path A / Path B (§9.7), the CCA or its §13 implementation-work grant, **P-16**, or C1/C2 authority.
+
+```
+B1 / B2 IMPLEMENTATION: NO
+C1 / C2: NO
+P-16: ACTIVE
+AnalysisProtocol v1: UNFROZEN
+DEPLOYMENT / WAVE 0: NOT AUTHORIZED
+```
+
+- **Path B** (S-2 non-grounding default): status **unchanged** (§9.7).
+- **Path A** (S-2 grounding): still requires the **accepted M7 ingestion integration contract** under existing B authority (§9.7, §10.9, §11.6, §12.9, §13.10, §14.11). Erratum 03 is not that contract and does not satisfy `DB-03B` or P-16.
+
+### 15.9 Synchronization of earlier register text — provenance preserved
+
+No earlier entry is silently rewritten. The following edits accompany this entry; each preserves the prior wording or marks it historical, and none changes any status other than the M7 specification reading, the M7 conformance target and the recorded state of the M7 implementation-line slices:
+
+| Location | Treatment |
+| :-- | :-- |
+| Header — "Latest authority progression" | PR #25 integration and §15 appended; prior text unchanged |
+| Header — "Protected authority surface" | PR #25 and PR #28 merges appended; latest-specification and latest-register-integration sentence updated, with its PR #25 wording preserved in an annotation; "the §15 entry is not part of this history" replaces the corresponding §14 sentence, which is preserved in that annotation |
+| Header — controlling M7 specification line | Erratum 03 reading added; conformance target, M7-S01 and M7-S03 status updated, with the PR #25 wording preserved in an annotation |
+| Header — reading rule | item (8c) added for Erratum 03; one parenthetical added to (8a) and one to (8b) naming the Erratum 03 occurrences; range references "(7)–(8b)" / "(1)–(8b)" → "(7)–(8c)" / "(1)–(8c)"; slice-artifact reference "(§14.6)" → "(§14.6, §15.4)" |
+| §6 | M7 V1.1 bullet's slice reference extended to §15.4; Erratum 02 bullet's conformance-target and slice-status sentences moved to a new Erratum 03 bullet, with the PR #25 wording preserved in an annotation; "Not authorized" list adds reliance on the Erratum-02-conforming M7-S01 artifacts as the Erratum 03 conformance artifact set, and the M7-S03 reference adds §15.6 |
+| §9.8, §10.10, §11.7, §12.11, §13.13 headings; §9.8 closing note; §11, §12 and §13 reading notes | navigation pointer "current matrix §14.14" / "the current matrix is §14.14" → "§15.11" only |
+| §10 | reading note added (Erratum 03; §10.1 identity unchanged) |
+| §11 reading note | one annotation added: conformance target now includes Erratum 03 |
+| §12 | third reading note added (Erratum 03; §12.6 and §14.5 conformance-target statements historical; LC-1 still not occurred) |
+| §13 reading note | one annotation added: conformance target now includes Erratum 03; CCA grant unchanged |
+| §14 | heading annotated ("current at PR #25"); reading note added (PR #25 integration; PR #26 / PR #27 staging events; current-state statements of §14.1 own status, §14.5–§14.7 and §14.10 historical); §14.14 heading annotated and matrix tagged `[HISTORICAL — as recorded at PR #25 …]`; every row preserved verbatim |
+
+### 15.10 What this entry changes
+
+This entry changes exactly one file, this register. It changes no specification artifact — in particular not `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1.md`, `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_01.md`, `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_02.md`, `PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_03.md`, `PAGAMENOS_A1_A2_M7_CONSENT_COMPATIBILITY_AMENDMENT_01.md`, the A1 or A2 specifications, JBA V1.9 or its Amendment 01, or the B Semantic Ratification V1.3 — and no runtime source, Prisma schema, migration, test, M7-S01, M7-S02 or M7-S03 artifact, `.github/` workflow, `scripts-trusted/` file, `authority/` artifact, implementation staging branch, repository configuration or external repository variable.
+
+### 15.11 Current authorization matrix
+
+```
+M7 EFFECTIVE SPEC V1                    : BLOCKED / NON-AUTHORITATIVE
+M7 V1.1 BASE SPEC                       : ACCEPTED — SPECIFICATION ACCEPTANCE DONE, PROTECTED INTEGRATION DONE
+                                          (merge f99a7e3080fdb99bd3917820d889d09694bed4af, PR #16); bytes unedited
+M7 ERRATUM 01                           : ACCEPTED + PROTECTED-INTEGRATED — clause-scoped
+                                          (candidate 16e232330c86c92285804eb55ecb18d7f3cdf309;
+                                           merge 3ef0b3ad0fb02cba84a60d0529fe054427b9f68c, PR #19); bytes unedited
+M7 ERRATUM 02                           : ACCEPTED + PROTECTED-INTEGRATED — occurrence-scoped, E02-01…E02-09 only
+                                          (candidate f9d5591e16906a176f9a5f019f42312f502f9da4;
+                                           merge b8df77538671b957b03294fee0fae40929d29bd3, PR #24;
+                                           blob a0e6fa6720f23ac08485ab7cb696ab9ba4b7e83f;
+                                           SHA-256 b7b3440ad04181356770f243a6e2870e004aba604d2a62afdefd5330c85c170f)
+M7 ERRATUM 03                           : ACCEPTED + PROTECTED-INTEGRATED — occurrence-scoped, E03-01…E03-09 only
+                                          (fourteen occurrences)
+                                          (candidate df6b4b0f9c71e5286d8925ad20cbb3fcc6b14eff;
+                                           merge 6115b843c709bbfb1d169df27bc4e3db7e0f2b8a, PR #28;
+                                           blob 8ba87adc9b87cee749c214d9326b0aa750ceabf0;
+                                           SHA-256 b4debcb5a02e777e780e14002c5e9cdbb90f2140f5b7516592b8e05e67366160)
+M7 SPECIFICATION READING                : M7 V1.1 + ACCEPTED ERRATUM 01 (for the clauses Erratum 01 amends)
+                                          + ACCEPTED ERRATUM 02 (for the nine occurrences Erratum 02 enumerates)
+                                          + ACCEPTED ERRATUM 03 (for the fourteen occurrences Erratum 03 enumerates)
+M7 CONFORMANCE TARGET                   : M7 V1.1 + ACCEPTED ERRATUM 01 + ACCEPTED ERRATUM 02 + ACCEPTED ERRATUM 03 (§15.2)
+ER-01…ER-05                             : INCORPORATED ACCORDING TO ERRATUM 01
+E02-01…E02-09                           : INCORPORATED ACCORDING TO ERRATUM 02 — 9 occurrences in F09, F11, F17,
+                                          F23, F26; 21 / 26 fragments unaffected
+E03-01…E03-09                           : INCORPORATED ACCORDING TO ERRATUM 03 — 14 occurrences (classes E03-A…E03-I);
+                                          normative SQL in F01, F11, F24; 23 / 26 fragments unaffected
+D-13                                    : DOWNSTREAM IMPLEMENTATION / CONTROL-PLANE COMPATIBILITY MATTER
+D-06                                    : CLASSIFICATION ONLY — SERVER_MEDIATED CONFORMING; PRESIGNED_PUT UNAVAILABLE
+M7 IMPLEMENTATION AUTHORIZED            : YES — GATE 1 ONLY (see the next two rows; never quote this row alone)
+M7 IMPLEMENTATION WORK                  : AUTHORIZED — GATE 1 (§11; not revoked by Erratum 01, Erratum 02 or
+                                          Erratum 03); candidates MUST conform to M7 V1.1 + accepted Erratum 01 +
+                                          accepted Erratum 02 + accepted Erratum 03 (§15.2)
+M7 IMPLEMENTATION / RUNTIME             : NOT ACCEPTED — GATE 2 OPEN / NOT SATISFIED; no completed implementation
+                                          candidate exists (§11.4, §15.7)
+M7 IMPLEMENTATION STAGING               : tip dd5fc7278ac4fc0607aeae1fc885bb46c181968e (PR #27; not an authority
+                                          surface); contains PR #25 merge; does NOT contain Erratum 03 merge (§15.4)
+M7-S01 (PRE-ERRATUM-02 EXTRACTION)      : HISTORICALLY ACCEPTED — SUPERSEDED; integrated in staging (merge
+                                          742bfffa0aaee4e92743ca5d9d6432affbe22e62, PR #22); not rejected (§14.6)
+M7-S01 (ERRATUM 02 REGENERATION)        : INDEPENDENTLY RE-ACCEPTED / INTEGRATED IN STAGING BEFORE ERRATUM 03
+                                          (candidate 60781eb599f7a385e18174adb8d0da0faf833000; merge
+                                          dd5fc7278ac4fc0607aeae1fc885bb46c181968e, PR #27) — NOW SUPERSEDED FOR
+                                          ERRATUM 03 CONFORMANCE — STALE; not rejected (§15.5)
+M7-S01 ERRATUM 03 REGENERATION          : REQUIRED — NOT PERFORMED; affected fragments F01, F11, F24;
+                                          independent re-acceptance REQUIRED (§15.5)
+M7-S02                                  : ACCEPTED / INTEGRATED INFRASTRUCTURE — UNCHANGED; regeneration not required
+                                          (merge 14d846abb749c4bb27a9868eb0913acd343cb64e, PR #23; §14.6, §15.5)
+M7-S03                                  : BLOCKED — resume NOT AUTHORIZED; prerequisites §15.6
+IMP-01…IMP-22                           : OPEN
+MA-1…MA-18                              : OPEN
+§24.3 CI ADDITIONS                      : OPEN — none exists
+LC-1                                    : NOT OCCURRED
+LC-2…LC-7                               : NOT OCCURRED (§12.5)
+M7 CONTROL-PLANE MANIFEST               : NOT AUTHORED / NOT ACCEPTED / NOT PUBLISHED
+MACHINE-READABLE AUTHORITY              : NOT PUBLISHED — UNCHANGED
+PAGAMENOS_ACCEPTED_AUTHORITY_BASE_SHA   : NOT ASSERTED
+SELECTOR ROTATION                       : NOT PERFORMED
+REAL-PROVIDER VERIFICATION              : NOT PERFORMED
+REAL-DEPLOYMENT VERIFICATION            : NOT PERFORMED
+RESIDUALS M7-R-01…M7-R-17               : STATED BOUNDS — NOT ELIMINATED
+DEPLOYMENT / WAVE 0                     : NOT AUTHORIZED
+CCA SPECIFICATION (AMENDMENT 01)        : ACCEPTED + PROTECTED-INTEGRATED (§9.1; candidate
+                                          d6434e4597a178fde45faf74da0298fdb5755d37; merge
+                                          f54d95abb0a8f7988626597a0eef01d0b0ae3c95, PR #14); bytes unedited
+DEP-03                                  : CLOSED (§9.3)
+CCA IMPLEMENTATION AUTHORIZATION        : GRANTED — IMPLEMENTATION WORK ONLY (§13; protected-integrated by PR #21,
+                                          merge f1fd894b60b70e07143d474992ff8b3c5dd88fe1; see the next two rows;
+                                          never quote this row alone)
+CCA IMPLEMENTATION WORK                 : AUTHORIZED — permission to build conforming machinery implementing the
+                                          exact accepted CCA, within CCA §50.1 scope (§13.3–§13.5)
+CCA IMPLEMENTATION                      : NOT ACCEPTED — no CCA implementation exists (§13.3, §13.8)
+CCA RUNTIME ACCEPTANCE                  : NOT PERFORMED
+CCA AG-01…AG-16                         : OPEN FOR FUTURE IMPLEMENTATION ACCEPTANCE
+CCA §48 ADVERSARIAL IMPLEMENTATION      : NOT YET EXECUTED
+CCA §42–§45 ENFORCEMENT                 : NOT BUILT — NOT VERIFIED
+CCA §46 FINDINGS                        : CLOSED AT SPECIFICATION LEVEL — implementation conformance NOT VERIFIED
+B1S DESIGN                              : YES — MAY use the accepted S-2 non-grounding default (§9.7); Path A only
+                                          with an accepted M7 ingestion integration contract (§10.9, §11.6, §12.9,
+                                          §13.10, §14.11, §15.8)
+B2S DESIGN                              : per existing JBA / P-16 sequencing (§6, §7) — unchanged
+B1 IMPLEMENTATION                       : NO
+B2 IMPLEMENTATION                       : NO
+C1 IMPLEMENTATION                       : NO
+C2 IMPLEMENTATION                       : NO
+AnalysisProtocol v1                     : UNFROZEN
+P-16                                    : ACTIVE
+```
+
+This matrix records status established by §6, §7, §9, §10, §11, §12, §13, §14 and §15.1–§15.10; it authorizes nothing beyond them. Relative to §14.14, it adds the Erratum 03, `E03-01…E03-09` and M7 implementation-staging rows; extends the M7 specification-reading, conformance-target and implementation-work rows to Erratum 03; replaces the `M7-S01 REGENERATION : REQUIRED — NOT PERFORMED` row (which the PR #27 regeneration under Erratum 02 has since discharged for Erratum 02) with the `M7-S01 (ERRATUM 02 REGENERATION)` and `M7-S01 ERRATUM 03 REGENERATION` rows; restates the pre-Erratum-02 M7-S01 row without changing its status; and points the M7-S02, M7-S03, implementation/runtime and B1S rows at §15. It changes no Gate 1, Gate 2, `IMP-*`, `MA-*`, LC, manifest, machine-readable authority, selector, CCA, B, C, P-16 or deployment status.
