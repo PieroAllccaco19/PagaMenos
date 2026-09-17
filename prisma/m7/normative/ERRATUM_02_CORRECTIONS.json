@@ -5,7 +5,7 @@
     "NOT A MIGRATION; NOT INSTALLED INTO POSTGRESQL; NOT A CONTROL-PLANE MANIFEST",
     "SATISFIES NO IMP-* OR MA-* ITEM; M7 GATE 2 NOT SATISFIED"
   ],
-  "conformanceTarget": "M7 V1.1 + accepted Erratum 01 + accepted Erratum 02",
+  "conformanceTarget": "M7 V1.1 + accepted Erratum 01 + accepted Erratum 02 + accepted Erratum 03",
   "source": {
     "path": "PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_02.md",
     "gitBlob": "a0e6fa6720f23ac08485ab7cb696ab9ba4b7e83f",

@@ -2,11 +2,13 @@
 // every structural surprise is refused rather than interpreted.
 import { describe, expect, it } from 'vitest';
 
-import { e01Bytes, e02Bytes, v11Bytes } from './__fixtures__/accepted-sources';
+import { e01Bytes, e02Bytes, e03Bytes, v11Bytes } from './__fixtures__/accepted-sources';
 import {
+  CONFORMANCE_TARGET,
   M7_V1_1,
   M7_V1_1_ERRATUM_01,
   M7_V1_1_ERRATUM_02,
+  M7_V1_1_ERRATUM_03,
   SourceIdentityError,
   SourceStructureError,
   gitBlobId,
@@ -53,6 +55,30 @@ describe('bound artifact identity', () => {
       lines: 515,
     });
     expect(() => verifyBoundArtifact(M7_V1_1_ERRATUM_02, e02Bytes)).not.toThrow();
+  });
+
+  it('the committed Erratum 03 bytes are the accepted bytes (blob, SHA-256, size, lines)', () => {
+    expect(gitBlobId(e03Bytes)).toBe('8ba87adc9b87cee749c214d9326b0aa750ceabf0');
+    expect(sha256Hex(e03Bytes)).toBe(
+      'b4debcb5a02e777e780e14002c5e9cdbb90f2140f5b7516592b8e05e67366160',
+    );
+    expect(M7_V1_1_ERRATUM_03).toEqual({
+      path: 'PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_03.md',
+      gitBlob: '8ba87adc9b87cee749c214d9326b0aa750ceabf0',
+      sha256: 'b4debcb5a02e777e780e14002c5e9cdbb90f2140f5b7516592b8e05e67366160',
+      bytes: 72_201,
+      lines: 779,
+    });
+    expect(() => verifyBoundArtifact(M7_V1_1_ERRATUM_03, e03Bytes)).not.toThrow();
+    expect(() => verifyBoundArtifact(M7_V1_1_ERRATUM_03, e02Bytes)).toThrow(SourceIdentityError);
+    const wrong = { ...M7_V1_1_ERRATUM_03, gitBlob: 'a0e6fa6720f23ac08485ab7cb696ab9ba4b7e83f' };
+    expect(() => verifyBoundArtifact(wrong, e03Bytes)).toThrow(/git blob/);
+  });
+
+  it('the conformance target is V1.1 + accepted Erratum 01 + 02 + 03', () => {
+    expect(CONFORMANCE_TARGET).toBe(
+      'M7 V1.1 + accepted Erratum 01 + accepted Erratum 02 + accepted Erratum 03',
+    );
   });
 
   it('refuses a recorded Erratum 02 identity that is not the accepted one', () => {

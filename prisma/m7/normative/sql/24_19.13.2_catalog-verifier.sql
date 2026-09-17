@@ -79,7 +79,7 @@ BEGIN
     SELECT 'REL-ACL: ' || c.relname::text || ' -> ' || COALESCE(r.rolname::text, 'PUBLIC') || ' ' || x.privilege_type
       FROM pg_catalog.pg_class c
       CROSS JOIN LATERAL pg_catalog.aclexplode(COALESCE(c.relacl, pg_catalog.acldefault(
-                 CASE WHEN c.relkind = 'S' THEN 's' ELSE 'r' END, c.relowner))) x
+                 (CASE WHEN c.relkind = 'S' THEN 's' ELSE 'r' END)::"char", c.relowner))) x
       LEFT JOIN pg_catalog.pg_roles r ON r.oid = x.grantee
      WHERE c.relnamespace = v_ns AND c.relkind IN ('r','v','S','m','p') AND x.grantee <> v_owner;
 
@@ -128,13 +128,16 @@ BEGIN
         UNION ALL
         SELECT c.relname, 'CONSTRAINT'::m7."M7CatalogObjectKind", con.conname, NULL::boolean
           FROM pg_catalog.pg_constraint con JOIN pg_catalog.pg_class c ON c.oid = con.conrelid
-         WHERE c.relnamespace = v_ns
+         WHERE c.relnamespace = v_ns AND con.contype IN ('p', 'u', 'f', 'c')
         UNION ALL
         SELECT c.relname, 'INDEX'::m7."M7CatalogObjectKind", ic.relname, ix.indisunique
           FROM pg_catalog.pg_index ix
           JOIN pg_catalog.pg_class ic ON ic.oid = ix.indexrelid
           JOIN pg_catalog.pg_class c  ON c.oid  = ix.indrelid
-         WHERE c.relnamespace = v_ns),
+         WHERE c.relnamespace = v_ns
+           AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_constraint k
+                            WHERE k.conrelid = ix.indrelid AND k.conindid = ix.indexrelid
+                              AND k.contype IN ('p', 'u'))),
     expected AS (
         SELECT o."relationName" AS rel, o."objectKind" AS kind, o."objectName" AS obj, o."isUnique" AS uniq
           FROM m7.m7_expected_relation_object o WHERE o."manifestVersion" = p_manifest_version)
@@ -190,7 +193,7 @@ BEGIN
     RETURN QUERY
     SELECT 'IA-06: ' || r.rolname::text
       FROM pg_catalog.pg_roles r
-     WHERE r.rolname <> 'pagamenos_m7_owner'
+     WHERE NOT r.rolsuper AND NOT pg_catalog.pg_has_role(r.oid, v_owner, 'MEMBER')
        AND EXISTS (SELECT 1 FROM pg_catalog.pg_proc p
                     WHERE p.pronamespace = v_ns AND p.proname = 'a_mint_deletion_authorization_v1'
                       AND pg_catalog.has_function_privilege(r.oid, p.oid, 'EXECUTE'))
