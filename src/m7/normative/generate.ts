@@ -1,6 +1,6 @@
 // M7 V1.1 — S01: deterministic generation of the normative extraction artifacts.
 //
-// A pure function from the three accepted documents' bytes (M7 V1.1, Erratum 01, Erratum 02) to a map
+// A pure function from the four accepted documents' bytes (M7 V1.1, Erratum 01, Erratum 02, Erratum 03) to a map
 // `relative path → file text`. The same bytes always yield the same map (fixed key order, source-order
 // arrays, LF line endings, no timestamps, no environment input). The artifacts are extraction evidence
 // for later slices: they are NOT a migration, NOT a control-plane manifest, and nothing here installs
@@ -27,10 +27,20 @@ import {
   readErratum02Corrections,
 } from './erratum-02-corrections';
 import {
+  ACCEPTED_ERRATUM_03_PROSE_OCCURRENCES,
+  type E03Evidence,
+  ERRATUM_03_AFFECTED_FRAGMENTS,
+  applyErratum03Corrections,
+  auditErratum03Fragments,
+  crossCheckErratum03Pins,
+  readErratum03Corrections,
+} from './erratum-03-corrections';
+import {
   CONFORMANCE_TARGET,
   M7_V1_1,
   M7_V1_1_ERRATUM_01,
   M7_V1_1_ERRATUM_02,
+  M7_V1_1_ERRATUM_03,
   sha256Hex,
   verifyBoundArtifact,
 } from './source';
@@ -42,7 +52,8 @@ export const ORDERING_RULE =
   'Fragments are emitted in ascending source position of their opening fence, which equals the ' +
   'order of the S01 anchor registry (F01…F26); each file name carries its two-digit ordinal and ' +
   'clause. File bodies are the exact fence body lines, with only the Erratum 02 E02-01…E02-09 ' +
-  'substitutions applied at their named lines, joined by LF with a final LF. JSON members ' +
+  'substitutions applied at their named lines and then only the six Erratum 03 SQL block ' +
+  'replacements applied at their quoted lines, joined by LF with a final LF. JSON members ' +
   'are written in a fixed order, identifier lists in source order, and the file index in ' +
   'lexicographic path order.';
 
@@ -71,11 +82,13 @@ export function generateNormativeArtifacts(
   v11Bytes: Uint8Array,
   e01Bytes: Uint8Array,
   e02Bytes: Uint8Array,
+  e03Bytes: Uint8Array,
 ): GeneratedArtifacts {
   // 1. Identity first: nothing is read from bytes that are not the accepted bytes.
   const v11Text = verifyBoundArtifact(M7_V1_1, v11Bytes);
   const e01Text = verifyBoundArtifact(M7_V1_1_ERRATUM_01, e01Bytes);
   const e02Text = verifyBoundArtifact(M7_V1_1_ERRATUM_02, e02Bytes);
+  const e03Text = verifyBoundArtifact(M7_V1_1_ERRATUM_03, e03Bytes);
 
   // 2. Anchored, fail-closed selection of the accepted V1.1 fence bodies.
   const v11Selection = selectNormativeFragments(v11Text);
@@ -83,9 +96,9 @@ export function generateNormativeArtifacts(
   // 2a. Erratum 02 — the nine occurrence-scoped substitutions, read from the accepted erratum bytes,
   // applied at exactly their occurrences, then audited against the pinned effective identities.
   const e02 = readErratum02Corrections(v11Text, e02Text, v11Selection);
-  const selection = applyErratum02Corrections(v11Selection, e02.corrections);
-  const postconditions = auditEffectiveFragments(selection, e02.corrections);
-  const informativePins = crossCheckInformativePins(e02Text, selection);
+  const e02Selection = applyErratum02Corrections(v11Selection, e02.corrections);
+  const postconditions = auditEffectiveFragments(e02Selection, e02.corrections);
+  const informativePins = crossCheckInformativePins(e02Text, e02Selection);
   const e02Failures = [
     ...e02.checks.filter((c) => !c.pass).map(describe),
     ...e02.corrections.flatMap((c) =>
@@ -98,11 +111,39 @@ export function generateNormativeArtifacts(
     throw new ExtractionRefusedError(`Erratum 02 verification failed: ${e02Failures.join('; ')}`);
   }
 
+  // 2b. Erratum 03 — the six occurrence-scoped SQL block replacements, read from the accepted erratum
+  // bytes, applied over the Erratum 02-effective fragments at exactly their quoted lines, then audited
+  // against the pinned Erratum 03 effective identities.
+  const e03 = readErratum03Corrections(v11Text, e03Text, e02Selection, e02.corrections);
+  const selection = applyErratum03Corrections(e02Selection, e03.corrections);
+  const e03Postconditions = auditErratum03Fragments(selection, e03.corrections, e02.corrections);
+  const e03InformativePins = crossCheckErratum03Pins(e03Text, selection);
+  const e03Failures = [
+    ...e03.checks.filter((c) => !c.pass).map(describe),
+    ...e03.corrections.flatMap((c) =>
+      c.evidence.filter((e) => !e.pass).map((e) => `${c.id} ${describe(e)}`),
+    ),
+    ...e03Postconditions.filter((c) => !c.pass).map(describe),
+    ...e03InformativePins.filter((c) => !c.pass).map(describe),
+  ];
+  if (e03Failures.length > 0) {
+    throw new ExtractionRefusedError(`Erratum 03 verification failed: ${e03Failures.join('; ')}`);
+  }
+
   // 3. Mechanical inventory over the effective fragments; a mismatch is a SPEC-DEFECT, never repaired.
   const inventory = deriveInventory(v11Text, selection);
   const checks = reconcileInventory(inventory);
   const failed = checks.filter((c) => !c.pass);
   if (failed.length > 0) throw new SpecDefectError(failed);
+  // Erratum 03 §10 item 6: no object is added, removed or renamed.
+  const inventoryUnchanged = ev03(
+    'mechanical inventory over the Erratum 03-effective fragments == over the Erratum 02-effective fragments',
+    inventory,
+    deriveInventory(v11Text, e02Selection),
+  );
+  if (!inventoryUnchanged.pass) {
+    throw new ExtractionRefusedError(`Erratum 03 verification failed: ${inventoryUnchanged.check}`);
+  }
 
   // 4. ER-01 extraction preconditions and their negative controls.
   const checked = toCheckedFragments(selection.fragments);
@@ -205,10 +246,32 @@ export function generateNormativeArtifacts(
       allPass: true,
     }),
   );
+  files.set(
+    'ERRATUM_03_CORRECTIONS.json',
+    json({
+      schema: 'pagamenos.m7.s01.erratum-03-corrections.v1',
+      status: STATUS,
+      conformanceTarget: CONFORMANCE_TARGET,
+      source: M7_V1_1_ERRATUM_03,
+      readingRule:
+        'An Erratum 03 "After" block replaces exactly its quoted "Before" block of V1.1 lines, at exactly the named lines; extra After lines are inserted immediately after the last quoted line; no line is removed or reordered (Erratum 03 §3 item 2; Register §15.2). Only the six SQL occurrences inside §19 fence bodies affect the extraction (Erratum 03 §10 item 1); every other byte is read from the accepted V1.1 bytes read with Erratum 01 and Erratum 02.',
+      sqlCorrectionCount: e03.corrections.length,
+      proseOccurrencesOutsideFragments: [...ACCEPTED_ERRATUM_03_PROSE_OCCURRENCES],
+      affectedFragments: [...ERRATUM_03_AFFECTED_FRAGMENTS],
+      unaffectedFragments: selection.fragments
+        .filter((f) => f.erratum03Corrections.length === 0)
+        .map((f) => f.anchor.id),
+      documentChecks: e03.checks,
+      records: e03.corrections,
+      postconditions: [...e03Postconditions, inventoryUnchanged],
+      informativePinCrossCheck: e03InformativePins,
+      allPass: true,
+    }),
+  );
   files.set('README.md', readme());
 
   const index = {
-    schema: 'pagamenos.m7.s01.normative-ddl-extraction.v2',
+    schema: 'pagamenos.m7.s01.normative-ddl-extraction.v3',
     status: STATUS,
     generator: 'scripts/m7/extract-normative-ddl.ts',
     conformanceTarget: CONFORMANCE_TARGET,
@@ -216,9 +279,10 @@ export function generateNormativeArtifacts(
       specification: M7_V1_1,
       erratum01: M7_V1_1_ERRATUM_01,
       erratum02: M7_V1_1_ERRATUM_02,
+      erratum03: M7_V1_1_ERRATUM_03,
     },
     fragmentBytesRule:
-      'Each sql/ file is the accepted V1.1 fence body (v11Body*) with exactly the Erratum 02 §6 substitutions listed in erratum02Corrections applied at their named lines; line spans and line counts are those of V1.1. sha256/bytes are the effective (written) file bytes.',
+      'Each sql/ file is the accepted V1.1 fence body (v11Body*) with exactly the Erratum 02 §6 substitutions listed in erratum02Corrections applied at their named lines (erratum02Sha256), and then exactly the Erratum 03 SQL block replacements listed in erratum03Corrections applied at their quoted lines. Line spans and bodyLines are those of V1.1; lines, bytes and sha256 are the effective (written) file bytes.',
     normativeRegion: {
       startHeading: NORMATIVE_REGION_START,
       startLine: selection.regionStartLine,
@@ -242,6 +306,9 @@ export function generateNormativeArtifacts(
       v11BodyBytes: new TextEncoder().encode(f.v11Sql).byteLength,
       v11BodySha256: f.v11Sha256,
       erratum02Corrections: f.erratum02Corrections,
+      erratum02Sha256: f.erratum02Sha256,
+      erratum03Corrections: f.erratum03Corrections,
+      lines: f.sql.slice(0, -1).split('\n').length,
       bytes: new TextEncoder().encode(f.sql).byteLength,
       sha256: f.sha256,
       file: `sql/${f.anchor.file}`,
@@ -253,7 +320,11 @@ export function generateNormativeArtifacts(
   return { files: new Map([...files.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) };
 }
 
-function describe(e: E02Evidence): string {
+function ev03(check: string, observed: unknown, expected: unknown): E03Evidence {
+  return { check, observed, expected, pass: JSON.stringify(observed) === JSON.stringify(expected) };
+}
+
+function describe(e: E02Evidence | E03Evidence): string {
   return `${e.check}: observed ${JSON.stringify(e.observed)} ≠ expected ${JSON.stringify(e.expected)}`;
 }
 
@@ -267,18 +338,21 @@ function readme(): string {
     '',
     'This directory is generated by `pnpm m7:ddl:extract` from the exact accepted bytes of',
     `\`${M7_V1_1.path}\` (blob \`${M7_V1_1.gitBlob}\`) read together with`,
-    `\`${M7_V1_1_ERRATUM_01.path}\` (blob \`${M7_V1_1_ERRATUM_01.gitBlob}\`) and`,
-    `\`${M7_V1_1_ERRATUM_02.path}\` (blob \`${M7_V1_1_ERRATUM_02.gitBlob}\`).`,
+    `\`${M7_V1_1_ERRATUM_01.path}\` (blob \`${M7_V1_1_ERRATUM_01.gitBlob}\`),`,
+    `\`${M7_V1_1_ERRATUM_02.path}\` (blob \`${M7_V1_1_ERRATUM_02.gitBlob}\`) and`,
+    `\`${M7_V1_1_ERRATUM_03.path}\` (blob \`${M7_V1_1_ERRATUM_03.gitBlob}\`).`,
     `Conformance target: **${CONFORMANCE_TARGET}**.`,
     '`pnpm m7:ddl:check` fails on any drift, missing file or extra file, and names any stale',
-    'pre-Erratum-02 expression it finds.',
+    'pre-Erratum-02 expression or pre-Erratum-03 block it finds.',
     '',
     '- `sql/` — the 26 normative SQL fence bodies of V1.1 §19.2–§19.13, one file per anchor: byte-for-byte',
-    '  the V1.1 body, except the nine Erratum 02 occurrences E02-01…E02-09 (F09, F11, F17, F23, F26).',
+    '  the V1.1 body, except the nine Erratum 02 occurrences E02-01…E02-09 (F09, F11, F17, F23, F26)',
+    '  and the six Erratum 03 SQL occurrences E03-01, E03-02, E03-03a, E03-04a, E03-05a, E03-06a (F01, F11, F24).',
     '- `EXTRACTION_INDEX.json` — source identities, anchors, source line spans, V1.1 and effective SHA-256.',
     '- `INVENTORY.json` — the mechanical inventory reconciliation (V1.1 §19.14.1).',
     '- `ERRATUM_01_OVERRIDES.json` — the clauses read differently under accepted Erratum 01 (ER-01…ER-05).',
     '- `ERRATUM_02_CORRECTIONS.json` — the nine occurrence-scoped Erratum 02 substitutions and their audit.',
+    '- `ERRATUM_03_CORRECTIONS.json` — the six occurrence-scoped Erratum 03 SQL block replacements and their audit.',
     '- `MD_MG_PRECONDITIONS.json` — ER-01 extraction preconditions and negative controls.',
     '',
     'The fragments are not concatenated into, and must not be mistaken for, the M7 migration: the',

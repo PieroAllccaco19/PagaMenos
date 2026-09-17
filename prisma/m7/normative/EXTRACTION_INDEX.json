@@ -1,12 +1,12 @@
 {
-  "schema": "pagamenos.m7.s01.normative-ddl-extraction.v2",
+  "schema": "pagamenos.m7.s01.normative-ddl-extraction.v3",
   "status": [
     "S01 EXTRACTION ARTIFACT — GENERATED; DO NOT EDIT BY HAND",
     "NOT A MIGRATION; NOT INSTALLED INTO POSTGRESQL; NOT A CONTROL-PLANE MANIFEST",
     "SATISFIES NO IMP-* OR MA-* ITEM; M7 GATE 2 NOT SATISFIED"
   ],
   "generator": "scripts/m7/extract-normative-ddl.ts",
-  "conformanceTarget": "M7 V1.1 + accepted Erratum 01 + accepted Erratum 02",
+  "conformanceTarget": "M7 V1.1 + accepted Erratum 01 + accepted Erratum 02 + accepted Erratum 03",
   "sources": {
     "specification": {
       "path": "PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1.md",
@@ -28,9 +28,16 @@
       "sha256": "b7b3440ad04181356770f243a6e2870e004aba604d2a62afdefd5330c85c170f",
       "bytes": 44295,
       "lines": 515
+    },
+    "erratum03": {
+      "path": "PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_03.md",
+      "gitBlob": "8ba87adc9b87cee749c214d9326b0aa750ceabf0",
+      "sha256": "b4debcb5a02e777e780e14002c5e9cdbb90f2140f5b7516592b8e05e67366160",
+      "bytes": 72201,
+      "lines": 779
     }
   },
-  "fragmentBytesRule": "Each sql/ file is the accepted V1.1 fence body (v11Body*) with exactly the Erratum 02 §6 substitutions listed in erratum02Corrections applied at their named lines; line spans and line counts are those of V1.1. sha256/bytes are the effective (written) file bytes.",
+  "fragmentBytesRule": "Each sql/ file is the accepted V1.1 fence body (v11Body*) with exactly the Erratum 02 §6 substitutions listed in erratum02Corrections applied at their named lines (erratum02Sha256), and then exactly the Erratum 03 SQL block replacements listed in erratum03Corrections applied at their quoted lines. Line spans and bodyLines are those of V1.1; lines, bytes and sha256 are the effective (written) file bytes.",
   "normativeRegion": {
     "startHeading": "## 19. Complete normative DDL",
     "startLine": 2365,
@@ -40,7 +47,7 @@
     "fencesInDocument": 65,
     "sqlFencesOutsideRegion": 0
   },
-  "orderingRule": "Fragments are emitted in ascending source position of their opening fence, which equals the order of the S01 anchor registry (F01…F26); each file name carries its two-digit ordinal and clause. File bodies are the exact fence body lines, with only the Erratum 02 E02-01…E02-09 substitutions applied at their named lines, joined by LF with a final LF. JSON members are written in a fixed order, identifier lists in source order, and the file index in lexicographic path order.",
+  "orderingRule": "Fragments are emitted in ascending source position of their opening fence, which equals the order of the S01 anchor registry (F01…F26); each file name carries its two-digit ordinal and clause. File bodies are the exact fence body lines, with only the Erratum 02 E02-01…E02-09 substitutions applied at their named lines and then only the six Erratum 03 SQL block replacements applied at their quoted lines, joined by LF with a final LF. JSON members are written in a fixed order, identifier lists in source order, and the file index in lexicographic path order.",
   "fragments": [
     {
       "id": "F01",
@@ -55,8 +62,13 @@
       "v11BodyBytes": 5059,
       "v11BodySha256": "0d6a919d5aa40d4031bf540868f549b88732ac24ff27c731e7442dcae4e1f1e3",
       "erratum02Corrections": [],
-      "bytes": 5059,
-      "sha256": "0d6a919d5aa40d4031bf540868f549b88732ac24ff27c731e7442dcae4e1f1e3",
+      "erratum02Sha256": "0d6a919d5aa40d4031bf540868f549b88732ac24ff27c731e7442dcae4e1f1e3",
+      "erratum03Corrections": [
+        "E03-06a"
+      ],
+      "lines": 95,
+      "bytes": 5074,
+      "sha256": "f75c45ab8110c3fe5bce5379e77a08a51bc2e3d0561e887310d9c9361d02a6be",
       "file": "sql/01_19.2_preamble.sql"
     },
     {
@@ -72,6 +84,9 @@
       "v11BodyBytes": 4932,
       "v11BodySha256": "02b51d24aabed73e7c2d1390c620f7660729ac971426329e08110061c529f0ff",
       "erratum02Corrections": [],
+      "erratum02Sha256": "02b51d24aabed73e7c2d1390c620f7660729ac971426329e08110061c529f0ff",
+      "erratum03Corrections": [],
+      "lines": 50,
       "bytes": 4932,
       "sha256": "02b51d24aabed73e7c2d1390c620f7660729ac971426329e08110061c529f0ff",
       "file": "sql/02_19.3_enumerated-types.sql"
@@ -89,6 +104,9 @@
       "v11BodyBytes": 19660,
       "v11BodySha256": "5c09af0076a536b1c7b44f552bdcb4beb8721b36bfd136987c915e284dc214e3",
       "erratum02Corrections": [],
+      "erratum02Sha256": "5c09af0076a536b1c7b44f552bdcb4beb8721b36bfd136987c915e284dc214e3",
+      "erratum03Corrections": [],
+      "lines": 275,
       "bytes": 19660,
       "sha256": "5c09af0076a536b1c7b44f552bdcb4beb8721b36bfd136987c915e284dc214e3",
       "file": "sql/03_19.4_control-plane-identity-tables.sql"
@@ -106,6 +124,9 @@
       "v11BodyBytes": 3471,
       "v11BodySha256": "bdca4c13560257555f810ff213afb1aeb763a651bf1f3e9c63a9ef56fa10bc59",
       "erratum02Corrections": [],
+      "erratum02Sha256": "bdca4c13560257555f810ff213afb1aeb763a651bf1f3e9c63a9ef56fa10bc59",
+      "erratum03Corrections": [],
+      "lines": 65,
       "bytes": 3471,
       "sha256": "bdca4c13560257555f810ff213afb1aeb763a651bf1f3e9c63a9ef56fa10bc59",
       "file": "sql/04_19.5_catalog-expectation-set.sql"
@@ -123,6 +144,9 @@
       "v11BodyBytes": 2073,
       "v11BodySha256": "8d5ba82eabb4bd9789dc6469c2973fdd509d6069a8c071656e5c700a9aafd7cc",
       "erratum02Corrections": [],
+      "erratum02Sha256": "8d5ba82eabb4bd9789dc6469c2973fdd509d6069a8c071656e5c700a9aafd7cc",
+      "erratum03Corrections": [],
+      "lines": 34,
       "bytes": 2073,
       "sha256": "8d5ba82eabb4bd9789dc6469c2973fdd509d6069a8c071656e5c700a9aafd7cc",
       "file": "sql/05_19.6_session-capability-tables.sql"
@@ -140,6 +164,9 @@
       "v11BodyBytes": 8105,
       "v11BodySha256": "9d8adb7c7bf1b4a66759640a45f4138402c510c5f4f199c690f99caee794bd52",
       "erratum02Corrections": [],
+      "erratum02Sha256": "9d8adb7c7bf1b4a66759640a45f4138402c510c5f4f199c690f99caee794bd52",
+      "erratum03Corrections": [],
+      "lines": 118,
       "bytes": 8105,
       "sha256": "9d8adb7c7bf1b4a66759640a45f4138402c510c5f4f199c690f99caee794bd52",
       "file": "sql/06_19.7_outcome-tables.sql"
@@ -157,6 +184,9 @@
       "v11BodyBytes": 37268,
       "v11BodySha256": "697d1d93278ae4b0a4db55ce8f144b70459e1b5dea678645d4c3f2d4fd067b0f",
       "erratum02Corrections": [],
+      "erratum02Sha256": "697d1d93278ae4b0a4db55ce8f144b70459e1b5dea678645d4c3f2d4fd067b0f",
+      "erratum03Corrections": [],
+      "lines": 526,
       "bytes": 37268,
       "sha256": "697d1d93278ae4b0a4db55ce8f144b70459e1b5dea678645d4c3f2d4fd067b0f",
       "file": "sql/07_19.8_evidence-generations-storage-tables.sql"
@@ -174,6 +204,9 @@
       "v11BodyBytes": 21616,
       "v11BodySha256": "d5c8827cd16c70de9020da9b93ba35f8cc7da94ca0f127be92a861b3236effa0",
       "erratum02Corrections": [],
+      "erratum02Sha256": "d5c8827cd16c70de9020da9b93ba35f8cc7da94ca0f127be92a861b3236effa0",
+      "erratum03Corrections": [],
+      "lines": 317,
       "bytes": 21616,
       "sha256": "d5c8827cd16c70de9020da9b93ba35f8cc7da94ca0f127be92a861b3236effa0",
       "file": "sql/08_19.9_privacy-deletion-outbox-tables.sql"
@@ -195,6 +228,9 @@
         "E02-02",
         "E02-03"
       ],
+      "erratum02Sha256": "c2bb8b38feaf6cbb1559ae0c1396d34344094008a75e81f7406f9a239225c75c",
+      "erratum03Corrections": [],
+      "lines": 1124,
       "bytes": 64833,
       "sha256": "c2bb8b38feaf6cbb1559ae0c1396d34344094008a75e81f7406f9a239225c75c",
       "file": "sql/09_19.10_trigger-functions.sql"
@@ -212,6 +248,9 @@
       "v11BodyBytes": 11213,
       "v11BodySha256": "c2b0fd5bbc71c713572f2571e57909532b5ea4a90cc1adcd4c5a82ce76926c41",
       "erratum02Corrections": [],
+      "erratum02Sha256": "c2b0fd5bbc71c713572f2571e57909532b5ea4a90cc1adcd4c5a82ce76926c41",
+      "erratum03Corrections": [],
+      "lines": 138,
       "bytes": 11213,
       "sha256": "c2b0fd5bbc71c713572f2571e57909532b5ea4a90cc1adcd4c5a82ce76926c41",
       "file": "sql/10_19.10.1_trigger-installation.sql"
@@ -231,8 +270,13 @@
       "erratum02Corrections": [
         "E02-04"
       ],
-      "bytes": 31344,
-      "sha256": "4803e194d62b3b3926e3b98a84d00ede902a485e04aed5de73533207f950be0a",
+      "erratum02Sha256": "4803e194d62b3b3926e3b98a84d00ede902a485e04aed5de73533207f950be0a",
+      "erratum03Corrections": [
+        "E03-01"
+      ],
+      "lines": 606,
+      "bytes": 31403,
+      "sha256": "c9f5777fcc699fd9411427e4b17fd3f28258068f925bbb8fcbe3a935fbec75a9",
       "file": "sql/11_19.11.1_internal-helpers.sql"
     },
     {
@@ -248,6 +292,9 @@
       "v11BodyBytes": 34526,
       "v11BodySha256": "572a9cf7182772f01b263ec367f993522c39e81e27edc74e59ea1ba65b6dd5a9",
       "erratum02Corrections": [],
+      "erratum02Sha256": "572a9cf7182772f01b263ec367f993522c39e81e27edc74e59ea1ba65b6dd5a9",
+      "erratum03Corrections": [],
+      "lines": 498,
       "bytes": 34526,
       "sha256": "572a9cf7182772f01b263ec367f993522c39e81e27edc74e59ea1ba65b6dd5a9",
       "file": "sql/12_19.11.2_control-plane-registration.sql"
@@ -265,6 +312,9 @@
       "v11BodyBytes": 3829,
       "v11BodySha256": "f3adfbcf898828e1abcbf134c25ac3509c1c7f3f3b9bf7c86518f8f471d587eb",
       "erratum02Corrections": [],
+      "erratum02Sha256": "f3adfbcf898828e1abcbf134c25ac3509c1c7f3f3b9bf7c86518f8f471d587eb",
+      "erratum03Corrections": [],
+      "lines": 61,
       "bytes": 3829,
       "sha256": "f3adfbcf898828e1abcbf134c25ac3509c1c7f3f3b9bf7c86518f8f471d587eb",
       "file": "sql/13_19.11.3_session-issuer.sql"
@@ -282,6 +332,9 @@
       "v11BodyBytes": 25121,
       "v11BodySha256": "0835ba74fba500c36357508ab485b2e1a96a1bbce33938bc9d108740d010ff8a",
       "erratum02Corrections": [],
+      "erratum02Sha256": "0835ba74fba500c36357508ab485b2e1a96a1bbce33938bc9d108740d010ff8a",
+      "erratum03Corrections": [],
+      "lines": 375,
       "bytes": 25121,
       "sha256": "0835ba74fba500c36357508ab485b2e1a96a1bbce33938bc9d108740d010ff8a",
       "file": "sql/14_19.11.4_participant.sql"
@@ -299,6 +352,9 @@
       "v11BodyBytes": 1776,
       "v11BodySha256": "7688c488cfbbef2434f636f0de80530fcdf6ebc784b208b71477f95671f67a06",
       "erratum02Corrections": [],
+      "erratum02Sha256": "7688c488cfbbef2434f636f0de80530fcdf6ebc784b208b71477f95671f67a06",
+      "erratum03Corrections": [],
+      "lines": 32,
       "bytes": 1776,
       "sha256": "7688c488cfbbef2434f636f0de80530fcdf6ebc784b208b71477f95671f67a06",
       "file": "sql/15_19.11.5_privacy-request.sql"
@@ -316,6 +372,9 @@
       "v11BodyBytes": 1547,
       "v11BodySha256": "093d3f315dd8ac94fd4a6704899c2e0bd2e181c37c2897351cb906b9030fd943",
       "erratum02Corrections": [],
+      "erratum02Sha256": "093d3f315dd8ac94fd4a6704899c2e0bd2e181c37c2897351cb906b9030fd943",
+      "erratum03Corrections": [],
+      "lines": 24,
       "bytes": 1547,
       "sha256": "093d3f315dd8ac94fd4a6704899c2e0bd2e181c37c2897351cb906b9030fd943",
       "file": "sql/16_19.11.6_deletion-authority.sql"
@@ -335,6 +394,9 @@
       "erratum02Corrections": [
         "E02-05"
       ],
+      "erratum02Sha256": "ca844588d08e5eb3e40d82676daf4dbf767539d576902372738b9f15b715175c",
+      "erratum03Corrections": [],
+      "lines": 92,
       "bytes": 5879,
       "sha256": "ca844588d08e5eb3e40d82676daf4dbf767539d576902372738b9f15b715175c",
       "file": "sql/17_19.11.7_capability-signer.sql"
@@ -352,6 +414,9 @@
       "v11BodyBytes": 23867,
       "v11BodySha256": "8d88295459c55853396637e26fc350a00cbfd8a4118be11c2e46396bffae0a45",
       "erratum02Corrections": [],
+      "erratum02Sha256": "8d88295459c55853396637e26fc350a00cbfd8a4118be11c2e46396bffae0a45",
+      "erratum03Corrections": [],
+      "lines": 370,
       "bytes": 23867,
       "sha256": "8d88295459c55853396637e26fc350a00cbfd8a4118be11c2e46396bffae0a45",
       "file": "sql/18_19.12.1_upload-pipeline.sql"
@@ -369,6 +434,9 @@
       "v11BodyBytes": 13929,
       "v11BodySha256": "e79c9a264a3719d8079a49df3910e7cd2987dda70f147fd6b20f34715611062a",
       "erratum02Corrections": [],
+      "erratum02Sha256": "e79c9a264a3719d8079a49df3910e7cd2987dda70f147fd6b20f34715611062a",
+      "erratum03Corrections": [],
+      "lines": 216,
       "bytes": 13929,
       "sha256": "e79c9a264a3719d8079a49df3910e7cd2987dda70f147fd6b20f34715611062a",
       "file": "sql/19_19.12.2_deletion-scheduling.sql"
@@ -386,6 +454,9 @@
       "v11BodyBytes": 5275,
       "v11BodySha256": "5be17cfce152379d4ecbdf711a65dd1da30d70dd8799f3ca706ce5c8c29ffc83",
       "erratum02Corrections": [],
+      "erratum02Sha256": "5be17cfce152379d4ecbdf711a65dd1da30d70dd8799f3ca706ce5c8c29ffc83",
+      "erratum03Corrections": [],
+      "lines": 89,
       "bytes": 5275,
       "sha256": "5be17cfce152379d4ecbdf711a65dd1da30d70dd8799f3ca706ce5c8c29ffc83",
       "file": "sql/20_19.12.3_outbox-leases.sql"
@@ -403,6 +474,9 @@
       "v11BodyBytes": 9321,
       "v11BodySha256": "163d2c7af596a285e3d21378ea9849b7c79b18d537d6c76b01802a8b328bb8e2",
       "erratum02Corrections": [],
+      "erratum02Sha256": "163d2c7af596a285e3d21378ea9849b7c79b18d537d6c76b01802a8b328bb8e2",
+      "erratum03Corrections": [],
+      "lines": 146,
       "bytes": 9321,
       "sha256": "163d2c7af596a285e3d21378ea9849b7c79b18d537d6c76b01802a8b328bb8e2",
       "file": "sql/21_19.12.4_effect-confirmation.sql"
@@ -420,6 +494,9 @@
       "v11BodyBytes": 26982,
       "v11BodySha256": "cce8a66a8155c2dbee904ee21e87c97093ceaa15bf8da5b5aa32114009b97999",
       "erratum02Corrections": [],
+      "erratum02Sha256": "cce8a66a8155c2dbee904ee21e87c97093ceaa15bf8da5b5aa32114009b97999",
+      "erratum03Corrections": [],
+      "lines": 362,
       "bytes": 26982,
       "sha256": "cce8a66a8155c2dbee904ee21e87c97093ceaa15bf8da5b5aa32114009b97999",
       "file": "sql/22_19.12.5_row-mechanisms.sql"
@@ -441,6 +518,9 @@
         "E02-07",
         "E02-08"
       ],
+      "erratum02Sha256": "1e0891b67d2aff6deea2db244a464b0de4dd1e0da5415c9048f861d04fcc75c5",
+      "erratum03Corrections": [],
+      "lines": 218,
       "bytes": 12885,
       "sha256": "1e0891b67d2aff6deea2db244a464b0de4dd1e0da5415c9048f861d04fcc75c5",
       "file": "sql/23_19.12.6_reconciliation.sql"
@@ -458,8 +538,16 @@
       "v11BodyBytes": 14323,
       "v11BodySha256": "13b7d08196e87109ac6f82be3aa2256aa7c62226aec2f5688a8dc6678bb2a77c",
       "erratum02Corrections": [],
-      "bytes": 14323,
-      "sha256": "13b7d08196e87109ac6f82be3aa2256aa7c62226aec2f5688a8dc6678bb2a77c",
+      "erratum02Sha256": "13b7d08196e87109ac6f82be3aa2256aa7c62226aec2f5688a8dc6678bb2a77c",
+      "erratum03Corrections": [
+        "E03-02",
+        "E03-03a",
+        "E03-04a",
+        "E03-05a"
+      ],
+      "lines": 250,
+      "bytes": 14628,
+      "sha256": "f68eeea9d1f6a3b192b64163949385d89cd0b0fa369b168d8160d3eaa7006fff",
       "file": "sql/24_19.13.2_catalog-verifier.sql"
     },
     {
@@ -475,6 +563,9 @@
       "v11BodyBytes": 8423,
       "v11BodySha256": "ff8dce51a83832e2468f383c9c05634fdb535be6a7d6261dfd184c9de22513f1",
       "erratum02Corrections": [],
+      "erratum02Sha256": "ff8dce51a83832e2468f383c9c05634fdb535be6a7d6261dfd184c9de22513f1",
+      "erratum03Corrections": [],
+      "lines": 146,
       "bytes": 8423,
       "sha256": "ff8dce51a83832e2468f383c9c05634fdb535be6a7d6261dfd184c9de22513f1",
       "file": "sql/25_19.13.3_views.sql"
@@ -494,6 +585,9 @@
       "erratum02Corrections": [
         "E02-09"
       ],
+      "erratum02Sha256": "3a463c0c3b9602daccfef772da49420fea2284304947bad1d8973bf0358a449f",
+      "erratum03Corrections": [],
+      "lines": 53,
       "bytes": 2534,
       "sha256": "3a463c0c3b9602daccfef772da49420fea2284304947bad1d8973bf0358a449f",
       "file": "sql/26_19.13.4_grants-and-completion.sql"
@@ -502,11 +596,15 @@
   "files": [
     {
       "path": "ERRATUM_01_OVERRIDES.json",
-      "sha256": "b58315fdacc4c1d9f193ce55441498b7123de270ef535964335822f91d3f5a81"
+      "sha256": "18023c21b236a6e9619aeadd1261fe4e881629e31bb7c9764aa542c862110f92"
     },
     {
       "path": "ERRATUM_02_CORRECTIONS.json",
-      "sha256": "d143cdece436dbb31f311d4bd3779cdd2bda36942caadf4c9936187f38fd2159"
+      "sha256": "2e0429b3d97347f58ed4de56a9af7b4ffaf4a30fd1c6ddec76a671523b65a0f0"
+    },
+    {
+      "path": "ERRATUM_03_CORRECTIONS.json",
+      "sha256": "7c256a2f56873c45f578366da5160c388a1408421f2a44618ffbb0b85b8f4dfd"
     },
     {
       "path": "INVENTORY.json",
@@ -518,11 +616,11 @@
     },
     {
       "path": "README.md",
-      "sha256": "dc9b5cdb92af4c81b3bc4f9919a063d4f12f118a30aa5553d5010865df1f1ca0"
+      "sha256": "472e8a4b9367d1548d2c0a787100f2453dbe07f17bde90225224d99e52d4cefa"
     },
     {
       "path": "sql/01_19.2_preamble.sql",
-      "sha256": "0d6a919d5aa40d4031bf540868f549b88732ac24ff27c731e7442dcae4e1f1e3"
+      "sha256": "f75c45ab8110c3fe5bce5379e77a08a51bc2e3d0561e887310d9c9361d02a6be"
     },
     {
       "path": "sql/02_19.3_enumerated-types.sql",
@@ -562,7 +660,7 @@
     },
     {
       "path": "sql/11_19.11.1_internal-helpers.sql",
-      "sha256": "4803e194d62b3b3926e3b98a84d00ede902a485e04aed5de73533207f950be0a"
+      "sha256": "c9f5777fcc699fd9411427e4b17fd3f28258068f925bbb8fcbe3a935fbec75a9"
     },
     {
       "path": "sql/12_19.11.2_control-plane-registration.sql",
@@ -614,7 +712,7 @@
     },
     {
       "path": "sql/24_19.13.2_catalog-verifier.sql",
-      "sha256": "13b7d08196e87109ac6f82be3aa2256aa7c62226aec2f5688a8dc6678bb2a77c"
+      "sha256": "f68eeea9d1f6a3b192b64163949385d89cd0b0fa369b168d8160d3eaa7006fff"
     },
     {
       "path": "sql/25_19.13.3_views.sql",

@@ -5,7 +5,7 @@
     "NOT A MIGRATION; NOT INSTALLED INTO POSTGRESQL; NOT A CONTROL-PLANE MANIFEST",
     "SATISFIES NO IMP-* OR MA-* ITEM; M7 GATE 2 NOT SATISFIED"
   ],
-  "conformanceTarget": "M7 V1.1 + accepted Erratum 01 + accepted Erratum 02",
+  "conformanceTarget": "M7 V1.1 + accepted Erratum 01 + accepted Erratum 02 + accepted Erratum 03",
   "readingRule": "An Erratum 01 \"After\" text controls only the clause it names (Erratum 01 §4; Register §12). Every other clause is read from the accepted V1.1 bytes.",
   "records": [
     {

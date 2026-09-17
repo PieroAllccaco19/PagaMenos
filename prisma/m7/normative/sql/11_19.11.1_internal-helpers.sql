@@ -19,12 +19,14 @@ $fn$;
 CREATE FUNCTION m7.i_assert_control_plane(p_manifest_sha256 text) RETURNS m7.m7_control_plane_installation
     LANGUAGE plpgsql SECURITY INVOKER SET search_path = pg_catalog, pg_temp SET lock_timeout = '5s'
 AS $fn$
-DECLARE v m7.m7_control_plane_installation; v_digest text;
+DECLARE v m7.m7_control_plane_installation; v_digest text; r record;
 BEGIN
-    SELECT i.*, m."manifestSha256" INTO v, v_digest
+    SELECT i AS inst, m."manifestSha256" AS digest INTO r
       FROM m7.m7_control_plane_installation i
       JOIN m7.m7_control_plane_manifest m ON m."manifestVersion" = i."manifestVersion"
      WHERE i."retiredAt" IS NULL;
+    v := r.inst;
+    v_digest := r.digest;
     IF v."id" IS NULL OR p_manifest_sha256 IS NULL OR v_digest <> p_manifest_sha256 THEN
         RAISE EXCEPTION 'M7_CONTROL_PLANE_MISMATCH' USING ERRCODE = '55000';
     END IF;
