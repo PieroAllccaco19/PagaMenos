@@ -2,13 +2,14 @@
 // every structural surprise is refused rather than interpreted.
 import { describe, expect, it } from 'vitest';
 
-import { e01Bytes, e02Bytes, e03Bytes, v11Bytes } from './__fixtures__/accepted-sources';
+import { e01Bytes, e02Bytes, e03Bytes, e04Bytes, v11Bytes } from './__fixtures__/accepted-sources';
 import {
   CONFORMANCE_TARGET,
   M7_V1_1,
   M7_V1_1_ERRATUM_01,
   M7_V1_1_ERRATUM_02,
   M7_V1_1_ERRATUM_03,
+  M7_V1_1_ERRATUM_04,
   SourceIdentityError,
   SourceStructureError,
   gitBlobId,
@@ -75,9 +76,38 @@ describe('bound artifact identity', () => {
     expect(() => verifyBoundArtifact(wrong, e03Bytes)).toThrow(/git blob/);
   });
 
-  it('the conformance target is V1.1 + accepted Erratum 01 + 02 + 03', () => {
+  it('the committed Erratum 04 bytes are the accepted bytes (blob, SHA-256, size, lines, LF-only)', () => {
+    expect(gitBlobId(e04Bytes)).toBe('c839db3948608c875c984a73e366c039c0a5e2dd');
+    expect(sha256Hex(e04Bytes)).toBe(
+      '3b07d30958aa5c7783fe7458236b8170d1f5a47c0f765e7aa95e5ae68bab00f4',
+    );
+    expect(M7_V1_1_ERRATUM_04).toEqual({
+      path: 'PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_04.md',
+      gitBlob: 'c839db3948608c875c984a73e366c039c0a5e2dd',
+      sha256: '3b07d30958aa5c7783fe7458236b8170d1f5a47c0f765e7aa95e5ae68bab00f4',
+      bytes: 60_164,
+      lines: 660,
+    });
+    expect(() => verifyBoundArtifact(M7_V1_1_ERRATUM_04, e04Bytes)).not.toThrow();
+    expect(() => verifyBoundArtifact(M7_V1_1_ERRATUM_04, e03Bytes)).toThrow(SourceIdentityError);
+    const wrong = { ...M7_V1_1_ERRATUM_04, gitBlob: '8ba87adc9b87cee749c214d9326b0aa750ceabf0' };
+    expect(() => verifyBoundArtifact(wrong, e04Bytes)).toThrow(/git blob/);
+    const wrongSha = { ...M7_V1_1_ERRATUM_04, sha256: '0'.repeat(64) };
+    expect(() => verifyBoundArtifact(wrongSha, e04Bytes)).toThrow(/sha256/);
+    const wrongLines = { ...M7_V1_1_ERRATUM_04, lines: 661 };
+    expect(() => verifyBoundArtifact(wrongLines, e04Bytes)).toThrow(/lines/);
+    const mutated = Uint8Array.from(e04Bytes);
+    mutated[3000] = mutated[3000] === 0x61 ? 0x62 : 0x61;
+    expect(() => verifyBoundArtifact(M7_V1_1_ERRATUM_04, mutated)).toThrow(SourceIdentityError);
+    const crlf = new TextEncoder().encode(
+      new TextDecoder().decode(e04Bytes).replace(/\n/g, '\r\n'),
+    );
+    expect(() => verifyBoundArtifact(M7_V1_1_ERRATUM_04, crlf)).toThrow(SourceIdentityError);
+  });
+
+  it('the conformance target is V1.1 + accepted Erratum 01 + 02 + 03 + 04', () => {
     expect(CONFORMANCE_TARGET).toBe(
-      'M7 V1.1 + accepted Erratum 01 + accepted Erratum 02 + accepted Erratum 03',
+      'M7 V1.1 + accepted Erratum 01 + accepted Erratum 02 + accepted Erratum 03 + accepted Erratum 04',
     );
   });
 

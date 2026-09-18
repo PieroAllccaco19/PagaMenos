@@ -476,22 +476,22 @@ BEGIN
         RETURN 0;                                                    -- already loaded; immutable
     END IF;
     INSERT INTO m7.m7_expected_relation ("manifestVersion","relationName","relKind")
-        SELECT p_manifest_version, a, b FROM pg_catalog.unnest(p_relation_names, p_relation_kinds) AS t(a,b);
+        SELECT p_manifest_version, a, b FROM ROWS FROM (pg_catalog.unnest(p_relation_names), pg_catalog.unnest(p_relation_kinds)) AS t(a,b);
     GET DIAGNOSTICS v_n = ROW_COUNT;
     INSERT INTO m7.m7_expected_relation_object ("manifestVersion","relationName","objectKind","objectName","isUnique")
         SELECT p_manifest_version, a, b, c, d
-          FROM pg_catalog.unnest(p_object_relations, p_object_kinds, p_object_names, p_object_unique) AS t(a,b,c,d);
+          FROM ROWS FROM (pg_catalog.unnest(p_object_relations), pg_catalog.unnest(p_object_kinds), pg_catalog.unnest(p_object_names), pg_catalog.unnest(p_object_unique)) AS t(a,b,c,d);
     INSERT INTO m7.m7_expected_function ("manifestVersion","functionSignature","isSecurityDefiner","proconfigText","sourceSha256")
         SELECT p_manifest_version, a, b, c, d
-          FROM pg_catalog.unnest(p_function_signatures, p_function_definer, p_function_proconfig,
-                                 p_function_source_sha256) AS t(a,b,c,d);
+          FROM ROWS FROM (pg_catalog.unnest(p_function_signatures), pg_catalog.unnest(p_function_definer),
+                          pg_catalog.unnest(p_function_proconfig), pg_catalog.unnest(p_function_source_sha256)) AS t(a,b,c,d);
     INSERT INTO m7.m7_expected_function_grant ("manifestVersion","functionSignature","granteeRole")
-        SELECT p_manifest_version, a, b FROM pg_catalog.unnest(p_grant_signatures, p_grant_roles) AS t(a,b);
+        SELECT p_manifest_version, a, b FROM ROWS FROM (pg_catalog.unnest(p_grant_signatures), pg_catalog.unnest(p_grant_roles)) AS t(a,b);
     INSERT INTO m7.m7_expected_role ("manifestVersion","roleName","canLogin","inheritsPrivileges","hasSchemaUsage")
         SELECT p_manifest_version, a, b, c, d
-          FROM pg_catalog.unnest(p_role_names, p_role_can_login, p_role_inherits, p_role_schema_usage) AS t(a,b,c,d);
+          FROM ROWS FROM (pg_catalog.unnest(p_role_names), pg_catalog.unnest(p_role_can_login), pg_catalog.unnest(p_role_inherits), pg_catalog.unnest(p_role_schema_usage)) AS t(a,b,c,d);
     INSERT INTO m7.m7_expected_role_member ("manifestVersion","roleName","memberName")
-        SELECT p_manifest_version, a, b FROM pg_catalog.unnest(p_member_roles, p_member_names) AS t(a,b);
+        SELECT p_manifest_version, a, b FROM ROWS FROM (pg_catalog.unnest(p_member_roles), pg_catalog.unnest(p_member_names)) AS t(a,b);
     PERFORM pg_catalog.set_config('pagamenos.m7.write_path', '', true);
     RETURN v_n;
 END
