@@ -51,6 +51,7 @@ import {
 import {
   HARNESS_CONNECTION_LIMIT,
   HARNESS_MIGRATION_ROLE,
+  assertHarnessServerVersion,
   generateSecret,
   readRolesTemplate,
   redactSecrets,
@@ -58,7 +59,10 @@ import {
 } from '../../src/m7/testkit/provision';
 import {
   deriveM7RoleExpectations,
+  evaluateMigrationSession,
   observeMemberships,
+  observeMigrationSession,
+  observeOwnerEdges,
   observeRoles,
   verifyMigrationRole,
   verifyRoles,
@@ -279,18 +283,17 @@ async function main(): Promise<number> {
     );
     if (!cluster || !identity) return finish();
 
-    // H03 — the ACTUAL server version, queried from the running server.
+    // H03 — the ACTUAL server version, queried from the running server, against the VFC-PG-1 floor
+    // (>= 160000) of the VBA-S02-1 provisioning realization. A refusal stops the run here: nothing is
+    // provisioned (H04 onwards are NOT EXECUTED).
     record(
       await runCheck('H03-server-version', () => {
         evidence.server = identity;
-        if (identity!.serverVersionNum < 150000) {
-          throw new Error(
-            `server_version_num ${identity!.serverVersionNum} < 150000 (IA-08 precondition)`,
-          );
-        }
+        assertHarnessServerVersion(identity!.serverVersionNum);
         return `server_version=${identity!.serverVersion} server_version_num=${identity!.serverVersionNum}`;
       }),
     );
+    if (checks.some((c) => c.status !== 'PASS')) return finish();
 
     // H04 — expectations from the accepted bytes.
     let expectations: M7RoleExpectations | undefined;
@@ -349,12 +352,27 @@ async function main(): Promise<number> {
     );
     record(
       await runCheck('H07-migration-role-non-superuser', async () => {
-        const mismatches = await cluster!.withAdmin('postgres', (c) =>
-          verifyMigrationRole(c, HARNESS_MIGRATION_ROLE, expectations!.owner.name),
+        const owner = expectations!.owner.name;
+        const catalog = await cluster!.withAdmin('postgres', (c) =>
+          verifyMigrationRole(c, HARNESS_MIGRATION_ROLE, owner),
         );
+        const ownerEdges = await cluster!.withAdmin('postgres', (c) => observeOwnerEdges(c, owner));
+        // VBA-PV-1 items 1, 2, 4 from the migration role's own session.
+        const session = await withRole(
+          cluster!,
+          HARNESS_MIGRATION_ROLE,
+          credentials[HARNESS_MIGRATION_ROLE]!,
+          'postgres',
+          (c) => observeMigrationSession(c, owner),
+        );
+        const mismatches = [
+          ...catalog,
+          ...evaluateMigrationSession(HARNESS_MIGRATION_ROLE, session),
+        ];
+        evidence.migrationRoleProvisioning = { ownerEdges, session, mismatches };
         if (mismatches.length > 0)
           throw new Error(`migration role mismatches: ${JSON.stringify(mismatches)}`);
-        return `${HARNESS_MIGRATION_ROLE}: LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION, NOBYPASSRLS, member of ${expectations!.owner.name}`;
+        return `${HARNESS_MIGRATION_ROLE}: LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION, NOBYPASSRLS; sole direct member of ${owner} (inherit_option=true, set_option=true, admin_option=false); pg_has_role MEMBER/USAGE/SET=true; session_user=current_user=${session.sessionUser}`;
       }),
     );
     if (checks.some((c) => c.status !== 'PASS')) return finish();

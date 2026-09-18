@@ -381,6 +381,187 @@ export const MIGRATION_ROLE_ATTRIBUTES: Readonly<Record<PgRoleAttribute, boolean
   rolinherit: undefined,
 };
 
+/** One direct `pg_auth_members` edge into the owner role, with its PostgreSQL ≥ 16 options. */
+export interface ObservedOwnerEdge {
+  readonly member: string;
+  readonly grantor: string;
+  readonly inheritOption: boolean;
+  readonly setOption: boolean;
+  readonly adminOption: boolean;
+}
+
+/** `pg_has_role(<migration role>, <owner>, …)`: the VBA-PV-1 item 4 effective-access predicate. */
+export interface ObservedOwnerAccess {
+  readonly member: boolean;
+  readonly usage: boolean;
+  readonly set: boolean;
+}
+
+/** Every direct membership edge of `ownerRole` (VFC-PG-1: the server is PostgreSQL ≥ 16). */
+export async function observeOwnerEdges(
+  db: Queryable,
+  ownerRole: string,
+): Promise<ObservedOwnerEdge[]> {
+  const { rows } = await db.query<ObservedOwnerEdge>(
+    `SELECT u.rolname AS member, pg_catalog.pg_get_userbyid(m.grantor) AS grantor,
+            m.inherit_option AS "inheritOption", m.set_option AS "setOption",
+            m.admin_option AS "adminOption"
+       FROM pg_catalog.pg_auth_members m
+       JOIN pg_catalog.pg_roles g ON g.oid = m.roleid
+       JOIN pg_catalog.pg_roles u ON u.oid = m.member
+      WHERE g.rolname = $1
+      ORDER BY u.rolname COLLATE "C", pg_catalog.pg_get_userbyid(m.grantor) COLLATE "C"`,
+    [ownerRole],
+  );
+  return rows;
+}
+
+/** The effective-access predicate; all false when either role does not exist. */
+export async function observeOwnerAccess(
+  db: Queryable,
+  role: string,
+  ownerRole: string,
+): Promise<ObservedOwnerAccess> {
+  const { rows } = await db.query<ObservedOwnerAccess>(
+    `SELECT pg_catalog.pg_has_role(r.oid, g.oid, 'MEMBER') AS member,
+            pg_catalog.pg_has_role(r.oid, g.oid, 'USAGE') AS usage,
+            pg_catalog.pg_has_role(r.oid, g.oid, 'SET') AS set
+       FROM pg_catalog.pg_roles r, pg_catalog.pg_roles g
+      WHERE r.rolname = $1 AND g.rolname = $2`,
+    [role, ownerRole],
+  );
+  return rows[0] ?? { member: false, usage: false, set: false };
+}
+
+/**
+ * VBA-PV-1 items 3–4 / VFC-PG16-1 over observed catalog facts (pure): the migration role holds
+ * exactly one direct owner edge with `inherit_option = true`, `set_option = true`,
+ * `admin_option = false`; it is the owner's only member; and `pg_has_role` MEMBER / USAGE / SET are
+ * all true. An indirect path never substitutes for the direct edge.
+ */
+export function evaluateOwnerMembership(
+  migrationRole: string,
+  ownerRole: string,
+  edges: readonly ObservedOwnerEdge[],
+  access: ObservedOwnerAccess,
+): RoleMismatch[] {
+  const mismatches: RoleMismatch[] = [];
+  const own = edges.filter((e) => e.member === migrationRole);
+  if (own.length !== 1) {
+    mismatches.push({
+      role: migrationRole,
+      check: 'owner-edge-count',
+      expected: `exactly 1 direct edge ${ownerRole} <- ${migrationRole}`,
+      observed: `${own.length} edges (grantors ${own.map((e) => e.grantor).join(', ')})`,
+    });
+  }
+  const members = [...new Set(edges.map((e) => e.member))].sort();
+  if (members.some((m) => m !== migrationRole)) {
+    mismatches.push({
+      role: ownerRole,
+      check: 'owner-members',
+      expected: `exactly {${migrationRole}}`,
+      observed: `{${members.join(', ')}}`,
+    });
+  }
+  for (const e of own) {
+    for (const [check, observed, expected] of [
+      ['inherit_option', e.inheritOption, true],
+      ['set_option', e.setOption, true],
+      ['admin_option', e.adminOption, false],
+    ] as const) {
+      if (observed !== expected) {
+        mismatches.push({
+          role: migrationRole,
+          check,
+          expected: String(expected),
+          observed: `${String(observed)} (grantor ${e.grantor})`,
+        });
+      }
+    }
+  }
+  for (const [check, observed] of [
+    ['pg_has_role-MEMBER', access.member],
+    ['pg_has_role-USAGE', access.usage],
+    ['pg_has_role-SET', access.set],
+  ] as const) {
+    if (!observed) {
+      mismatches.push({ role: migrationRole, check, expected: 'true', observed: 'false' });
+    }
+  }
+  return mismatches;
+}
+
+/** Identity and effective owner access of a session opened AS the migration role. */
+export interface ObservedMigrationSession {
+  readonly sessionUser: string;
+  readonly currentUser: string;
+  readonly isSuperuser: string;
+  readonly access: ObservedOwnerAccess;
+}
+
+export async function observeMigrationSession(
+  session: Queryable,
+  ownerRole: string,
+): Promise<ObservedMigrationSession> {
+  const { rows } = await session.query<{
+    sessionUser: string;
+    currentUser: string;
+    isSuperuser: string;
+    member: boolean | null;
+    usage: boolean | null;
+    set: boolean | null;
+  }>(
+    `SELECT session_user::text AS "sessionUser", current_user::text AS "currentUser",
+            current_setting('is_superuser') AS "isSuperuser",
+            pg_catalog.pg_has_role(session_user, g.oid, 'MEMBER') AS member,
+            pg_catalog.pg_has_role(session_user, g.oid, 'USAGE') AS usage,
+            pg_catalog.pg_has_role(session_user, g.oid, 'SET') AS set
+       FROM (SELECT 1) AS one
+       LEFT JOIN pg_catalog.pg_roles g ON g.rolname = $1`,
+    [ownerRole],
+  );
+  const r = rows[0]!;
+  return {
+    sessionUser: r.sessionUser,
+    currentUser: r.currentUser,
+    isSuperuser: r.isSuperuser,
+    access: { member: r.member === true, usage: r.usage === true, set: r.set === true },
+  };
+}
+
+/**
+ * VBA-PV-1 items 1, 2 and 4 as observed from the migration role's own session (pure):
+ * `session_user` is the migration role, `current_user = session_user` (no role has been SET yet),
+ * the session is not superuser, and `pg_has_role(session_user, owner, MEMBER / USAGE / SET)` hold.
+ */
+export function evaluateMigrationSession(
+  migrationRole: string,
+  observed: ObservedMigrationSession,
+): RoleMismatch[] {
+  const mismatches: RoleMismatch[] = [];
+  const push = (check: string, expected: string, value: string) =>
+    mismatches.push({ role: migrationRole, check, expected, observed: value });
+  if (observed.sessionUser !== migrationRole)
+    push('session_user', migrationRole, observed.sessionUser);
+  if (observed.currentUser !== observed.sessionUser)
+    push('current_user', `= session_user (${observed.sessionUser})`, observed.currentUser);
+  if (observed.isSuperuser !== 'off') push('is_superuser', 'off', observed.isSuperuser);
+  for (const [check, value] of [
+    ['session-pg_has_role-MEMBER', observed.access.member],
+    ['session-pg_has_role-USAGE', observed.access.usage],
+    ['session-pg_has_role-SET', observed.access.set],
+  ] as const) {
+    if (!value) push(check, 'true', 'false');
+  }
+  return mismatches;
+}
+
+/**
+ * Verifies the migration role from the catalog: its asserted attributes (never SUPERUSER etc.), its
+ * direct owner membership, and the VBA-PV-1 edge options and effective-access predicate
+ * (`evaluateOwnerMembership`). `rolinherit` is deliberately not asserted (VFC-PG16-1).
+ */
 export async function verifyMigrationRole(
   db: Queryable,
   migrationRole: string,
@@ -413,5 +594,13 @@ export async function verifyMigrationRole(
       observed: memberships.map((m) => m.role).join(', ') || '(none)',
     });
   }
+  mismatches.push(
+    ...evaluateOwnerMembership(
+      migrationRole,
+      ownerRole,
+      await observeOwnerEdges(db, ownerRole),
+      await observeOwnerAccess(db, migrationRole, ownerRole),
+    ),
+  );
   return mismatches;
 }

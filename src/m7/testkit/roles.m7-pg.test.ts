@@ -11,7 +11,11 @@ import { loadHarnessContext, specFor, writeEvidence } from './context';
 import { generateSecret } from './provision';
 import {
   deriveM7RoleExpectations,
+  evaluateMigrationSession,
   observeMemberships,
+  observeMigrationSession,
+  observeOwnerAccess,
+  observeOwnerEdges,
   observeRoles,
   retarget,
   verifyMigrationRole,
@@ -100,6 +104,58 @@ describe('S02 M7 role provisioning (real PostgreSQL)', () => {
     expect(mismatches).toEqual([]);
     expect(observed!.rolsuper).toBe(false);
     expect(observed!.rolcanlogin).toBe(true);
+  });
+
+  it('R-02a VBA-PV-1 (≥ 16): exactly one direct owner edge INHERIT/SET true, ADMIN false; MEMBER/USAGE/SET; role stays NOINHERIT', async () => {
+    const { rows: version } = await admin.query<{ v: string; n: string }>(
+      `SELECT current_setting('server_version') AS v, current_setting('server_version_num') AS n`,
+    );
+    const edges = await observeOwnerEdges(admin, expectations.owner.name);
+    const access = await observeOwnerAccess(admin, ctx.migrationRole, expectations.owner.name);
+    const [observed] = await observeRoles(admin, [ctx.migrationRole]);
+    writeEvidence(ctx, 'roles-owner-membership-vba-pv-1', {
+      server: { serverVersion: version[0]!.v, serverVersionNum: Number(version[0]!.n) },
+      ownerEdges: edges,
+      effectiveAccess: access,
+      migrationRoleRolinherit: observed!.rolinherit,
+    });
+    expect(Number(version[0]!.n)).toBeGreaterThanOrEqual(160000);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]).toMatchObject({
+      member: ctx.migrationRole,
+      inheritOption: true,
+      setOption: true,
+      adminOption: false,
+    });
+    expect(access).toEqual({ member: true, usage: true, set: true });
+    // The explicit edge options realize VBA-PV-1; the role's own attribute is unchanged (NOINHERIT).
+    expect(observed!.rolinherit).toBe(false);
+    expect(observed!.rolcreatedb).toBe(false);
+    expect(observed!.rolcreaterole).toBe(false);
+  });
+
+  it('R-02b VBA-PV-1 from the migration role session: session_user = current_user until SET LOCAL ROLE; access holds', async () => {
+    const c = await connect(ctx.migrationRole, ctx.databases.selftest);
+    try {
+      const before = await observeMigrationSession(c, expectations.owner.name);
+      await c.query('BEGIN');
+      await c.query(`SET LOCAL ROLE ${expectations.owner.name}`);
+      const afterSet = await observeMigrationSession(c, expectations.owner.name);
+      await c.query('ROLLBACK');
+      const afterRollback = await observeMigrationSession(c, expectations.owner.name);
+      writeEvidence(ctx, 'roles-migration-session-vba-pv-1', { before, afterSet, afterRollback });
+      expect(evaluateMigrationSession(ctx.migrationRole, before)).toEqual([]);
+      expect(before.sessionUser).toBe(ctx.migrationRole);
+      expect(before.currentUser).toBe(ctx.migrationRole);
+      // SET is effective, and an already-SET role is exactly what item 2 excludes before F01.
+      expect(afterSet.currentUser).toBe(expectations.owner.name);
+      expect(evaluateMigrationSession(ctx.migrationRole, afterSet).map((m) => m.check)).toEqual([
+        'current_user',
+      ]);
+      expect(evaluateMigrationSession(ctx.migrationRole, afterRollback)).toEqual([]);
+    } finally {
+      await c.end();
+    }
   });
 
   it('R-03 each login role and the migration role authenticate with their run-time credential', async () => {
@@ -204,16 +260,23 @@ describe('S02 M7 role provisioning (real PostgreSQL)', () => {
         [`${NEGCTL_PREFIX}%`],
       );
       const accepted = await verifyRoles(admin, expectations.all, ctx.migrationRole);
+      const acceptedMigrator = await verifyMigrationRole(
+        admin,
+        ctx.migrationRole,
+        expectations.owner.name,
+      );
       writeEvidence(ctx, 'roles-negative-controls', {
         cases: results,
         cleanup: { droppedRoles: rows.map((r) => r.rolname), remaining: left[0]!.n },
         acceptedRolesReverifiedAfterControls: { mismatches: accepted },
+        acceptedMigrationRoleReverifiedAfterControls: { mismatches: acceptedMigrator },
         acceptedExpectationUnchanged:
           JSON.stringify(expectations) ===
           JSON.stringify(deriveM7RoleExpectations(readFileSync(join(process.cwd(), M7_V1_1.path)))),
       });
       expect(left[0]!.n).toBe(0);
       expect(accepted).toEqual([]);
+      expect(acceptedMigrator).toEqual([]);
     });
 
     it('N-00 control: a correctly shaped disposable login role verifies clean', async () => {
@@ -346,6 +409,157 @@ describe('S02 M7 role provisioning (real PostgreSQL)', () => {
       // Remove the extra owner member immediately so the accepted IA-05 shape is restored.
       await admin.query(`REVOKE ${expectations.owner.name} FROM ${NEGCTL_PREFIX}migrator_su`);
       expect(m.map((x) => x.check)).toContain('rolsuper');
+    });
+
+    // VBA-PV-1 owner-membership controls: a disposable owner-shaped role and a disposable migration
+    // role shaped exactly like the harness migration role (NOINHERIT), varying only the edge(s).
+    const MIGRATOR_OK =
+      'LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT';
+
+    async function pvControl(
+      label: string,
+      suffix: string,
+      grants: (owner: string, migrator: string) => string[],
+      extra = '',
+    ): Promise<{ owner: string; migrator: string; mismatches: RoleMismatch[] }> {
+      const owner = `${NEGCTL_PREFIX}pv_${suffix}_owner`;
+      const migrator = `${NEGCTL_PREFIX}pv_${suffix}_migrator`;
+      await admin.query(`CREATE ROLE ${owner} ${OWNER_OK}`);
+      await admin.query(`CREATE ROLE ${migrator} ${MIGRATOR_OK}${extra}`);
+      for (const sql of grants(owner, migrator)) await admin.query(sql);
+      const mismatches = await verifyMigrationRole(admin, migrator, owner);
+      results.push({ case: label, role: migrator, mismatches });
+      return { owner, migrator, mismatches };
+    }
+
+    it('N-12 control: the canonical grant WITH INHERIT TRUE, SET TRUE verifies clean; role stays NOINHERIT', async () => {
+      const { owner, migrator, mismatches } = await pvControl('pv-canonical', 'ok', (o, m) => [
+        `GRANT ${o} TO ${m} WITH INHERIT TRUE, SET TRUE`,
+      ]);
+      expect(mismatches).toEqual([]);
+      const [edge] = await observeOwnerEdges(admin, owner);
+      expect(edge).toMatchObject({ inheritOption: true, setOption: true, adminOption: false });
+      expect((await observeRoles(admin, [migrator]))[0]!.rolinherit).toBe(false);
+    });
+
+    it('N-13 the pre-VBA option-less grant to a NOINHERIT role is detected (inherit_option, USAGE)', async () => {
+      const { mismatches } = await pvControl('pv-plain-grant', 'plain', (o, m) => [
+        `GRANT ${o} TO ${m}`,
+      ]);
+      expect(mismatches.map((x) => x.check)).toEqual(['inherit_option', 'pg_has_role-USAGE']);
+    });
+
+    it('N-14 SET FALSE is detected (set_option, SET)', async () => {
+      const { mismatches } = await pvControl('pv-set-false', 'noset', (o, m) => [
+        `GRANT ${o} TO ${m} WITH INHERIT TRUE, SET FALSE`,
+      ]);
+      expect(mismatches.map((x) => x.check)).toEqual(['set_option', 'pg_has_role-SET']);
+    });
+
+    it('N-15 ADMIN OPTION is detected (admin_option)', async () => {
+      const { mismatches } = await pvControl('pv-admin', 'admin', (o, m) => [
+        `GRANT ${o} TO ${m} WITH ADMIN TRUE, INHERIT TRUE, SET TRUE`,
+      ]);
+      expect(mismatches.map((x) => x.check)).toEqual(['admin_option']);
+    });
+
+    it('N-16 a duplicate owner edge (second grantor) is detected', async () => {
+      const grantor = `${NEGCTL_PREFIX}pv_dup_grantor`;
+      await admin.query(`CREATE ROLE ${grantor} NOLOGIN NOINHERIT`);
+      const { migrator, mismatches } = await pvControl('pv-duplicate-edge', 'dup', (o, m) => [
+        `GRANT ${o} TO ${m} WITH INHERIT TRUE, SET TRUE`,
+        `GRANT ${o} TO ${grantor} WITH ADMIN TRUE`,
+        `GRANT ${o} TO ${m} WITH INHERIT TRUE, SET TRUE GRANTED BY ${grantor}`,
+      ]);
+      // The grantor's edge must go before the grantor itself can be dropped.
+      await admin.query(`DROP ROLE ${migrator}`);
+      await admin.query(`DROP ROLE ${grantor}`);
+      expect(mismatches.map((x) => x.check)).toEqual(['owner-edge-count', 'owner-members']);
+    });
+
+    it('N-17 an extra owner member is detected', async () => {
+      const { mismatches } = await pvControl('pv-extra-member', 'extra', (o, m) => [
+        `GRANT ${o} TO ${m} WITH INHERIT TRUE, SET TRUE`,
+        `CREATE ROLE ${NEGCTL_PREFIX}pv_extra_intruder ${LOGIN_OK}`,
+        `GRANT ${o} TO ${NEGCTL_PREFIX}pv_extra_intruder`,
+      ]);
+      expect(mismatches.map((x) => x.check)).toEqual(['owner-members']);
+    });
+
+    it('N-18 an indirect path is no substitute for the direct edge (effective access alone is refused)', async () => {
+      const via = `${NEGCTL_PREFIX}pv_indirect_via`;
+      await admin.query(`CREATE ROLE ${via} NOLOGIN INHERIT`);
+      const { migrator, owner, mismatches } = await pvControl('pv-indirect', 'indirect', (o, m) => [
+        `GRANT ${o} TO ${via} WITH INHERIT TRUE, SET TRUE`,
+        `GRANT ${via} TO ${m} WITH INHERIT TRUE, SET TRUE`,
+      ]);
+      expect(await observeOwnerAccess(admin, migrator, owner)).toEqual({
+        member: true,
+        usage: true,
+        set: true,
+      });
+      expect(mismatches.map((x) => x.check)).toEqual([
+        'member-of',
+        'owner-edge-count',
+        'owner-members',
+      ]);
+    });
+
+    it('N-19 from its own session, a plain-grant migration role lacks USAGE; a SET role breaks current_user = session_user', async () => {
+      const secret = generateSecret();
+      const plain = await pvControl(
+        'pv-session-plain',
+        'sess_plain',
+        (o, m) => [`GRANT ${o} TO ${m}`],
+        ` PASSWORD '${secret}'`,
+      );
+      const ok = await pvControl(
+        'pv-session-canonical',
+        'sess_ok',
+        (o, m) => [`GRANT ${o} TO ${m} WITH INHERIT TRUE, SET TRUE`],
+        ` PASSWORD '${secret}'`,
+      );
+      const open = async (role: string) => {
+        const c = new pg.Client({
+          ...specFor(ctx, ctx.migrationRole, ctx.databases.selftest),
+          user: role,
+          password: secret,
+        });
+        await c.connect();
+        return c;
+      };
+      const cp = await open(plain.migrator);
+      const co = await open(ok.migrator);
+      try {
+        const plainObs = await observeMigrationSession(cp, plain.owner);
+        const okObs = await observeMigrationSession(co, ok.owner);
+        await co.query('BEGIN');
+        await co.query(`SET LOCAL ROLE ${ok.owner}`);
+        const setObs = await observeMigrationSession(co, ok.owner);
+        await co.query('ROLLBACK');
+        results.push(
+          {
+            case: 'pv-session-plain(session)',
+            role: plain.migrator,
+            mismatches: evaluateMigrationSession(plain.migrator, plainObs),
+          },
+          {
+            case: 'pv-session-canonical-after-SET(session)',
+            role: ok.migrator,
+            mismatches: evaluateMigrationSession(ok.migrator, setObs),
+          },
+        );
+        expect(evaluateMigrationSession(plain.migrator, plainObs).map((x) => x.check)).toEqual([
+          'session-pg_has_role-USAGE',
+        ]);
+        expect(evaluateMigrationSession(ok.migrator, okObs)).toEqual([]);
+        expect(evaluateMigrationSession(ok.migrator, setObs).map((x) => x.check)).toEqual([
+          'current_user',
+        ]);
+      } finally {
+        await cp.end();
+        await co.end();
+      }
     });
   });
 });
