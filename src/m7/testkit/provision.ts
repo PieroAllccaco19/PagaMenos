@@ -42,10 +42,57 @@ function stripComments(sql: string): string {
   return sql.replace(/--[^\n]*/g, '');
 }
 
+/**
+ * VFC-PG-1: the minimum `server_version_num` of the running server for the VBA-S02-1 provisioning
+ * realization (per-membership INHERIT / SET options exist from PostgreSQL 16). A harness precondition
+ * only (H03): it is not IA-08 and not a product-wide PostgreSQL support floor.
+ */
+export const HARNESS_MIN_SERVER_VERSION_NUM = 160000;
+
+/** H03: refuses a running server below the VFC-PG-1 floor (throws; the check is then FAIL). */
+export function assertHarnessServerVersion(serverVersionNum: number): void {
+  if (serverVersionNum < HARNESS_MIN_SERVER_VERSION_NUM) {
+    throw new Error(
+      `server_version_num ${serverVersionNum} < ${HARNESS_MIN_SERVER_VERSION_NUM} (VFC-PG-1 verification-harness precondition)`,
+    );
+  }
+}
+
+/** A membership option stated on a GRANT (`WITH { ADMIN | INHERIT | SET } { TRUE | FALSE | OPTION }`). */
+export type GrantOption = 'admin' | 'inherit' | 'set';
+
+/** VBA-PV-3 (PostgreSQL ≥ 16): the only admissible options of the owner → migration role grant. */
+export const OWNER_GRANT_OPTIONS: Readonly<Partial<Record<GrantOption, boolean>>> = {
+  inherit: true,
+  set: true,
+};
+
+export interface TemplateGrant {
+  readonly role: string;
+  readonly member: string;
+  /** Exactly the options the statement states; an unstated option is absent. */
+  readonly options: Readonly<Partial<Record<GrantOption, boolean>>>;
+}
+
 export interface TemplateStructure {
   /** role name → whether its CREATE ROLE says LOGIN. */
   readonly createdRoles: ReadonlyMap<string, boolean>;
-  readonly grants: readonly { role: string; member: string }[];
+  readonly grants: readonly TemplateGrant[];
+}
+
+const GRANT_STATEMENT = /^GRANT\s+([^\s;,]+)\s+TO\s+([^\s;,]+)(?:\s+WITH\s+([\s\S]+))?$/i;
+
+function parseGrantOptions(text: string | undefined, statement: string): TemplateGrant['options'] {
+  const options: Partial<Record<GrantOption, boolean>> = {};
+  if (text === undefined) return options;
+  for (const clause of text.split(',').map((c) => c.trim())) {
+    const m = /^(ADMIN|INHERIT|SET)\s+(TRUE|FALSE|OPTION)$/i.exec(clause);
+    if (!m) throw new ProvisioningTemplateError(`unrecognized grant option in: ${statement}`);
+    const option = m[1]!.toLowerCase() as GrantOption;
+    if (option in options) throw new ProvisioningTemplateError(`repeated grant option ${option}`);
+    options[option] = m[2]!.toUpperCase() !== 'FALSE';
+  }
+  return options;
 }
 
 /** Structural reading of the (unrendered or rendered) template. */
@@ -68,16 +115,18 @@ export function readTemplateStructure(sql: string): TemplateStructure {
     }
     createdRoles.set(name, tokens.includes('LOGIN'));
   }
-  const grants = [...code.matchAll(/GRANT\s+([^\s;]+)\s+TO\s+([^\s;]+)\s*;/gi)].map((m) => ({
-    role: m[1]!,
-    member: m[2]!,
-  }));
+  const grants: TemplateGrant[] = [];
   const statements = code
     .split(';')
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
   for (const s of statements) {
-    if (!/^(BEGIN|COMMIT|CREATE\s+ROLE\s|GRANT\s+[^\s]+\s+TO\s)/i.test(s)) {
+    if (/^GRANT\s/i.test(s)) {
+      // Every GRANT must parse completely (e.g. a GRANTED BY clause is refused, never skipped).
+      const m = GRANT_STATEMENT.exec(s);
+      if (!m) throw new ProvisioningTemplateError(`unrecognized grant: ${s.split('\n')[0]}`);
+      grants.push({ role: m[1]!, member: m[2]!, options: parseGrantOptions(m[3], s) });
+    } else if (!/^(BEGIN|COMMIT|CREATE\s+ROLE\s)/i.test(s)) {
       throw new ProvisioningTemplateError(`non-role statement refused: ${s.split('\n')[0]}`);
     }
   }
@@ -96,8 +145,8 @@ export interface RenderInput {
 /**
  * Renders the template in memory. Refuses if: the template contains a literal credential or a
  * non-role statement; its role set is not exactly the seven §18.2 roles plus the migration role; a
- * role's LOGIN-ness disagrees with §18.2; its only grant is not owner → migration role; or any
- * placeholder is left unresolved.
+ * role's LOGIN-ness disagrees with §18.2; its only grant is not owner → migration role stating
+ * exactly `WITH INHERIT TRUE, SET TRUE` (VBA-PV-3); or any placeholder is left unresolved.
  */
 export function renderRolesTemplate(input: RenderInput): string {
   const { template, expectations, migrationRole, secrets, connectionLimit } = input;
@@ -134,6 +183,15 @@ export function renderRolesTemplate(input: RenderInput): string {
     structure.grants[0]!.member !== migrationRole
   ) {
     throw new ProvisioningTemplateError('the only grant must be the owner to the migration role');
+  }
+  const options = structure.grants[0]!.options;
+  if (
+    JSON.stringify(Object.entries(options).sort()) !==
+    JSON.stringify(Object.entries(OWNER_GRANT_OPTIONS).sort())
+  ) {
+    throw new ProvisioningTemplateError(
+      `owner grant options ${JSON.stringify(options)} ≠ WITH INHERIT TRUE, SET TRUE (VBA-PV-3)`,
+    );
   }
 
   const secretFor = (role: string): string => {

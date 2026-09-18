@@ -12,7 +12,17 @@ import {
   v11Text,
 } from '../normative/__fixtures__/accepted-sources';
 import { SourceIdentityError, SourceStructureError } from '../normative/source';
-import { deriveM7RoleExpectations, deriveM7RoleExpectationsFromText, retarget } from './roles';
+import {
+  MIGRATION_ROLE_ATTRIBUTES,
+  deriveM7RoleExpectations,
+  deriveM7RoleExpectationsFromText,
+  evaluateMigrationSession,
+  evaluateOwnerMembership,
+  retarget,
+  type ObservedMigrationSession,
+  type ObservedOwnerAccess,
+  type ObservedOwnerEdge,
+} from './roles';
 
 const LOGIN_ROLES = [
   'pagamenos_m7_participant_rt',
@@ -120,5 +130,118 @@ describe('S02 M7 role expectations (derived from V1.1 §18.2, cross-checked with
       );
       expect(() => deriveM7RoleExpectationsFromText(text)).toThrow(/IA-02/);
     });
+  });
+});
+
+describe('VBA-PV-1 owner-membership predicate (pure; PostgreSQL ≥ 16 edge options)', () => {
+  const MIGRATOR = 'pagamenos_migrator';
+  const OWNER = 'pagamenos_m7_owner';
+  const edge = (over: Partial<ObservedOwnerEdge> = {}): ObservedOwnerEdge => ({
+    member: MIGRATOR,
+    grantor: 'bootstrap',
+    inheritOption: true,
+    setOption: true,
+    adminOption: false,
+    ...over,
+  });
+  const FULL: ObservedOwnerAccess = { member: true, usage: true, set: true };
+  const checks = (edges: ObservedOwnerEdge[], access: ObservedOwnerAccess = FULL) =>
+    evaluateOwnerMembership(MIGRATOR, OWNER, edges, access).map((m) => m.check);
+
+  it('the canonical edge with full effective access has zero mismatches', () => {
+    expect(evaluateOwnerMembership(MIGRATOR, OWNER, [edge()], FULL)).toEqual([]);
+  });
+
+  it('inherit_option = false is detected (the pre-VBA S02 edge: MEMBER, SET but no USAGE)', () => {
+    expect(
+      checks([edge({ inheritOption: false })], { member: true, usage: false, set: true }),
+    ).toEqual(['inherit_option', 'pg_has_role-USAGE']);
+  });
+
+  it('set_option = false is detected', () => {
+    expect(checks([edge({ setOption: false })], { member: true, usage: true, set: false })).toEqual(
+      ['set_option', 'pg_has_role-SET'],
+    );
+  });
+
+  it('admin_option = true is detected', () => {
+    expect(checks([edge({ adminOption: true })])).toEqual(['admin_option']);
+  });
+
+  it('a duplicate owner edge (second grantor) is detected, and each edge is checked', () => {
+    expect(checks([edge(), edge({ grantor: 'other', adminOption: true })])).toEqual([
+      'owner-edge-count',
+      'admin_option',
+    ]);
+  });
+
+  it('an extra owner member is detected', () => {
+    const m = evaluateOwnerMembership(
+      MIGRATOR,
+      OWNER,
+      [edge(), edge({ member: 'intruder' })],
+      FULL,
+    );
+    expect(m).toEqual([
+      {
+        role: OWNER,
+        check: 'owner-members',
+        expected: `exactly {${MIGRATOR}}`,
+        observed: `{intruder, ${MIGRATOR}}`,
+      },
+    ]);
+  });
+
+  it('an indirect path is no substitute for the direct edge', () => {
+    // Effective access through an intermediate role, but the owner's only direct member is that role.
+    expect(checks([edge({ member: 'intermediate' })])).toEqual([
+      'owner-edge-count',
+      'owner-members',
+    ]);
+    expect(checks([], { member: false, usage: false, set: false })).toEqual([
+      'owner-edge-count',
+      'pg_has_role-MEMBER',
+      'pg_has_role-USAGE',
+      'pg_has_role-SET',
+    ]);
+  });
+
+  it('each false effective-access predicate is reported', () => {
+    expect(checks([edge()], { member: false, usage: false, set: false })).toEqual([
+      'pg_has_role-MEMBER',
+      'pg_has_role-USAGE',
+      'pg_has_role-SET',
+    ]);
+  });
+
+  it('the migration role verifier never asserts or requires rolinherit (VFC-PG16-1)', () => {
+    expect(MIGRATION_ROLE_ATTRIBUTES.rolinherit).toBeUndefined();
+    expect(MIGRATION_ROLE_ATTRIBUTES.rolsuper).toBe(false);
+  });
+});
+
+describe('VBA-PV-1 migration-role session predicate (pure)', () => {
+  const MIGRATOR = 'pagamenos_migrator';
+  const ok: ObservedMigrationSession = {
+    sessionUser: MIGRATOR,
+    currentUser: MIGRATOR,
+    isSuperuser: 'off',
+    access: { member: true, usage: true, set: true },
+  };
+  const checks = (o: Partial<ObservedMigrationSession>) =>
+    evaluateMigrationSession(MIGRATOR, { ...ok, ...o }).map((m) => m.check);
+
+  it('session_user = current_user = migration role, non-superuser, full access: zero mismatches', () => {
+    expect(evaluateMigrationSession(MIGRATOR, ok)).toEqual([]);
+  });
+
+  it('detects a different session_user, a role already SET, a superuser session, missing access', () => {
+    expect(checks({ sessionUser: 'postgres', currentUser: 'postgres' })).toEqual(['session_user']);
+    expect(checks({ currentUser: 'pagamenos_m7_owner' })).toEqual(['current_user']);
+    expect(checks({ isSuperuser: 'on' })).toEqual(['is_superuser']);
+    expect(checks({ access: { member: true, usage: false, set: false } })).toEqual([
+      'session-pg_has_role-USAGE',
+      'session-pg_has_role-SET',
+    ]);
   });
 });

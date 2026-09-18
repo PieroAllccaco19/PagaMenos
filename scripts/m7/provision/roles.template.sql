@@ -48,9 +48,14 @@ CREATE ROLE {{MIGRATION_ROLE}}
   LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT
   PASSWORD {{MIGRATION_ROLE_SECRET}};
 
--- IA-05: the members of pagamenos_m7_owner are exactly the migration role. Membership (not
--- inheritance) is what lets the future install run `CREATE SCHEMA m7 AUTHORIZATION pagamenos_m7_owner`
--- and `SET LOCAL ROLE pagamenos_m7_owner`. No login runtime role is granted anything here.
-GRANT pagamenos_m7_owner TO {{MIGRATION_ROLE}};
+-- IA-05: the members of pagamenos_m7_owner are exactly the migration role. VBA-PV-1 / VBA-PV-3
+-- (PostgreSQL >= 16, the harness floor of VFC-PG-1): exactly one direct edge with INHERIT TRUE (the
+-- pre-`SET LOCAL ROLE` §19.2 statements exercise the owner's privileges through inheritance) and
+-- SET TRUE (`SET LOCAL ROLE pagamenos_m7_owner`), without ADMIN OPTION. The explicit edge options
+-- govern this edge; the migration role itself stays NOINHERIT. No login runtime role is granted
+-- anything here.
+GRANT pagamenos_m7_owner
+TO {{MIGRATION_ROLE}}
+WITH INHERIT TRUE, SET TRUE;
 
 COMMIT;
