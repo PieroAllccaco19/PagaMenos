@@ -3,7 +3,8 @@
 //   pnpm m7:ddl:extract   regenerate prisma/m7/normative/ from the accepted specification bytes
 //   pnpm m7:ddl:check     fail (exit 1) if the committed artifacts differ from a fresh generation
 //
-// Offline and DB-free. It reads only the four accepted documents (M7 V1.1, Erratum 01, Erratum 02, Erratum 03),
+// Offline and DB-free. It reads only the five accepted documents (M7 V1.1, Erratum 01, Erratum 02, Erratum 03,
+// Erratum 04),
 // verifies their exact identities before extracting, and writes only inside prisma/m7/normative/. It
 // never touches prisma/migrations/, authority/ or any specification markdown, and installs nothing into
 // PostgreSQL.
@@ -24,13 +25,19 @@ import {
   findStaleErratum03Bytes,
   readErratum03Corrections,
 } from '../../src/m7/normative/erratum-03-corrections';
+import {
+  findStaleErratum04Bytes,
+  readErratum04Corrections,
+} from '../../src/m7/normative/erratum-04-corrections';
 import { applyErratum02Corrections } from '../../src/m7/normative/erratum-02-corrections';
+import { applyErratum03Corrections } from '../../src/m7/normative/erratum-03-corrections';
 import { selectNormativeFragments } from '../../src/m7/normative/fragments';
 import {
   M7_V1_1,
   M7_V1_1_ERRATUM_01,
   M7_V1_1_ERRATUM_02,
   M7_V1_1_ERRATUM_03,
+  M7_V1_1_ERRATUM_04,
   verifyBoundArtifact,
 } from '../../src/m7/normative/source';
 
@@ -72,11 +79,13 @@ function main(): void {
     const v11Bytes = readFileSync(join(ROOT, M7_V1_1.path));
     const e02Bytes = readFileSync(join(ROOT, M7_V1_1_ERRATUM_02.path));
     const e03Bytes = readFileSync(join(ROOT, M7_V1_1_ERRATUM_03.path));
+    const e04Bytes = readFileSync(join(ROOT, M7_V1_1_ERRATUM_04.path));
     generated = generateNormativeArtifacts(
       v11Bytes,
       readFileSync(join(ROOT, M7_V1_1_ERRATUM_01.path)),
       e02Bytes,
       e03Bytes,
+      e04Bytes,
     );
     const v11Text = verifyBoundArtifact(M7_V1_1, v11Bytes);
     const v11Selection = selectNormativeFragments(v11Text);
@@ -85,15 +94,25 @@ function main(): void {
       verifyBoundArtifact(M7_V1_1_ERRATUM_02, e02Bytes),
       v11Selection,
     );
+    const e02Selection = applyErratum02Corrections(v11Selection, corrections);
     const e03 = readErratum03Corrections(
       v11Text,
       verifyBoundArtifact(M7_V1_1_ERRATUM_03, e03Bytes),
-      applyErratum02Corrections(v11Selection, corrections),
+      e02Selection,
       corrections,
+    );
+    const e04 = readErratum04Corrections(
+      v11Text,
+      verifyBoundArtifact(M7_V1_1_ERRATUM_04, e04Bytes),
+      v11Selection,
+      applyErratum03Corrections(e02Selection, e03.corrections),
+      corrections,
+      e03.corrections,
     );
     staleScan = (files) => [
       ...findStaleErratum02Bytes(files, corrections),
       ...findStaleErratum03Bytes(files, e03.corrections),
+      ...findStaleErratum04Bytes(files, e04),
     ];
   } catch (error) {
     console.error(`[m7:ddl] ${error instanceof Error ? error.message : String(error)}`);

@@ -1,0 +1,5672 @@
+{
+  "schema": "pagamenos.m7.s01.erratum-04-corrections.v1",
+  "status": [
+    "S01 EXTRACTION ARTIFACT — GENERATED; DO NOT EDIT BY HAND",
+    "NOT A MIGRATION; NOT INSTALLED INTO POSTGRESQL; NOT A CONTROL-PLANE MANIFEST",
+    "SATISFIES NO IMP-* OR MA-* ITEM; M7 GATE 2 NOT SATISFIED"
+  ],
+  "conformanceTarget": "M7 V1.1 + accepted Erratum 01 + accepted Erratum 02 + accepted Erratum 03 + accepted Erratum 04",
+  "source": {
+    "path": "PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_04.md",
+    "gitBlob": "c839db3948608c875c984a73e366c039c0a5e2dd",
+    "sha256": "3b07d30958aa5c7783fe7458236b8170d1f5a47c0f765e7aa95e5ae68bab00f4",
+    "bytes": 60164,
+    "lines": 660
+  },
+  "readingRule": "An Erratum 04 \"After\" statement replaces exactly its quoted \"Before\" statement of V1.1 lines, at exactly the named lines; only the named changed lines differ; no line is added, removed or reordered (Erratum 04 §4 item 2; Register §18.2). Each correction rewrites only the invocation syntax of one FROM item: pg_catalog.unnest(a1, …, ak) becomes ROWS FROM (pg_catalog.unnest(a1), …, pg_catalog.unnest(ak)). Every other byte is read from the accepted V1.1 bytes read with Erratum 01, Erratum 02 and Erratum 03.",
+  "correctionCount": 6,
+  "affectedFragments": [
+    "F12"
+  ],
+  "unaffectedFragments": [
+    "F01",
+    "F02",
+    "F03",
+    "F04",
+    "F05",
+    "F06",
+    "F07",
+    "F08",
+    "F09",
+    "F10",
+    "F11",
+    "F13",
+    "F14",
+    "F15",
+    "F16",
+    "F17",
+    "F18",
+    "F19",
+    "F20",
+    "F21",
+    "F22",
+    "F23",
+    "F24",
+    "F25",
+    "F26"
+  ],
+  "documentChecks": [
+    {
+      "check": "census: raw and masked unnest token counts equal in every fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "F01: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "F02: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "F03: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "F04: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "F05: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "F06: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "F07: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "F08: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "F09: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "F10: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [
+        "pg_catalog.unnest(r.paths)"
+      ],
+      "expected": [
+        "pg_catalog.unnest(r.paths)"
+      ],
+      "pass": true
+    },
+    {
+      "check": "F11: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [
+        "pg_catalog.unnest(p_backends)"
+      ],
+      "expected": [
+        "pg_catalog.unnest(p_backends)"
+      ],
+      "pass": true
+    },
+    {
+      "check": "F12: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [
+        "pg_catalog.unnest(p_merchant_refs)",
+        "pg_catalog.unnest(p_merchant_refs)",
+        "pg_catalog.unnest(p_merchant_refs)",
+        "pg_catalog.unnest(p_merchant_refs)",
+        "pg_catalog.unnest(p_relation_names, p_relation_kinds)",
+        "pg_catalog.unnest(p_object_relations, p_object_kinds, p_object_names, p_object_unique)",
+        "pg_catalog.unnest(p_function_signatures, p_function_definer, p_function_proconfig, p_function_source_sha256)",
+        "pg_catalog.unnest(p_grant_signatures, p_grant_roles)",
+        "pg_catalog.unnest(p_role_names, p_role_can_login, p_role_inherits, p_role_schema_usage)",
+        "pg_catalog.unnest(p_member_roles, p_member_names)"
+      ],
+      "expected": [
+        "pg_catalog.unnest(p_merchant_refs)",
+        "pg_catalog.unnest(p_merchant_refs)",
+        "pg_catalog.unnest(p_merchant_refs)",
+        "pg_catalog.unnest(p_merchant_refs)",
+        "pg_catalog.unnest(p_relation_names, p_relation_kinds)",
+        "pg_catalog.unnest(p_object_relations, p_object_kinds, p_object_names, p_object_unique)",
+        "pg_catalog.unnest(p_function_signatures, p_function_definer, p_function_proconfig, p_function_source_sha256)",
+        "pg_catalog.unnest(p_grant_signatures, p_grant_roles)",
+        "pg_catalog.unnest(p_role_names, p_role_can_login, p_role_inherits, p_role_schema_usage)",
+        "pg_catalog.unnest(p_member_roles, p_member_names)"
+      ],
+      "pass": true
+    },
+    {
+      "check": "F13: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "F14: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "F15: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "F16: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "F17: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "F18: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "F19: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "F20: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "F21: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "F22: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "F23: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "F24: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "F25: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "F26: unnest calls identical in the V1.1 body and the Erratum 03-effective fragment",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "§6.3 census table == mechanical census of the Erratum 03-effective fragments",
+      "observed": [
+        [
+          "F10 / §19.10.1",
+          "49",
+          "5092",
+          1,
+          "pg_catalog.unnest(r.paths)",
+          "VALID"
+        ],
+        [
+          "F11 / §19.11.1",
+          "404",
+          "5613",
+          1,
+          "pg_catalog.unnest(p_backends)",
+          "VALID"
+        ],
+        [
+          "F12 / §19.11.2",
+          "286",
+          "6106",
+          1,
+          "pg_catalog.unnest(p_merchant_refs)",
+          "VALID"
+        ],
+        [
+          "F12 / §19.11.2",
+          "294",
+          "6114",
+          1,
+          "pg_catalog.unnest(p_merchant_refs)",
+          "VALID"
+        ],
+        [
+          "F12 / §19.11.2",
+          "308",
+          "6128",
+          1,
+          "pg_catalog.unnest(p_merchant_refs)",
+          "VALID"
+        ],
+        [
+          "F12 / §19.11.2",
+          "326",
+          "6146",
+          1,
+          "pg_catalog.unnest(p_merchant_refs)",
+          "VALID"
+        ],
+        [
+          "F12 / §19.11.2",
+          "479",
+          "6299",
+          2,
+          "pg_catalog.unnest(p_relation_names, p_relation_kinds)",
+          "**DEFECT `E04-01`**"
+        ],
+        [
+          "F12 / §19.11.2",
+          "483",
+          "6303",
+          4,
+          "pg_catalog.unnest(p_object_relations, p_object_kinds, p_object_names, p_object_unique)",
+          "**DEFECT `E04-02`**"
+        ],
+        [
+          "F12 / §19.11.2",
+          "486–487",
+          "6306–6307",
+          4,
+          "pg_catalog.unnest(p_function_signatures, p_function_definer, p_function_proconfig, p_function_source_sha256)",
+          "**DEFECT `E04-03`**"
+        ],
+        [
+          "F12 / §19.11.2",
+          "489",
+          "6309",
+          2,
+          "pg_catalog.unnest(p_grant_signatures, p_grant_roles)",
+          "**DEFECT `E04-04`**"
+        ],
+        [
+          "F12 / §19.11.2",
+          "492",
+          "6312",
+          4,
+          "pg_catalog.unnest(p_role_names, p_role_can_login, p_role_inherits, p_role_schema_usage)",
+          "**DEFECT `E04-05`**"
+        ],
+        [
+          "F12 / §19.11.2",
+          "494",
+          "6314",
+          2,
+          "pg_catalog.unnest(p_member_roles, p_member_names)",
+          "**DEFECT `E04-06`**"
+        ]
+      ],
+      "expected": [
+        [
+          "F10 / §19.10.1",
+          "49",
+          "5092",
+          1,
+          "pg_catalog.unnest(r.paths)",
+          "VALID"
+        ],
+        [
+          "F11 / §19.11.1",
+          "404",
+          "5613",
+          1,
+          "pg_catalog.unnest(p_backends)",
+          "VALID"
+        ],
+        [
+          "F12 / §19.11.2",
+          "286",
+          "6106",
+          1,
+          "pg_catalog.unnest(p_merchant_refs)",
+          "VALID"
+        ],
+        [
+          "F12 / §19.11.2",
+          "294",
+          "6114",
+          1,
+          "pg_catalog.unnest(p_merchant_refs)",
+          "VALID"
+        ],
+        [
+          "F12 / §19.11.2",
+          "308",
+          "6128",
+          1,
+          "pg_catalog.unnest(p_merchant_refs)",
+          "VALID"
+        ],
+        [
+          "F12 / §19.11.2",
+          "326",
+          "6146",
+          1,
+          "pg_catalog.unnest(p_merchant_refs)",
+          "VALID"
+        ],
+        [
+          "F12 / §19.11.2",
+          "479",
+          "6299",
+          2,
+          "pg_catalog.unnest(p_relation_names, p_relation_kinds)",
+          "**DEFECT `E04-01`**"
+        ],
+        [
+          "F12 / §19.11.2",
+          "483",
+          "6303",
+          4,
+          "pg_catalog.unnest(p_object_relations, p_object_kinds, p_object_names, p_object_unique)",
+          "**DEFECT `E04-02`**"
+        ],
+        [
+          "F12 / §19.11.2",
+          "486–487",
+          "6306–6307",
+          4,
+          "pg_catalog.unnest(p_function_signatures, p_function_definer, p_function_proconfig, p_function_source_sha256)",
+          "**DEFECT `E04-03`**"
+        ],
+        [
+          "F12 / §19.11.2",
+          "489",
+          "6309",
+          2,
+          "pg_catalog.unnest(p_grant_signatures, p_grant_roles)",
+          "**DEFECT `E04-04`**"
+        ],
+        [
+          "F12 / §19.11.2",
+          "492",
+          "6312",
+          4,
+          "pg_catalog.unnest(p_role_names, p_role_can_login, p_role_inherits, p_role_schema_usage)",
+          "**DEFECT `E04-05`**"
+        ],
+        [
+          "F12 / §19.11.2",
+          "494",
+          "6314",
+          2,
+          "pg_catalog.unnest(p_member_roles, p_member_names)",
+          "**DEFECT `E04-06`**"
+        ]
+      ],
+      "pass": true
+    },
+    {
+      "check": "§6.3 enclosing objects == mechanical enclosing object",
+      "observed": [
+        "DO $triggers$",
+        "m7.i_hold_backends_liveness",
+        "m7.c_register_merchant_vocabulary_v1",
+        "m7.c_register_merchant_vocabulary_v1",
+        "m7.c_register_merchant_vocabulary_v1",
+        "m7.c_register_merchant_vocabulary_v1",
+        "m7.c_load_catalog_expectations_v1",
+        "m7.c_load_catalog_expectations_v1",
+        "m7.c_load_catalog_expectations_v1",
+        "m7.c_load_catalog_expectations_v1",
+        "m7.c_load_catalog_expectations_v1",
+        "m7.c_load_catalog_expectations_v1"
+      ],
+      "expected": [
+        "DO $triggers$",
+        "m7.i_hold_backends_liveness",
+        "m7.c_register_merchant_vocabulary_v1",
+        "m7.c_register_merchant_vocabulary_v1",
+        "m7.c_register_merchant_vocabulary_v1",
+        "m7.c_register_merchant_vocabulary_v1",
+        "m7.c_load_catalog_expectations_v1",
+        "m7.c_load_catalog_expectations_v1",
+        "m7.c_load_catalog_expectations_v1",
+        "m7.c_load_catalog_expectations_v1",
+        "m7.c_load_catalog_expectations_v1",
+        "m7.c_load_catalog_expectations_v1"
+      ],
+      "pass": true
+    },
+    {
+      "check": "§6.2 census results",
+      "observed": [
+        "26 / 26",
+        "12",
+        "6",
+        "6",
+        "10",
+        "0",
+        "0",
+        "0",
+        "0"
+      ],
+      "expected": [
+        "26 / 26",
+        "12",
+        "6",
+        "6",
+        "10",
+        "0",
+        "0",
+        "0",
+        "0"
+      ],
+      "pass": true
+    },
+    {
+      "check": "census: qualified multi-array calls == the six registered occurrences, in order, all in F12",
+      "observed": [
+        [
+          "F12",
+          "6299"
+        ],
+        [
+          "F12",
+          "6303"
+        ],
+        [
+          "F12",
+          "6306–6307"
+        ],
+        [
+          "F12",
+          "6309"
+        ],
+        [
+          "F12",
+          "6312"
+        ],
+        [
+          "F12",
+          "6314"
+        ]
+      ],
+      "expected": [
+        [
+          "F12",
+          "6299"
+        ],
+        [
+          "F12",
+          "6303"
+        ],
+        [
+          "F12",
+          "6306–6307"
+        ],
+        [
+          "F12",
+          "6309"
+        ],
+        [
+          "F12",
+          "6312"
+        ],
+        [
+          "F12",
+          "6314"
+        ]
+      ],
+      "pass": true
+    },
+    {
+      "check": "census: preserved single-array calls == registry",
+      "observed": [
+        [
+          "F10",
+          49,
+          5092
+        ],
+        [
+          "F11",
+          404,
+          5613
+        ],
+        [
+          "F12",
+          286,
+          6106
+        ],
+        [
+          "F12",
+          294,
+          6114
+        ],
+        [
+          "F12",
+          308,
+          6128
+        ],
+        [
+          "F12",
+          326,
+          6146
+        ]
+      ],
+      "expected": [
+        [
+          "F10",
+          49,
+          5092
+        ],
+        [
+          "F11",
+          404,
+          5613
+        ],
+        [
+          "F12",
+          286,
+          6106
+        ],
+        [
+          "F12",
+          294,
+          6114
+        ],
+        [
+          "F12",
+          308,
+          6128
+        ],
+        [
+          "F12",
+          326,
+          6146
+        ]
+      ],
+      "pass": true
+    },
+    {
+      "check": "census: no unqualified, other-schema or ROWS FROM form before Erratum 04",
+      "observed": [
+        0,
+        0,
+        0
+      ],
+      "expected": [
+        0,
+        0,
+        0
+      ],
+      "pass": true
+    },
+    {
+      "check": "every E04-nn identifier in the document is a registered occurrence",
+      "observed": [
+        "E04-01",
+        "E04-02",
+        "E04-03",
+        "E04-04",
+        "E04-05",
+        "E04-06"
+      ],
+      "expected": [
+        "E04-01",
+        "E04-02",
+        "E04-03",
+        "E04-04",
+        "E04-05",
+        "E04-06"
+      ],
+      "pass": true
+    },
+    {
+      "check": "Before / After statement labels in the document",
+      "observed": [
+        6,
+        6
+      ],
+      "expected": [
+        6,
+        6
+      ],
+      "pass": true
+    },
+    {
+      "check": "header: SQL occurrences corrected",
+      "observed": "6",
+      "expected": "6",
+      "pass": true
+    },
+    {
+      "check": "header: V1.1 lines superseded; lines added / removed",
+      "observed": "7 (6299, 6303, 6306, 6307, 6309, 6312, 6314); LINES ADDED / REMOVED : 0 / 0",
+      "expected": "7 (6299, 6303, 6306, 6307, 6309, 6312, 6314); LINES ADDED / REMOVED : 0 / 0",
+      "pass": true
+    },
+    {
+      "check": "§7 subsections in order",
+      "observed": [
+        "E04-01",
+        "E04-02",
+        "E04-03",
+        "E04-04",
+        "E04-05",
+        "E04-06"
+      ],
+      "expected": [
+        "E04-01",
+        "E04-02",
+        "E04-03",
+        "E04-04",
+        "E04-05",
+        "E04-06"
+      ],
+      "pass": true
+    },
+    {
+      "check": "§7.7 summary rows",
+      "observed": [
+        "E04-01",
+        "E04-02",
+        "E04-03",
+        "E04-04",
+        "E04-05",
+        "E04-06"
+      ],
+      "expected": [
+        "E04-01",
+        "E04-02",
+        "E04-03",
+        "E04-04",
+        "E04-05",
+        "E04-06"
+      ],
+      "pass": true
+    },
+    {
+      "check": "statements are pairwise disjoint and in source order",
+      "observed": [
+        "E04-01",
+        "E04-02",
+        "E04-03",
+        "E04-04",
+        "E04-05",
+        "E04-06"
+      ],
+      "expected": [
+        "E04-01",
+        "E04-02",
+        "E04-03",
+        "E04-04",
+        "E04-05",
+        "E04-06"
+      ],
+      "pass": true
+    },
+    {
+      "check": "total byte delta",
+      "observed": 293,
+      "expected": 293,
+      "pass": true
+    }
+  ],
+  "census": [
+    {
+      "fragment": "F10",
+      "fragmentLine": "49",
+      "specLine": "5092",
+      "enclosingObject": "DO $triggers$",
+      "args": 1,
+      "call": "pg_catalog.unnest(r.paths)",
+      "classification": "VALID"
+    },
+    {
+      "fragment": "F11",
+      "fragmentLine": "404",
+      "specLine": "5613",
+      "enclosingObject": "m7.i_hold_backends_liveness",
+      "args": 1,
+      "call": "pg_catalog.unnest(p_backends)",
+      "classification": "VALID"
+    },
+    {
+      "fragment": "F12",
+      "fragmentLine": "286",
+      "specLine": "6106",
+      "enclosingObject": "m7.c_register_merchant_vocabulary_v1",
+      "args": 1,
+      "call": "pg_catalog.unnest(p_merchant_refs)",
+      "classification": "VALID"
+    },
+    {
+      "fragment": "F12",
+      "fragmentLine": "294",
+      "specLine": "6114",
+      "enclosingObject": "m7.c_register_merchant_vocabulary_v1",
+      "args": 1,
+      "call": "pg_catalog.unnest(p_merchant_refs)",
+      "classification": "VALID"
+    },
+    {
+      "fragment": "F12",
+      "fragmentLine": "308",
+      "specLine": "6128",
+      "enclosingObject": "m7.c_register_merchant_vocabulary_v1",
+      "args": 1,
+      "call": "pg_catalog.unnest(p_merchant_refs)",
+      "classification": "VALID"
+    },
+    {
+      "fragment": "F12",
+      "fragmentLine": "326",
+      "specLine": "6146",
+      "enclosingObject": "m7.c_register_merchant_vocabulary_v1",
+      "args": 1,
+      "call": "pg_catalog.unnest(p_merchant_refs)",
+      "classification": "VALID"
+    },
+    {
+      "fragment": "F12",
+      "fragmentLine": "479",
+      "specLine": "6299",
+      "enclosingObject": "m7.c_load_catalog_expectations_v1",
+      "args": 2,
+      "call": "pg_catalog.unnest(p_relation_names, p_relation_kinds)",
+      "classification": "**DEFECT `E04-01`**"
+    },
+    {
+      "fragment": "F12",
+      "fragmentLine": "483",
+      "specLine": "6303",
+      "enclosingObject": "m7.c_load_catalog_expectations_v1",
+      "args": 4,
+      "call": "pg_catalog.unnest(p_object_relations, p_object_kinds, p_object_names, p_object_unique)",
+      "classification": "**DEFECT `E04-02`**"
+    },
+    {
+      "fragment": "F12",
+      "fragmentLine": "486–487",
+      "specLine": "6306–6307",
+      "enclosingObject": "m7.c_load_catalog_expectations_v1",
+      "args": 4,
+      "call": "pg_catalog.unnest(p_function_signatures, p_function_definer, p_function_proconfig, p_function_source_sha256)",
+      "classification": "**DEFECT `E04-03`**"
+    },
+    {
+      "fragment": "F12",
+      "fragmentLine": "489",
+      "specLine": "6309",
+      "enclosingObject": "m7.c_load_catalog_expectations_v1",
+      "args": 2,
+      "call": "pg_catalog.unnest(p_grant_signatures, p_grant_roles)",
+      "classification": "**DEFECT `E04-04`**"
+    },
+    {
+      "fragment": "F12",
+      "fragmentLine": "492",
+      "specLine": "6312",
+      "enclosingObject": "m7.c_load_catalog_expectations_v1",
+      "args": 4,
+      "call": "pg_catalog.unnest(p_role_names, p_role_can_login, p_role_inherits, p_role_schema_usage)",
+      "classification": "**DEFECT `E04-05`**"
+    },
+    {
+      "fragment": "F12",
+      "fragmentLine": "494",
+      "specLine": "6314",
+      "enclosingObject": "m7.c_load_catalog_expectations_v1",
+      "args": 2,
+      "call": "pg_catalog.unnest(p_member_roles, p_member_names)",
+      "classification": "**DEFECT `E04-06`**"
+    }
+  ],
+  "preservedSingleArrayCalls": [
+    {
+      "fragment": "F10",
+      "fragmentLine": 49,
+      "specLine": 5092,
+      "lineText": "        SELECT pg_catalog.string_agg(pg_catalog.quote_literal(p), ', ') INTO v_args FROM pg_catalog.unnest(r.paths) AS p;",
+      "call": "pg_catalog.unnest(r.paths)"
+    },
+    {
+      "fragment": "F11",
+      "fragmentLine": 404,
+      "specLine": 5613,
+      "lineText": "          FROM pg_catalog.unnest(p_backends) AS u(b)",
+      "call": "pg_catalog.unnest(p_backends)"
+    },
+    {
+      "fragment": "F12",
+      "fragmentLine": 286,
+      "specLine": 6106,
+      "lineText": "        SELECT pg_catalog.count(*) INTO v_count FROM (SELECT DISTINCT r FROM pg_catalog.unnest(p_merchant_refs) AS r) d;",
+      "call": "pg_catalog.unnest(p_merchant_refs)"
+    },
+    {
+      "fragment": "F12",
+      "fragmentLine": 294,
+      "specLine": 6114,
+      "lineText": "          INTO v_supplied FROM pg_catalog.unnest(p_merchant_refs) AS r;",
+      "call": "pg_catalog.unnest(p_merchant_refs)"
+    },
+    {
+      "fragment": "F12",
+      "fragmentLine": 308,
+      "specLine": 6128,
+      "lineText": "            SELECT p_vocabulary_version, r FROM pg_catalog.unnest(p_merchant_refs) AS r;",
+      "call": "pg_catalog.unnest(p_merchant_refs)"
+    },
+    {
+      "fragment": "F12",
+      "fragmentLine": 326,
+      "specLine": 6146,
+      "lineText": "           OR EXISTS (SELECT r FROM pg_catalog.unnest(p_merchant_refs) AS r",
+      "call": "pg_catalog.unnest(p_merchant_refs)"
+    }
+  ],
+  "records": [
+    {
+      "id": "E04-01",
+      "fragment": "F12",
+      "clause": "19.11.2",
+      "enclosingFunction": "m7.c_load_catalog_expectations_v1",
+      "targetTable": "m7.m7_expected_relation",
+      "arrays": 2,
+      "firstLine": 6298,
+      "lastLine": 6299,
+      "fragmentFirstLine": 478,
+      "fragmentLastLine": 479,
+      "beforeBlock": [
+        "    INSERT INTO m7.m7_expected_relation (\"manifestVersion\",\"relationName\",\"relKind\")",
+        "        SELECT p_manifest_version, a, b FROM pg_catalog.unnest(p_relation_names, p_relation_kinds) AS t(a,b);"
+      ],
+      "afterBlock": [
+        "    INSERT INTO m7.m7_expected_relation (\"manifestVersion\",\"relationName\",\"relKind\")",
+        "        SELECT p_manifest_version, a, b FROM ROWS FROM (pg_catalog.unnest(p_relation_names), pg_catalog.unnest(p_relation_kinds)) AS t(a,b);"
+      ],
+      "beforeCall": "pg_catalog.unnest(p_relation_names, p_relation_kinds)",
+      "arguments": [
+        "p_relation_names",
+        "p_relation_kinds"
+      ],
+      "afterFromItem": "ROWS FROM (pg_catalog.unnest(p_relation_names), pg_catalog.unnest(p_relation_kinds))",
+      "beforeStatementSha256": "dc631d1ca6209a98bd235fd9338098c03a8fb9c5cdc6dd3d8e22a183158fb6a9",
+      "afterStatementSha256": "1b802600156dd584ed693358e2fd9c2d0dc454ee128ce1b7995a57327231d522",
+      "beforeStatementBytes": 194,
+      "afterStatementBytes": 225,
+      "byteDelta": 31,
+      "lineChanges": [
+        {
+          "specLine": 6299,
+          "fragmentLine": 479,
+          "beforeLine": "        SELECT p_manifest_version, a, b FROM pg_catalog.unnest(p_relation_names, p_relation_kinds) AS t(a,b);",
+          "afterLine": "        SELECT p_manifest_version, a, b FROM ROWS FROM (pg_catalog.unnest(p_relation_names), pg_catalog.unnest(p_relation_kinds)) AS t(a,b);",
+          "beforeLineSha256": "9976de0c8c466172d6ad271470aac2fcae92fb905ca02a9cc088036e39cba731",
+          "afterLineSha256": "6128e880977d559dc94770db6e33b65e5b0a501b32654e5c5f393e734fa09376",
+          "byteDelta": 31
+        }
+      ],
+      "evidence": [
+        {
+          "check": "§7 heading names the E04 id and fragment",
+          "observed": "`E04-01`",
+          "expected": "`E04-01`",
+          "pass": true
+        },
+        {
+          "check": "§7 clause == fragment anchor clause",
+          "observed": "§19.11.2 — fragment F12",
+          "expected": "§19.11.2 — fragment F12",
+          "pass": true
+        },
+        {
+          "check": "§7 V1.1 statement lines == registry",
+          "observed": {
+            "first": 6298,
+            "last": 6299,
+            "changed": [
+              6299
+            ]
+          },
+          "expected": {
+            "first": 6298,
+            "last": 6299,
+            "changed": [
+              6299
+            ]
+          },
+          "pass": true
+        },
+        {
+          "check": "§7 F12 fragment lines == V1.1 lines − fragment offset",
+          "observed": {
+            "first": 478,
+            "last": 479,
+            "changed": [
+              479
+            ]
+          },
+          "expected": {
+            "first": 478,
+            "last": 479,
+            "changed": [
+              479
+            ]
+          },
+          "pass": true
+        },
+        {
+          "check": "§7 enclosing function",
+          "observed": "m7.c_load_catalog_expectations_v1",
+          "expected": "m7.c_load_catalog_expectations_v1",
+          "pass": true
+        },
+        {
+          "check": "§7 arrays combined == registry",
+          "observed": 2,
+          "expected": 2,
+          "pass": true
+        },
+        {
+          "check": "Before / After labels",
+          "observed": [
+            "Before (complete statement):",
+            "After (complete statement):"
+          ],
+          "expected": [
+            "Before (complete statement):",
+            "After (complete statement):"
+          ],
+          "pass": true
+        },
+        {
+          "check": "statement lies inside the fragment body",
+          "observed": [
+            "F12",
+            "F12"
+          ],
+          "expected": [
+            "F12",
+            "F12"
+          ],
+          "pass": true
+        },
+        {
+          "check": "statement lies inside m7.c_load_catalog_expectations_v1",
+          "observed": [
+            "m7.c_load_catalog_expectations_v1",
+            "m7.c_load_catalog_expectations_v1"
+          ],
+          "expected": [
+            "m7.c_load_catalog_expectations_v1",
+            "m7.c_load_catalog_expectations_v1"
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before statement == V1.1 lines (byte-exact)",
+          "observed": [
+            "    INSERT INTO m7.m7_expected_relation (\"manifestVersion\",\"relationName\",\"relKind\")",
+            "        SELECT p_manifest_version, a, b FROM pg_catalog.unnest(p_relation_names, p_relation_kinds) AS t(a,b);"
+          ],
+          "expected": [
+            "    INSERT INTO m7.m7_expected_relation (\"manifestVersion\",\"relationName\",\"relKind\")",
+            "        SELECT p_manifest_version, a, b FROM pg_catalog.unnest(p_relation_names, p_relation_kinds) AS t(a,b);"
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before statement == Erratum 03-effective fragment lines (byte-exact)",
+          "observed": [
+            "    INSERT INTO m7.m7_expected_relation (\"manifestVersion\",\"relationName\",\"relKind\")",
+            "        SELECT p_manifest_version, a, b FROM pg_catalog.unnest(p_relation_names, p_relation_kinds) AS t(a,b);"
+          ],
+          "expected": [
+            "    INSERT INTO m7.m7_expected_relation (\"manifestVersion\",\"relationName\",\"relKind\")",
+            "        SELECT p_manifest_version, a, b FROM pg_catalog.unnest(p_relation_names, p_relation_kinds) AS t(a,b);"
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before statement occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before statement occurs exactly once in the effective fragments",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before statement: first line is the INSERT into the registered table",
+          "observed": "INSERT INTO m7.m7_expected_relation",
+          "expected": "INSERT INTO m7.m7_expected_relation",
+          "pass": true
+        },
+        {
+          "check": "Before statement: exactly one unnest call",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before call is schema-qualified pg_catalog.unnest with the registered number of arrays",
+          "observed": [
+            "pg_catalog",
+            2
+          ],
+          "expected": [
+            "pg_catalog",
+            2
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before call occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before call matches the §6.3 DEFECT row of this id",
+          "observed": [
+            [
+              "pg_catalog.unnest(p_relation_names, p_relation_kinds)",
+              2,
+              "6299"
+            ]
+          ],
+          "expected": [
+            [
+              "pg_catalog.unnest(p_relation_names, p_relation_kinds)",
+              2,
+              "6299"
+            ]
+          ],
+          "pass": true
+        },
+        {
+          "check": "After == Before outside the FROM item (byte-exact prefix and suffix)",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After FROM item == ROWS FROM of one pg_catalog.unnest per array, same order (whitespace-normalised)",
+          "observed": "ROWS FROM (pg_catalog.unnest(p_relation_names), pg_catalog.unnest(p_relation_kinds))",
+          "expected": "ROWS FROM (pg_catalog.unnest(p_relation_names), pg_catalog.unnest(p_relation_kinds))",
+          "pass": true
+        },
+        {
+          "check": "After statement: unnest calls are single-array pg_catalog.unnest over the Before arrays, in order",
+          "observed": [
+            [
+              "pg_catalog",
+              [
+                "p_relation_names"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_relation_kinds"
+              ]
+            ]
+          ],
+          "expected": [
+            [
+              "pg_catalog",
+              [
+                "p_relation_names"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_relation_kinds"
+              ]
+            ]
+          ],
+          "pass": true
+        },
+        {
+          "check": "After statement: exactly one ROWS FROM",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "After line count == Before line count (no line added or removed)",
+          "observed": 2,
+          "expected": 2,
+          "pass": true
+        },
+        {
+          "check": "lines differing == registered changed lines",
+          "observed": [
+            6299
+          ],
+          "expected": [
+            6299
+          ],
+          "pass": true
+        },
+        {
+          "check": "line SHA-256 items cover exactly the changed lines",
+          "observed": [
+            "Line 6299 SHA-256"
+          ],
+          "expected": [
+            "Line 6299 SHA-256"
+          ],
+          "pass": true
+        },
+        {
+          "check": "line 6299: Before line SHA-256 reproduces",
+          "observed": "9976de0c8c466172d6ad271470aac2fcae92fb905ca02a9cc088036e39cba731",
+          "expected": "9976de0c8c466172d6ad271470aac2fcae92fb905ca02a9cc088036e39cba731",
+          "pass": true
+        },
+        {
+          "check": "line 6299: After line SHA-256 reproduces",
+          "observed": "6128e880977d559dc94770db6e33b65e5b0a501b32654e5c5f393e734fa09376",
+          "expected": "6128e880977d559dc94770db6e33b65e5b0a501b32654e5c5f393e734fa09376",
+          "pass": true
+        },
+        {
+          "check": "line 6299: stated byte delta == len(After) − len(Before)",
+          "observed": 31,
+          "expected": 31,
+          "pass": true
+        },
+        {
+          "check": "line 6299: changed Before line occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "statement SHA-256 (original) and bytes reproduce",
+          "observed": {
+            "sha256": "dc631d1ca6209a98bd235fd9338098c03a8fb9c5cdc6dd3d8e22a183158fb6a9",
+            "bytes": 194
+          },
+          "expected": {
+            "sha256": "dc631d1ca6209a98bd235fd9338098c03a8fb9c5cdc6dd3d8e22a183158fb6a9",
+            "bytes": 194
+          },
+          "pass": true
+        },
+        {
+          "check": "statement SHA-256 (corrected) and bytes reproduce",
+          "observed": {
+            "sha256": "1b802600156dd584ed693358e2fd9c2d0dc454ee128ce1b7995a57327231d522",
+            "bytes": 225
+          },
+          "expected": {
+            "sha256": "1b802600156dd584ed693358e2fd9c2d0dc454ee128ce1b7995a57327231d522",
+            "bytes": 225
+          },
+          "pass": true
+        },
+        {
+          "check": "stated byte delta == statement delta == sum of line deltas",
+          "observed": [
+            31,
+            31
+          ],
+          "expected": [
+            31,
+            31
+          ],
+          "pass": true
+        },
+        {
+          "check": "§7.7 summary row",
+          "observed": [
+            "§19.11.2",
+            "6298–6299 (6299)",
+            "478–479 (479)",
+            "m7.m7_expected_relation",
+            2,
+            "+31"
+          ],
+          "expected": [
+            "§19.11.2",
+            "6298–6299 (6299)",
+            "478–479 (479)",
+            "m7.m7_expected_relation",
+            2,
+            "+31"
+          ],
+          "pass": true
+        },
+        {
+          "check": "§7.7 summary statement SHA-256 prefixes",
+          "observed": [
+            "dc631d1ca6209a98",
+            "1b802600156dd584"
+          ],
+          "expected": [
+            "dc631d1ca6209a98",
+            "1b802600156dd584"
+          ],
+          "pass": true
+        },
+        {
+          "check": "no Erratum 02 occurrence lies inside the statement",
+          "observed": [],
+          "expected": [],
+          "pass": true
+        },
+        {
+          "check": "no Erratum 03 block overlaps the statement",
+          "observed": [],
+          "expected": [],
+          "pass": true
+        },
+        {
+          "check": "After block contains no CR and no fence marker",
+          "observed": false,
+          "expected": false,
+          "pass": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "E04-02",
+      "fragment": "F12",
+      "clause": "19.11.2",
+      "enclosingFunction": "m7.c_load_catalog_expectations_v1",
+      "targetTable": "m7.m7_expected_relation_object",
+      "arrays": 4,
+      "firstLine": 6301,
+      "lastLine": 6303,
+      "fragmentFirstLine": 481,
+      "fragmentLastLine": 483,
+      "beforeBlock": [
+        "    INSERT INTO m7.m7_expected_relation_object (\"manifestVersion\",\"relationName\",\"objectKind\",\"objectName\",\"isUnique\")",
+        "        SELECT p_manifest_version, a, b, c, d",
+        "          FROM pg_catalog.unnest(p_object_relations, p_object_kinds, p_object_names, p_object_unique) AS t(a,b,c,d);"
+      ],
+      "afterBlock": [
+        "    INSERT INTO m7.m7_expected_relation_object (\"manifestVersion\",\"relationName\",\"objectKind\",\"objectName\",\"isUnique\")",
+        "        SELECT p_manifest_version, a, b, c, d",
+        "          FROM ROWS FROM (pg_catalog.unnest(p_object_relations), pg_catalog.unnest(p_object_kinds), pg_catalog.unnest(p_object_names), pg_catalog.unnest(p_object_unique)) AS t(a,b,c,d);"
+      ],
+      "beforeCall": "pg_catalog.unnest(p_object_relations, p_object_kinds, p_object_names, p_object_unique)",
+      "arguments": [
+        "p_object_relations",
+        "p_object_kinds",
+        "p_object_names",
+        "p_object_unique"
+      ],
+      "afterFromItem": "ROWS FROM (pg_catalog.unnest(p_object_relations), pg_catalog.unnest(p_object_kinds), pg_catalog.unnest(p_object_names), pg_catalog.unnest(p_object_unique))",
+      "beforeStatementSha256": "579c0608d59b0f4112b54a72098321f7fa094ce61b2bbda273c1ef81c381ff49",
+      "afterStatementSha256": "ecf235c043b7768967e4d252e8f21e7abfa47bc15cd241bcf908f4d33d8fc342",
+      "beforeStatementBytes": 281,
+      "afterStatementBytes": 350,
+      "byteDelta": 69,
+      "lineChanges": [
+        {
+          "specLine": 6303,
+          "fragmentLine": 483,
+          "beforeLine": "          FROM pg_catalog.unnest(p_object_relations, p_object_kinds, p_object_names, p_object_unique) AS t(a,b,c,d);",
+          "afterLine": "          FROM ROWS FROM (pg_catalog.unnest(p_object_relations), pg_catalog.unnest(p_object_kinds), pg_catalog.unnest(p_object_names), pg_catalog.unnest(p_object_unique)) AS t(a,b,c,d);",
+          "beforeLineSha256": "28fa75d5f9b5ce4d6f819411b45e29bf81514da860024c165b04e3df54510a84",
+          "afterLineSha256": "bc4fd7ee0a78349ab40bf80fb17b47cd26cb7beb9c78ab00919b05a0ff68ad26",
+          "byteDelta": 69
+        }
+      ],
+      "evidence": [
+        {
+          "check": "§7 heading names the E04 id and fragment",
+          "observed": "`E04-02`",
+          "expected": "`E04-02`",
+          "pass": true
+        },
+        {
+          "check": "§7 clause == fragment anchor clause",
+          "observed": "§19.11.2 — fragment F12",
+          "expected": "§19.11.2 — fragment F12",
+          "pass": true
+        },
+        {
+          "check": "§7 V1.1 statement lines == registry",
+          "observed": {
+            "first": 6301,
+            "last": 6303,
+            "changed": [
+              6303
+            ]
+          },
+          "expected": {
+            "first": 6301,
+            "last": 6303,
+            "changed": [
+              6303
+            ]
+          },
+          "pass": true
+        },
+        {
+          "check": "§7 F12 fragment lines == V1.1 lines − fragment offset",
+          "observed": {
+            "first": 481,
+            "last": 483,
+            "changed": [
+              483
+            ]
+          },
+          "expected": {
+            "first": 481,
+            "last": 483,
+            "changed": [
+              483
+            ]
+          },
+          "pass": true
+        },
+        {
+          "check": "§7 enclosing function",
+          "observed": "m7.c_load_catalog_expectations_v1",
+          "expected": "m7.c_load_catalog_expectations_v1",
+          "pass": true
+        },
+        {
+          "check": "§7 arrays combined == registry",
+          "observed": 4,
+          "expected": 4,
+          "pass": true
+        },
+        {
+          "check": "Before / After labels",
+          "observed": [
+            "Before (complete statement):",
+            "After (complete statement):"
+          ],
+          "expected": [
+            "Before (complete statement):",
+            "After (complete statement):"
+          ],
+          "pass": true
+        },
+        {
+          "check": "statement lies inside the fragment body",
+          "observed": [
+            "F12",
+            "F12"
+          ],
+          "expected": [
+            "F12",
+            "F12"
+          ],
+          "pass": true
+        },
+        {
+          "check": "statement lies inside m7.c_load_catalog_expectations_v1",
+          "observed": [
+            "m7.c_load_catalog_expectations_v1",
+            "m7.c_load_catalog_expectations_v1"
+          ],
+          "expected": [
+            "m7.c_load_catalog_expectations_v1",
+            "m7.c_load_catalog_expectations_v1"
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before statement == V1.1 lines (byte-exact)",
+          "observed": [
+            "    INSERT INTO m7.m7_expected_relation_object (\"manifestVersion\",\"relationName\",\"objectKind\",\"objectName\",\"isUnique\")",
+            "        SELECT p_manifest_version, a, b, c, d",
+            "          FROM pg_catalog.unnest(p_object_relations, p_object_kinds, p_object_names, p_object_unique) AS t(a,b,c,d);"
+          ],
+          "expected": [
+            "    INSERT INTO m7.m7_expected_relation_object (\"manifestVersion\",\"relationName\",\"objectKind\",\"objectName\",\"isUnique\")",
+            "        SELECT p_manifest_version, a, b, c, d",
+            "          FROM pg_catalog.unnest(p_object_relations, p_object_kinds, p_object_names, p_object_unique) AS t(a,b,c,d);"
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before statement == Erratum 03-effective fragment lines (byte-exact)",
+          "observed": [
+            "    INSERT INTO m7.m7_expected_relation_object (\"manifestVersion\",\"relationName\",\"objectKind\",\"objectName\",\"isUnique\")",
+            "        SELECT p_manifest_version, a, b, c, d",
+            "          FROM pg_catalog.unnest(p_object_relations, p_object_kinds, p_object_names, p_object_unique) AS t(a,b,c,d);"
+          ],
+          "expected": [
+            "    INSERT INTO m7.m7_expected_relation_object (\"manifestVersion\",\"relationName\",\"objectKind\",\"objectName\",\"isUnique\")",
+            "        SELECT p_manifest_version, a, b, c, d",
+            "          FROM pg_catalog.unnest(p_object_relations, p_object_kinds, p_object_names, p_object_unique) AS t(a,b,c,d);"
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before statement occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before statement occurs exactly once in the effective fragments",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before statement: first line is the INSERT into the registered table",
+          "observed": "INSERT INTO m7.m7_expected_relation_object",
+          "expected": "INSERT INTO m7.m7_expected_relation_object",
+          "pass": true
+        },
+        {
+          "check": "Before statement: exactly one unnest call",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before call is schema-qualified pg_catalog.unnest with the registered number of arrays",
+          "observed": [
+            "pg_catalog",
+            4
+          ],
+          "expected": [
+            "pg_catalog",
+            4
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before call occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before call matches the §6.3 DEFECT row of this id",
+          "observed": [
+            [
+              "pg_catalog.unnest(p_object_relations, p_object_kinds, p_object_names, p_object_unique)",
+              4,
+              "6303"
+            ]
+          ],
+          "expected": [
+            [
+              "pg_catalog.unnest(p_object_relations, p_object_kinds, p_object_names, p_object_unique)",
+              4,
+              "6303"
+            ]
+          ],
+          "pass": true
+        },
+        {
+          "check": "After == Before outside the FROM item (byte-exact prefix and suffix)",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After FROM item == ROWS FROM of one pg_catalog.unnest per array, same order (whitespace-normalised)",
+          "observed": "ROWS FROM (pg_catalog.unnest(p_object_relations), pg_catalog.unnest(p_object_kinds), pg_catalog.unnest(p_object_names), pg_catalog.unnest(p_object_unique))",
+          "expected": "ROWS FROM (pg_catalog.unnest(p_object_relations), pg_catalog.unnest(p_object_kinds), pg_catalog.unnest(p_object_names), pg_catalog.unnest(p_object_unique))",
+          "pass": true
+        },
+        {
+          "check": "After statement: unnest calls are single-array pg_catalog.unnest over the Before arrays, in order",
+          "observed": [
+            [
+              "pg_catalog",
+              [
+                "p_object_relations"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_object_kinds"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_object_names"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_object_unique"
+              ]
+            ]
+          ],
+          "expected": [
+            [
+              "pg_catalog",
+              [
+                "p_object_relations"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_object_kinds"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_object_names"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_object_unique"
+              ]
+            ]
+          ],
+          "pass": true
+        },
+        {
+          "check": "After statement: exactly one ROWS FROM",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "After line count == Before line count (no line added or removed)",
+          "observed": 3,
+          "expected": 3,
+          "pass": true
+        },
+        {
+          "check": "lines differing == registered changed lines",
+          "observed": [
+            6303
+          ],
+          "expected": [
+            6303
+          ],
+          "pass": true
+        },
+        {
+          "check": "line SHA-256 items cover exactly the changed lines",
+          "observed": [
+            "Line 6303 SHA-256"
+          ],
+          "expected": [
+            "Line 6303 SHA-256"
+          ],
+          "pass": true
+        },
+        {
+          "check": "line 6303: Before line SHA-256 reproduces",
+          "observed": "28fa75d5f9b5ce4d6f819411b45e29bf81514da860024c165b04e3df54510a84",
+          "expected": "28fa75d5f9b5ce4d6f819411b45e29bf81514da860024c165b04e3df54510a84",
+          "pass": true
+        },
+        {
+          "check": "line 6303: After line SHA-256 reproduces",
+          "observed": "bc4fd7ee0a78349ab40bf80fb17b47cd26cb7beb9c78ab00919b05a0ff68ad26",
+          "expected": "bc4fd7ee0a78349ab40bf80fb17b47cd26cb7beb9c78ab00919b05a0ff68ad26",
+          "pass": true
+        },
+        {
+          "check": "line 6303: stated byte delta == len(After) − len(Before)",
+          "observed": 69,
+          "expected": 69,
+          "pass": true
+        },
+        {
+          "check": "line 6303: changed Before line occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "statement SHA-256 (original) and bytes reproduce",
+          "observed": {
+            "sha256": "579c0608d59b0f4112b54a72098321f7fa094ce61b2bbda273c1ef81c381ff49",
+            "bytes": 281
+          },
+          "expected": {
+            "sha256": "579c0608d59b0f4112b54a72098321f7fa094ce61b2bbda273c1ef81c381ff49",
+            "bytes": 281
+          },
+          "pass": true
+        },
+        {
+          "check": "statement SHA-256 (corrected) and bytes reproduce",
+          "observed": {
+            "sha256": "ecf235c043b7768967e4d252e8f21e7abfa47bc15cd241bcf908f4d33d8fc342",
+            "bytes": 350
+          },
+          "expected": {
+            "sha256": "ecf235c043b7768967e4d252e8f21e7abfa47bc15cd241bcf908f4d33d8fc342",
+            "bytes": 350
+          },
+          "pass": true
+        },
+        {
+          "check": "stated byte delta == statement delta == sum of line deltas",
+          "observed": [
+            69,
+            69
+          ],
+          "expected": [
+            69,
+            69
+          ],
+          "pass": true
+        },
+        {
+          "check": "§7.7 summary row",
+          "observed": [
+            "§19.11.2",
+            "6301–6303 (6303)",
+            "481–483 (483)",
+            "m7.m7_expected_relation_object",
+            4,
+            "+69"
+          ],
+          "expected": [
+            "§19.11.2",
+            "6301–6303 (6303)",
+            "481–483 (483)",
+            "m7.m7_expected_relation_object",
+            4,
+            "+69"
+          ],
+          "pass": true
+        },
+        {
+          "check": "§7.7 summary statement SHA-256 prefixes",
+          "observed": [
+            "579c0608d59b0f41",
+            "ecf235c043b77689"
+          ],
+          "expected": [
+            "579c0608d59b0f41",
+            "ecf235c043b77689"
+          ],
+          "pass": true
+        },
+        {
+          "check": "no Erratum 02 occurrence lies inside the statement",
+          "observed": [],
+          "expected": [],
+          "pass": true
+        },
+        {
+          "check": "no Erratum 03 block overlaps the statement",
+          "observed": [],
+          "expected": [],
+          "pass": true
+        },
+        {
+          "check": "After block contains no CR and no fence marker",
+          "observed": false,
+          "expected": false,
+          "pass": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "E04-03",
+      "fragment": "F12",
+      "clause": "19.11.2",
+      "enclosingFunction": "m7.c_load_catalog_expectations_v1",
+      "targetTable": "m7.m7_expected_function",
+      "arrays": 4,
+      "firstLine": 6304,
+      "lastLine": 6307,
+      "fragmentFirstLine": 484,
+      "fragmentLastLine": 487,
+      "beforeBlock": [
+        "    INSERT INTO m7.m7_expected_function (\"manifestVersion\",\"functionSignature\",\"isSecurityDefiner\",\"proconfigText\",\"sourceSha256\")",
+        "        SELECT p_manifest_version, a, b, c, d",
+        "          FROM pg_catalog.unnest(p_function_signatures, p_function_definer, p_function_proconfig,",
+        "                                 p_function_source_sha256) AS t(a,b,c,d);"
+      ],
+      "afterBlock": [
+        "    INSERT INTO m7.m7_expected_function (\"manifestVersion\",\"functionSignature\",\"isSecurityDefiner\",\"proconfigText\",\"sourceSha256\")",
+        "        SELECT p_manifest_version, a, b, c, d",
+        "          FROM ROWS FROM (pg_catalog.unnest(p_function_signatures), pg_catalog.unnest(p_function_definer),",
+        "                          pg_catalog.unnest(p_function_proconfig), pg_catalog.unnest(p_function_source_sha256)) AS t(a,b,c,d);"
+      ],
+      "beforeCall": "pg_catalog.unnest(p_function_signatures, p_function_definer, p_function_proconfig,\n                                 p_function_source_sha256)",
+      "arguments": [
+        "p_function_signatures",
+        "p_function_definer",
+        "p_function_proconfig",
+        "p_function_source_sha256"
+      ],
+      "afterFromItem": "ROWS FROM (pg_catalog.unnest(p_function_signatures), pg_catalog.unnest(p_function_definer), pg_catalog.unnest(p_function_proconfig), pg_catalog.unnest(p_function_source_sha256))",
+      "beforeStatementSha256": "5925e5f3976114bc731be149f53eb349c00033d301733dc17a2f06905faab848",
+      "afterStatementSha256": "bb46bdce3a359ae06d022767f68cab3c8cc3e8d518d4b17bbbf0551189aa4238",
+      "beforeStatementBytes": 348,
+      "afterStatementBytes": 410,
+      "byteDelta": 62,
+      "lineChanges": [
+        {
+          "specLine": 6306,
+          "fragmentLine": 486,
+          "beforeLine": "          FROM pg_catalog.unnest(p_function_signatures, p_function_definer, p_function_proconfig,",
+          "afterLine": "          FROM ROWS FROM (pg_catalog.unnest(p_function_signatures), pg_catalog.unnest(p_function_definer),",
+          "beforeLineSha256": "1f75abeda22c1c0aade787d6157fb122cba634da61429918119570ca95f8cfdf",
+          "afterLineSha256": "ff83e00fcc78395b4a89dff9223b2e7dfc2ae3805829522c5c8d65f74f5715d5",
+          "byteDelta": 9
+        },
+        {
+          "specLine": 6307,
+          "fragmentLine": 487,
+          "beforeLine": "                                 p_function_source_sha256) AS t(a,b,c,d);",
+          "afterLine": "                          pg_catalog.unnest(p_function_proconfig), pg_catalog.unnest(p_function_source_sha256)) AS t(a,b,c,d);",
+          "beforeLineSha256": "795d19f64537fe1be86c81a78fb9331a1c08d5284819808f44c99168b10256cb",
+          "afterLineSha256": "85c728a0f67cd649ee58b213f5e99d742256f8ef408c9f651d48dd8e8051958b",
+          "byteDelta": 53
+        }
+      ],
+      "evidence": [
+        {
+          "check": "§7 heading names the E04 id and fragment",
+          "observed": "`E04-03`",
+          "expected": "`E04-03`",
+          "pass": true
+        },
+        {
+          "check": "§7 clause == fragment anchor clause",
+          "observed": "§19.11.2 — fragment F12",
+          "expected": "§19.11.2 — fragment F12",
+          "pass": true
+        },
+        {
+          "check": "§7 V1.1 statement lines == registry",
+          "observed": {
+            "first": 6304,
+            "last": 6307,
+            "changed": [
+              6306,
+              6307
+            ]
+          },
+          "expected": {
+            "first": 6304,
+            "last": 6307,
+            "changed": [
+              6306,
+              6307
+            ]
+          },
+          "pass": true
+        },
+        {
+          "check": "§7 F12 fragment lines == V1.1 lines − fragment offset",
+          "observed": {
+            "first": 484,
+            "last": 487,
+            "changed": [
+              486,
+              487
+            ]
+          },
+          "expected": {
+            "first": 484,
+            "last": 487,
+            "changed": [
+              486,
+              487
+            ]
+          },
+          "pass": true
+        },
+        {
+          "check": "§7 enclosing function",
+          "observed": "m7.c_load_catalog_expectations_v1",
+          "expected": "m7.c_load_catalog_expectations_v1",
+          "pass": true
+        },
+        {
+          "check": "§7 arrays combined == registry",
+          "observed": 4,
+          "expected": 4,
+          "pass": true
+        },
+        {
+          "check": "Before / After labels",
+          "observed": [
+            "Before (complete statement):",
+            "After (complete statement):"
+          ],
+          "expected": [
+            "Before (complete statement):",
+            "After (complete statement):"
+          ],
+          "pass": true
+        },
+        {
+          "check": "statement lies inside the fragment body",
+          "observed": [
+            "F12",
+            "F12"
+          ],
+          "expected": [
+            "F12",
+            "F12"
+          ],
+          "pass": true
+        },
+        {
+          "check": "statement lies inside m7.c_load_catalog_expectations_v1",
+          "observed": [
+            "m7.c_load_catalog_expectations_v1",
+            "m7.c_load_catalog_expectations_v1"
+          ],
+          "expected": [
+            "m7.c_load_catalog_expectations_v1",
+            "m7.c_load_catalog_expectations_v1"
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before statement == V1.1 lines (byte-exact)",
+          "observed": [
+            "    INSERT INTO m7.m7_expected_function (\"manifestVersion\",\"functionSignature\",\"isSecurityDefiner\",\"proconfigText\",\"sourceSha256\")",
+            "        SELECT p_manifest_version, a, b, c, d",
+            "          FROM pg_catalog.unnest(p_function_signatures, p_function_definer, p_function_proconfig,",
+            "                                 p_function_source_sha256) AS t(a,b,c,d);"
+          ],
+          "expected": [
+            "    INSERT INTO m7.m7_expected_function (\"manifestVersion\",\"functionSignature\",\"isSecurityDefiner\",\"proconfigText\",\"sourceSha256\")",
+            "        SELECT p_manifest_version, a, b, c, d",
+            "          FROM pg_catalog.unnest(p_function_signatures, p_function_definer, p_function_proconfig,",
+            "                                 p_function_source_sha256) AS t(a,b,c,d);"
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before statement == Erratum 03-effective fragment lines (byte-exact)",
+          "observed": [
+            "    INSERT INTO m7.m7_expected_function (\"manifestVersion\",\"functionSignature\",\"isSecurityDefiner\",\"proconfigText\",\"sourceSha256\")",
+            "        SELECT p_manifest_version, a, b, c, d",
+            "          FROM pg_catalog.unnest(p_function_signatures, p_function_definer, p_function_proconfig,",
+            "                                 p_function_source_sha256) AS t(a,b,c,d);"
+          ],
+          "expected": [
+            "    INSERT INTO m7.m7_expected_function (\"manifestVersion\",\"functionSignature\",\"isSecurityDefiner\",\"proconfigText\",\"sourceSha256\")",
+            "        SELECT p_manifest_version, a, b, c, d",
+            "          FROM pg_catalog.unnest(p_function_signatures, p_function_definer, p_function_proconfig,",
+            "                                 p_function_source_sha256) AS t(a,b,c,d);"
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before statement occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before statement occurs exactly once in the effective fragments",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before statement: first line is the INSERT into the registered table",
+          "observed": "INSERT INTO m7.m7_expected_function",
+          "expected": "INSERT INTO m7.m7_expected_function",
+          "pass": true
+        },
+        {
+          "check": "Before statement: exactly one unnest call",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before call is schema-qualified pg_catalog.unnest with the registered number of arrays",
+          "observed": [
+            "pg_catalog",
+            4
+          ],
+          "expected": [
+            "pg_catalog",
+            4
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before call occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before call matches the §6.3 DEFECT row of this id",
+          "observed": [
+            [
+              "pg_catalog.unnest(p_function_signatures, p_function_definer, p_function_proconfig, p_function_source_sha256)",
+              4,
+              "6306–6307"
+            ]
+          ],
+          "expected": [
+            [
+              "pg_catalog.unnest(p_function_signatures, p_function_definer, p_function_proconfig, p_function_source_sha256)",
+              4,
+              "6306–6307"
+            ]
+          ],
+          "pass": true
+        },
+        {
+          "check": "After == Before outside the FROM item (byte-exact prefix and suffix)",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After FROM item == ROWS FROM of one pg_catalog.unnest per array, same order (whitespace-normalised)",
+          "observed": "ROWS FROM (pg_catalog.unnest(p_function_signatures), pg_catalog.unnest(p_function_definer), pg_catalog.unnest(p_function_proconfig), pg_catalog.unnest(p_function_source_sha256))",
+          "expected": "ROWS FROM (pg_catalog.unnest(p_function_signatures), pg_catalog.unnest(p_function_definer), pg_catalog.unnest(p_function_proconfig), pg_catalog.unnest(p_function_source_sha256))",
+          "pass": true
+        },
+        {
+          "check": "After statement: unnest calls are single-array pg_catalog.unnest over the Before arrays, in order",
+          "observed": [
+            [
+              "pg_catalog",
+              [
+                "p_function_signatures"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_function_definer"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_function_proconfig"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_function_source_sha256"
+              ]
+            ]
+          ],
+          "expected": [
+            [
+              "pg_catalog",
+              [
+                "p_function_signatures"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_function_definer"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_function_proconfig"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_function_source_sha256"
+              ]
+            ]
+          ],
+          "pass": true
+        },
+        {
+          "check": "After statement: exactly one ROWS FROM",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "After line count == Before line count (no line added or removed)",
+          "observed": 4,
+          "expected": 4,
+          "pass": true
+        },
+        {
+          "check": "lines differing == registered changed lines",
+          "observed": [
+            6306,
+            6307
+          ],
+          "expected": [
+            6306,
+            6307
+          ],
+          "pass": true
+        },
+        {
+          "check": "line SHA-256 items cover exactly the changed lines",
+          "observed": [
+            "Line 6306 SHA-256",
+            "Line 6307 SHA-256"
+          ],
+          "expected": [
+            "Line 6306 SHA-256",
+            "Line 6307 SHA-256"
+          ],
+          "pass": true
+        },
+        {
+          "check": "line 6306: Before line SHA-256 reproduces",
+          "observed": "1f75abeda22c1c0aade787d6157fb122cba634da61429918119570ca95f8cfdf",
+          "expected": "1f75abeda22c1c0aade787d6157fb122cba634da61429918119570ca95f8cfdf",
+          "pass": true
+        },
+        {
+          "check": "line 6306: After line SHA-256 reproduces",
+          "observed": "ff83e00fcc78395b4a89dff9223b2e7dfc2ae3805829522c5c8d65f74f5715d5",
+          "expected": "ff83e00fcc78395b4a89dff9223b2e7dfc2ae3805829522c5c8d65f74f5715d5",
+          "pass": true
+        },
+        {
+          "check": "line 6306: stated byte delta == len(After) − len(Before)",
+          "observed": 9,
+          "expected": 9,
+          "pass": true
+        },
+        {
+          "check": "line 6306: changed Before line occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "line 6307: Before line SHA-256 reproduces",
+          "observed": "795d19f64537fe1be86c81a78fb9331a1c08d5284819808f44c99168b10256cb",
+          "expected": "795d19f64537fe1be86c81a78fb9331a1c08d5284819808f44c99168b10256cb",
+          "pass": true
+        },
+        {
+          "check": "line 6307: After line SHA-256 reproduces",
+          "observed": "85c728a0f67cd649ee58b213f5e99d742256f8ef408c9f651d48dd8e8051958b",
+          "expected": "85c728a0f67cd649ee58b213f5e99d742256f8ef408c9f651d48dd8e8051958b",
+          "pass": true
+        },
+        {
+          "check": "line 6307: stated byte delta == len(After) − len(Before)",
+          "observed": 53,
+          "expected": 53,
+          "pass": true
+        },
+        {
+          "check": "line 6307: changed Before line occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "statement SHA-256 (original) and bytes reproduce",
+          "observed": {
+            "sha256": "5925e5f3976114bc731be149f53eb349c00033d301733dc17a2f06905faab848",
+            "bytes": 348
+          },
+          "expected": {
+            "sha256": "5925e5f3976114bc731be149f53eb349c00033d301733dc17a2f06905faab848",
+            "bytes": 348
+          },
+          "pass": true
+        },
+        {
+          "check": "statement SHA-256 (corrected) and bytes reproduce",
+          "observed": {
+            "sha256": "bb46bdce3a359ae06d022767f68cab3c8cc3e8d518d4b17bbbf0551189aa4238",
+            "bytes": 410
+          },
+          "expected": {
+            "sha256": "bb46bdce3a359ae06d022767f68cab3c8cc3e8d518d4b17bbbf0551189aa4238",
+            "bytes": 410
+          },
+          "pass": true
+        },
+        {
+          "check": "stated byte delta == statement delta == sum of line deltas",
+          "observed": [
+            62,
+            62
+          ],
+          "expected": [
+            62,
+            62
+          ],
+          "pass": true
+        },
+        {
+          "check": "§7.7 summary row",
+          "observed": [
+            "§19.11.2",
+            "6304–6307 (6306, 6307)",
+            "484–487 (486, 487)",
+            "m7.m7_expected_function",
+            4,
+            "+62"
+          ],
+          "expected": [
+            "§19.11.2",
+            "6304–6307 (6306, 6307)",
+            "484–487 (486, 487)",
+            "m7.m7_expected_function",
+            4,
+            "+62"
+          ],
+          "pass": true
+        },
+        {
+          "check": "§7.7 summary statement SHA-256 prefixes",
+          "observed": [
+            "5925e5f3976114bc",
+            "bb46bdce3a359ae0"
+          ],
+          "expected": [
+            "5925e5f3976114bc",
+            "bb46bdce3a359ae0"
+          ],
+          "pass": true
+        },
+        {
+          "check": "no Erratum 02 occurrence lies inside the statement",
+          "observed": [],
+          "expected": [],
+          "pass": true
+        },
+        {
+          "check": "no Erratum 03 block overlaps the statement",
+          "observed": [],
+          "expected": [],
+          "pass": true
+        },
+        {
+          "check": "After block contains no CR and no fence marker",
+          "observed": false,
+          "expected": false,
+          "pass": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "E04-04",
+      "fragment": "F12",
+      "clause": "19.11.2",
+      "enclosingFunction": "m7.c_load_catalog_expectations_v1",
+      "targetTable": "m7.m7_expected_function_grant",
+      "arrays": 2,
+      "firstLine": 6308,
+      "lastLine": 6309,
+      "fragmentFirstLine": 488,
+      "fragmentLastLine": 489,
+      "beforeBlock": [
+        "    INSERT INTO m7.m7_expected_function_grant (\"manifestVersion\",\"functionSignature\",\"granteeRole\")",
+        "        SELECT p_manifest_version, a, b FROM pg_catalog.unnest(p_grant_signatures, p_grant_roles) AS t(a,b);"
+      ],
+      "afterBlock": [
+        "    INSERT INTO m7.m7_expected_function_grant (\"manifestVersion\",\"functionSignature\",\"granteeRole\")",
+        "        SELECT p_manifest_version, a, b FROM ROWS FROM (pg_catalog.unnest(p_grant_signatures), pg_catalog.unnest(p_grant_roles)) AS t(a,b);"
+      ],
+      "beforeCall": "pg_catalog.unnest(p_grant_signatures, p_grant_roles)",
+      "arguments": [
+        "p_grant_signatures",
+        "p_grant_roles"
+      ],
+      "afterFromItem": "ROWS FROM (pg_catalog.unnest(p_grant_signatures), pg_catalog.unnest(p_grant_roles))",
+      "beforeStatementSha256": "75bada66e6da87b1d0e4e3f8e46aa74194d6784ab3790245cda4df2798a9728e",
+      "afterStatementSha256": "2def08dadbb3f778419f4ecc7f7d5ea14443a4f56ed279a8dbfb1e35d021efe7",
+      "beforeStatementBytes": 208,
+      "afterStatementBytes": 239,
+      "byteDelta": 31,
+      "lineChanges": [
+        {
+          "specLine": 6309,
+          "fragmentLine": 489,
+          "beforeLine": "        SELECT p_manifest_version, a, b FROM pg_catalog.unnest(p_grant_signatures, p_grant_roles) AS t(a,b);",
+          "afterLine": "        SELECT p_manifest_version, a, b FROM ROWS FROM (pg_catalog.unnest(p_grant_signatures), pg_catalog.unnest(p_grant_roles)) AS t(a,b);",
+          "beforeLineSha256": "342b4a37e3638b5766304da41ae03ae60142add96c886a23f72ba50f1e2a4ee2",
+          "afterLineSha256": "6d4e9236c2f4becfc72b9511fe1ec608f7440090576f0185b520bd95049711b9",
+          "byteDelta": 31
+        }
+      ],
+      "evidence": [
+        {
+          "check": "§7 heading names the E04 id and fragment",
+          "observed": "`E04-04`",
+          "expected": "`E04-04`",
+          "pass": true
+        },
+        {
+          "check": "§7 clause == fragment anchor clause",
+          "observed": "§19.11.2 — fragment F12",
+          "expected": "§19.11.2 — fragment F12",
+          "pass": true
+        },
+        {
+          "check": "§7 V1.1 statement lines == registry",
+          "observed": {
+            "first": 6308,
+            "last": 6309,
+            "changed": [
+              6309
+            ]
+          },
+          "expected": {
+            "first": 6308,
+            "last": 6309,
+            "changed": [
+              6309
+            ]
+          },
+          "pass": true
+        },
+        {
+          "check": "§7 F12 fragment lines == V1.1 lines − fragment offset",
+          "observed": {
+            "first": 488,
+            "last": 489,
+            "changed": [
+              489
+            ]
+          },
+          "expected": {
+            "first": 488,
+            "last": 489,
+            "changed": [
+              489
+            ]
+          },
+          "pass": true
+        },
+        {
+          "check": "§7 enclosing function",
+          "observed": "m7.c_load_catalog_expectations_v1",
+          "expected": "m7.c_load_catalog_expectations_v1",
+          "pass": true
+        },
+        {
+          "check": "§7 arrays combined == registry",
+          "observed": 2,
+          "expected": 2,
+          "pass": true
+        },
+        {
+          "check": "Before / After labels",
+          "observed": [
+            "Before (complete statement):",
+            "After (complete statement):"
+          ],
+          "expected": [
+            "Before (complete statement):",
+            "After (complete statement):"
+          ],
+          "pass": true
+        },
+        {
+          "check": "statement lies inside the fragment body",
+          "observed": [
+            "F12",
+            "F12"
+          ],
+          "expected": [
+            "F12",
+            "F12"
+          ],
+          "pass": true
+        },
+        {
+          "check": "statement lies inside m7.c_load_catalog_expectations_v1",
+          "observed": [
+            "m7.c_load_catalog_expectations_v1",
+            "m7.c_load_catalog_expectations_v1"
+          ],
+          "expected": [
+            "m7.c_load_catalog_expectations_v1",
+            "m7.c_load_catalog_expectations_v1"
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before statement == V1.1 lines (byte-exact)",
+          "observed": [
+            "    INSERT INTO m7.m7_expected_function_grant (\"manifestVersion\",\"functionSignature\",\"granteeRole\")",
+            "        SELECT p_manifest_version, a, b FROM pg_catalog.unnest(p_grant_signatures, p_grant_roles) AS t(a,b);"
+          ],
+          "expected": [
+            "    INSERT INTO m7.m7_expected_function_grant (\"manifestVersion\",\"functionSignature\",\"granteeRole\")",
+            "        SELECT p_manifest_version, a, b FROM pg_catalog.unnest(p_grant_signatures, p_grant_roles) AS t(a,b);"
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before statement == Erratum 03-effective fragment lines (byte-exact)",
+          "observed": [
+            "    INSERT INTO m7.m7_expected_function_grant (\"manifestVersion\",\"functionSignature\",\"granteeRole\")",
+            "        SELECT p_manifest_version, a, b FROM pg_catalog.unnest(p_grant_signatures, p_grant_roles) AS t(a,b);"
+          ],
+          "expected": [
+            "    INSERT INTO m7.m7_expected_function_grant (\"manifestVersion\",\"functionSignature\",\"granteeRole\")",
+            "        SELECT p_manifest_version, a, b FROM pg_catalog.unnest(p_grant_signatures, p_grant_roles) AS t(a,b);"
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before statement occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before statement occurs exactly once in the effective fragments",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before statement: first line is the INSERT into the registered table",
+          "observed": "INSERT INTO m7.m7_expected_function_grant",
+          "expected": "INSERT INTO m7.m7_expected_function_grant",
+          "pass": true
+        },
+        {
+          "check": "Before statement: exactly one unnest call",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before call is schema-qualified pg_catalog.unnest with the registered number of arrays",
+          "observed": [
+            "pg_catalog",
+            2
+          ],
+          "expected": [
+            "pg_catalog",
+            2
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before call occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before call matches the §6.3 DEFECT row of this id",
+          "observed": [
+            [
+              "pg_catalog.unnest(p_grant_signatures, p_grant_roles)",
+              2,
+              "6309"
+            ]
+          ],
+          "expected": [
+            [
+              "pg_catalog.unnest(p_grant_signatures, p_grant_roles)",
+              2,
+              "6309"
+            ]
+          ],
+          "pass": true
+        },
+        {
+          "check": "After == Before outside the FROM item (byte-exact prefix and suffix)",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After FROM item == ROWS FROM of one pg_catalog.unnest per array, same order (whitespace-normalised)",
+          "observed": "ROWS FROM (pg_catalog.unnest(p_grant_signatures), pg_catalog.unnest(p_grant_roles))",
+          "expected": "ROWS FROM (pg_catalog.unnest(p_grant_signatures), pg_catalog.unnest(p_grant_roles))",
+          "pass": true
+        },
+        {
+          "check": "After statement: unnest calls are single-array pg_catalog.unnest over the Before arrays, in order",
+          "observed": [
+            [
+              "pg_catalog",
+              [
+                "p_grant_signatures"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_grant_roles"
+              ]
+            ]
+          ],
+          "expected": [
+            [
+              "pg_catalog",
+              [
+                "p_grant_signatures"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_grant_roles"
+              ]
+            ]
+          ],
+          "pass": true
+        },
+        {
+          "check": "After statement: exactly one ROWS FROM",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "After line count == Before line count (no line added or removed)",
+          "observed": 2,
+          "expected": 2,
+          "pass": true
+        },
+        {
+          "check": "lines differing == registered changed lines",
+          "observed": [
+            6309
+          ],
+          "expected": [
+            6309
+          ],
+          "pass": true
+        },
+        {
+          "check": "line SHA-256 items cover exactly the changed lines",
+          "observed": [
+            "Line 6309 SHA-256"
+          ],
+          "expected": [
+            "Line 6309 SHA-256"
+          ],
+          "pass": true
+        },
+        {
+          "check": "line 6309: Before line SHA-256 reproduces",
+          "observed": "342b4a37e3638b5766304da41ae03ae60142add96c886a23f72ba50f1e2a4ee2",
+          "expected": "342b4a37e3638b5766304da41ae03ae60142add96c886a23f72ba50f1e2a4ee2",
+          "pass": true
+        },
+        {
+          "check": "line 6309: After line SHA-256 reproduces",
+          "observed": "6d4e9236c2f4becfc72b9511fe1ec608f7440090576f0185b520bd95049711b9",
+          "expected": "6d4e9236c2f4becfc72b9511fe1ec608f7440090576f0185b520bd95049711b9",
+          "pass": true
+        },
+        {
+          "check": "line 6309: stated byte delta == len(After) − len(Before)",
+          "observed": 31,
+          "expected": 31,
+          "pass": true
+        },
+        {
+          "check": "line 6309: changed Before line occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "statement SHA-256 (original) and bytes reproduce",
+          "observed": {
+            "sha256": "75bada66e6da87b1d0e4e3f8e46aa74194d6784ab3790245cda4df2798a9728e",
+            "bytes": 208
+          },
+          "expected": {
+            "sha256": "75bada66e6da87b1d0e4e3f8e46aa74194d6784ab3790245cda4df2798a9728e",
+            "bytes": 208
+          },
+          "pass": true
+        },
+        {
+          "check": "statement SHA-256 (corrected) and bytes reproduce",
+          "observed": {
+            "sha256": "2def08dadbb3f778419f4ecc7f7d5ea14443a4f56ed279a8dbfb1e35d021efe7",
+            "bytes": 239
+          },
+          "expected": {
+            "sha256": "2def08dadbb3f778419f4ecc7f7d5ea14443a4f56ed279a8dbfb1e35d021efe7",
+            "bytes": 239
+          },
+          "pass": true
+        },
+        {
+          "check": "stated byte delta == statement delta == sum of line deltas",
+          "observed": [
+            31,
+            31
+          ],
+          "expected": [
+            31,
+            31
+          ],
+          "pass": true
+        },
+        {
+          "check": "§7.7 summary row",
+          "observed": [
+            "§19.11.2",
+            "6308–6309 (6309)",
+            "488–489 (489)",
+            "m7.m7_expected_function_grant",
+            2,
+            "+31"
+          ],
+          "expected": [
+            "§19.11.2",
+            "6308–6309 (6309)",
+            "488–489 (489)",
+            "m7.m7_expected_function_grant",
+            2,
+            "+31"
+          ],
+          "pass": true
+        },
+        {
+          "check": "§7.7 summary statement SHA-256 prefixes",
+          "observed": [
+            "75bada66e6da87b1",
+            "2def08dadbb3f778"
+          ],
+          "expected": [
+            "75bada66e6da87b1",
+            "2def08dadbb3f778"
+          ],
+          "pass": true
+        },
+        {
+          "check": "no Erratum 02 occurrence lies inside the statement",
+          "observed": [],
+          "expected": [],
+          "pass": true
+        },
+        {
+          "check": "no Erratum 03 block overlaps the statement",
+          "observed": [],
+          "expected": [],
+          "pass": true
+        },
+        {
+          "check": "After block contains no CR and no fence marker",
+          "observed": false,
+          "expected": false,
+          "pass": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "E04-05",
+      "fragment": "F12",
+      "clause": "19.11.2",
+      "enclosingFunction": "m7.c_load_catalog_expectations_v1",
+      "targetTable": "m7.m7_expected_role",
+      "arrays": 4,
+      "firstLine": 6310,
+      "lastLine": 6312,
+      "fragmentFirstLine": 490,
+      "fragmentLastLine": 492,
+      "beforeBlock": [
+        "    INSERT INTO m7.m7_expected_role (\"manifestVersion\",\"roleName\",\"canLogin\",\"inheritsPrivileges\",\"hasSchemaUsage\")",
+        "        SELECT p_manifest_version, a, b, c, d",
+        "          FROM pg_catalog.unnest(p_role_names, p_role_can_login, p_role_inherits, p_role_schema_usage) AS t(a,b,c,d);"
+      ],
+      "afterBlock": [
+        "    INSERT INTO m7.m7_expected_role (\"manifestVersion\",\"roleName\",\"canLogin\",\"inheritsPrivileges\",\"hasSchemaUsage\")",
+        "        SELECT p_manifest_version, a, b, c, d",
+        "          FROM ROWS FROM (pg_catalog.unnest(p_role_names), pg_catalog.unnest(p_role_can_login), pg_catalog.unnest(p_role_inherits), pg_catalog.unnest(p_role_schema_usage)) AS t(a,b,c,d);"
+      ],
+      "beforeCall": "pg_catalog.unnest(p_role_names, p_role_can_login, p_role_inherits, p_role_schema_usage)",
+      "arguments": [
+        "p_role_names",
+        "p_role_can_login",
+        "p_role_inherits",
+        "p_role_schema_usage"
+      ],
+      "afterFromItem": "ROWS FROM (pg_catalog.unnest(p_role_names), pg_catalog.unnest(p_role_can_login), pg_catalog.unnest(p_role_inherits), pg_catalog.unnest(p_role_schema_usage))",
+      "beforeStatementSha256": "521709208bfe103928ee7ecd4e7a0525ea56ce1023ea75aca12ad5557581dc04",
+      "afterStatementSha256": "e1fb884da786f2e66ab215ab542920bfdff4fd677ba7dffa0029d519326a7e45",
+      "beforeStatementBytes": 279,
+      "afterStatementBytes": 348,
+      "byteDelta": 69,
+      "lineChanges": [
+        {
+          "specLine": 6312,
+          "fragmentLine": 492,
+          "beforeLine": "          FROM pg_catalog.unnest(p_role_names, p_role_can_login, p_role_inherits, p_role_schema_usage) AS t(a,b,c,d);",
+          "afterLine": "          FROM ROWS FROM (pg_catalog.unnest(p_role_names), pg_catalog.unnest(p_role_can_login), pg_catalog.unnest(p_role_inherits), pg_catalog.unnest(p_role_schema_usage)) AS t(a,b,c,d);",
+          "beforeLineSha256": "11dadcadb3ccd1e5726bdf0f5ec9a5ae3d60fa190cdc84e60ca4f698ae26ebc1",
+          "afterLineSha256": "19fb51b6b33b12f72096f03d5384a3cd8faa9ef0068d922743883f9509edb893",
+          "byteDelta": 69
+        }
+      ],
+      "evidence": [
+        {
+          "check": "§7 heading names the E04 id and fragment",
+          "observed": "`E04-05`",
+          "expected": "`E04-05`",
+          "pass": true
+        },
+        {
+          "check": "§7 clause == fragment anchor clause",
+          "observed": "§19.11.2 — fragment F12",
+          "expected": "§19.11.2 — fragment F12",
+          "pass": true
+        },
+        {
+          "check": "§7 V1.1 statement lines == registry",
+          "observed": {
+            "first": 6310,
+            "last": 6312,
+            "changed": [
+              6312
+            ]
+          },
+          "expected": {
+            "first": 6310,
+            "last": 6312,
+            "changed": [
+              6312
+            ]
+          },
+          "pass": true
+        },
+        {
+          "check": "§7 F12 fragment lines == V1.1 lines − fragment offset",
+          "observed": {
+            "first": 490,
+            "last": 492,
+            "changed": [
+              492
+            ]
+          },
+          "expected": {
+            "first": 490,
+            "last": 492,
+            "changed": [
+              492
+            ]
+          },
+          "pass": true
+        },
+        {
+          "check": "§7 enclosing function",
+          "observed": "m7.c_load_catalog_expectations_v1",
+          "expected": "m7.c_load_catalog_expectations_v1",
+          "pass": true
+        },
+        {
+          "check": "§7 arrays combined == registry",
+          "observed": 4,
+          "expected": 4,
+          "pass": true
+        },
+        {
+          "check": "Before / After labels",
+          "observed": [
+            "Before (complete statement):",
+            "After (complete statement):"
+          ],
+          "expected": [
+            "Before (complete statement):",
+            "After (complete statement):"
+          ],
+          "pass": true
+        },
+        {
+          "check": "statement lies inside the fragment body",
+          "observed": [
+            "F12",
+            "F12"
+          ],
+          "expected": [
+            "F12",
+            "F12"
+          ],
+          "pass": true
+        },
+        {
+          "check": "statement lies inside m7.c_load_catalog_expectations_v1",
+          "observed": [
+            "m7.c_load_catalog_expectations_v1",
+            "m7.c_load_catalog_expectations_v1"
+          ],
+          "expected": [
+            "m7.c_load_catalog_expectations_v1",
+            "m7.c_load_catalog_expectations_v1"
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before statement == V1.1 lines (byte-exact)",
+          "observed": [
+            "    INSERT INTO m7.m7_expected_role (\"manifestVersion\",\"roleName\",\"canLogin\",\"inheritsPrivileges\",\"hasSchemaUsage\")",
+            "        SELECT p_manifest_version, a, b, c, d",
+            "          FROM pg_catalog.unnest(p_role_names, p_role_can_login, p_role_inherits, p_role_schema_usage) AS t(a,b,c,d);"
+          ],
+          "expected": [
+            "    INSERT INTO m7.m7_expected_role (\"manifestVersion\",\"roleName\",\"canLogin\",\"inheritsPrivileges\",\"hasSchemaUsage\")",
+            "        SELECT p_manifest_version, a, b, c, d",
+            "          FROM pg_catalog.unnest(p_role_names, p_role_can_login, p_role_inherits, p_role_schema_usage) AS t(a,b,c,d);"
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before statement == Erratum 03-effective fragment lines (byte-exact)",
+          "observed": [
+            "    INSERT INTO m7.m7_expected_role (\"manifestVersion\",\"roleName\",\"canLogin\",\"inheritsPrivileges\",\"hasSchemaUsage\")",
+            "        SELECT p_manifest_version, a, b, c, d",
+            "          FROM pg_catalog.unnest(p_role_names, p_role_can_login, p_role_inherits, p_role_schema_usage) AS t(a,b,c,d);"
+          ],
+          "expected": [
+            "    INSERT INTO m7.m7_expected_role (\"manifestVersion\",\"roleName\",\"canLogin\",\"inheritsPrivileges\",\"hasSchemaUsage\")",
+            "        SELECT p_manifest_version, a, b, c, d",
+            "          FROM pg_catalog.unnest(p_role_names, p_role_can_login, p_role_inherits, p_role_schema_usage) AS t(a,b,c,d);"
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before statement occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before statement occurs exactly once in the effective fragments",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before statement: first line is the INSERT into the registered table",
+          "observed": "INSERT INTO m7.m7_expected_role",
+          "expected": "INSERT INTO m7.m7_expected_role",
+          "pass": true
+        },
+        {
+          "check": "Before statement: exactly one unnest call",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before call is schema-qualified pg_catalog.unnest with the registered number of arrays",
+          "observed": [
+            "pg_catalog",
+            4
+          ],
+          "expected": [
+            "pg_catalog",
+            4
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before call occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before call matches the §6.3 DEFECT row of this id",
+          "observed": [
+            [
+              "pg_catalog.unnest(p_role_names, p_role_can_login, p_role_inherits, p_role_schema_usage)",
+              4,
+              "6312"
+            ]
+          ],
+          "expected": [
+            [
+              "pg_catalog.unnest(p_role_names, p_role_can_login, p_role_inherits, p_role_schema_usage)",
+              4,
+              "6312"
+            ]
+          ],
+          "pass": true
+        },
+        {
+          "check": "After == Before outside the FROM item (byte-exact prefix and suffix)",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After FROM item == ROWS FROM of one pg_catalog.unnest per array, same order (whitespace-normalised)",
+          "observed": "ROWS FROM (pg_catalog.unnest(p_role_names), pg_catalog.unnest(p_role_can_login), pg_catalog.unnest(p_role_inherits), pg_catalog.unnest(p_role_schema_usage))",
+          "expected": "ROWS FROM (pg_catalog.unnest(p_role_names), pg_catalog.unnest(p_role_can_login), pg_catalog.unnest(p_role_inherits), pg_catalog.unnest(p_role_schema_usage))",
+          "pass": true
+        },
+        {
+          "check": "After statement: unnest calls are single-array pg_catalog.unnest over the Before arrays, in order",
+          "observed": [
+            [
+              "pg_catalog",
+              [
+                "p_role_names"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_role_can_login"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_role_inherits"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_role_schema_usage"
+              ]
+            ]
+          ],
+          "expected": [
+            [
+              "pg_catalog",
+              [
+                "p_role_names"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_role_can_login"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_role_inherits"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_role_schema_usage"
+              ]
+            ]
+          ],
+          "pass": true
+        },
+        {
+          "check": "After statement: exactly one ROWS FROM",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "After line count == Before line count (no line added or removed)",
+          "observed": 3,
+          "expected": 3,
+          "pass": true
+        },
+        {
+          "check": "lines differing == registered changed lines",
+          "observed": [
+            6312
+          ],
+          "expected": [
+            6312
+          ],
+          "pass": true
+        },
+        {
+          "check": "line SHA-256 items cover exactly the changed lines",
+          "observed": [
+            "Line 6312 SHA-256"
+          ],
+          "expected": [
+            "Line 6312 SHA-256"
+          ],
+          "pass": true
+        },
+        {
+          "check": "line 6312: Before line SHA-256 reproduces",
+          "observed": "11dadcadb3ccd1e5726bdf0f5ec9a5ae3d60fa190cdc84e60ca4f698ae26ebc1",
+          "expected": "11dadcadb3ccd1e5726bdf0f5ec9a5ae3d60fa190cdc84e60ca4f698ae26ebc1",
+          "pass": true
+        },
+        {
+          "check": "line 6312: After line SHA-256 reproduces",
+          "observed": "19fb51b6b33b12f72096f03d5384a3cd8faa9ef0068d922743883f9509edb893",
+          "expected": "19fb51b6b33b12f72096f03d5384a3cd8faa9ef0068d922743883f9509edb893",
+          "pass": true
+        },
+        {
+          "check": "line 6312: stated byte delta == len(After) − len(Before)",
+          "observed": 69,
+          "expected": 69,
+          "pass": true
+        },
+        {
+          "check": "line 6312: changed Before line occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "statement SHA-256 (original) and bytes reproduce",
+          "observed": {
+            "sha256": "521709208bfe103928ee7ecd4e7a0525ea56ce1023ea75aca12ad5557581dc04",
+            "bytes": 279
+          },
+          "expected": {
+            "sha256": "521709208bfe103928ee7ecd4e7a0525ea56ce1023ea75aca12ad5557581dc04",
+            "bytes": 279
+          },
+          "pass": true
+        },
+        {
+          "check": "statement SHA-256 (corrected) and bytes reproduce",
+          "observed": {
+            "sha256": "e1fb884da786f2e66ab215ab542920bfdff4fd677ba7dffa0029d519326a7e45",
+            "bytes": 348
+          },
+          "expected": {
+            "sha256": "e1fb884da786f2e66ab215ab542920bfdff4fd677ba7dffa0029d519326a7e45",
+            "bytes": 348
+          },
+          "pass": true
+        },
+        {
+          "check": "stated byte delta == statement delta == sum of line deltas",
+          "observed": [
+            69,
+            69
+          ],
+          "expected": [
+            69,
+            69
+          ],
+          "pass": true
+        },
+        {
+          "check": "§7.7 summary row",
+          "observed": [
+            "§19.11.2",
+            "6310–6312 (6312)",
+            "490–492 (492)",
+            "m7.m7_expected_role",
+            4,
+            "+69"
+          ],
+          "expected": [
+            "§19.11.2",
+            "6310–6312 (6312)",
+            "490–492 (492)",
+            "m7.m7_expected_role",
+            4,
+            "+69"
+          ],
+          "pass": true
+        },
+        {
+          "check": "§7.7 summary statement SHA-256 prefixes",
+          "observed": [
+            "521709208bfe1039",
+            "e1fb884da786f2e6"
+          ],
+          "expected": [
+            "521709208bfe1039",
+            "e1fb884da786f2e6"
+          ],
+          "pass": true
+        },
+        {
+          "check": "no Erratum 02 occurrence lies inside the statement",
+          "observed": [],
+          "expected": [],
+          "pass": true
+        },
+        {
+          "check": "no Erratum 03 block overlaps the statement",
+          "observed": [],
+          "expected": [],
+          "pass": true
+        },
+        {
+          "check": "After block contains no CR and no fence marker",
+          "observed": false,
+          "expected": false,
+          "pass": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "E04-06",
+      "fragment": "F12",
+      "clause": "19.11.2",
+      "enclosingFunction": "m7.c_load_catalog_expectations_v1",
+      "targetTable": "m7.m7_expected_role_member",
+      "arrays": 2,
+      "firstLine": 6313,
+      "lastLine": 6314,
+      "fragmentFirstLine": 493,
+      "fragmentLastLine": 494,
+      "beforeBlock": [
+        "    INSERT INTO m7.m7_expected_role_member (\"manifestVersion\",\"roleName\",\"memberName\")",
+        "        SELECT p_manifest_version, a, b FROM pg_catalog.unnest(p_member_roles, p_member_names) AS t(a,b);"
+      ],
+      "afterBlock": [
+        "    INSERT INTO m7.m7_expected_role_member (\"manifestVersion\",\"roleName\",\"memberName\")",
+        "        SELECT p_manifest_version, a, b FROM ROWS FROM (pg_catalog.unnest(p_member_roles), pg_catalog.unnest(p_member_names)) AS t(a,b);"
+      ],
+      "beforeCall": "pg_catalog.unnest(p_member_roles, p_member_names)",
+      "arguments": [
+        "p_member_roles",
+        "p_member_names"
+      ],
+      "afterFromItem": "ROWS FROM (pg_catalog.unnest(p_member_roles), pg_catalog.unnest(p_member_names))",
+      "beforeStatementSha256": "4381a94cf788e7db408af20b09812722dff133cbddaa4c97d44164753c796106",
+      "afterStatementSha256": "ff375406d0e4174f8fb15bd77e758cf28064252a5eaae8e98fe991600c891e62",
+      "beforeStatementBytes": 192,
+      "afterStatementBytes": 223,
+      "byteDelta": 31,
+      "lineChanges": [
+        {
+          "specLine": 6314,
+          "fragmentLine": 494,
+          "beforeLine": "        SELECT p_manifest_version, a, b FROM pg_catalog.unnest(p_member_roles, p_member_names) AS t(a,b);",
+          "afterLine": "        SELECT p_manifest_version, a, b FROM ROWS FROM (pg_catalog.unnest(p_member_roles), pg_catalog.unnest(p_member_names)) AS t(a,b);",
+          "beforeLineSha256": "09ebc18dc22ba3647f6cc021540273bb6ecf87147a0b495f4caf41603e2eb151",
+          "afterLineSha256": "661b489f29b330b424e899207478c83c6ece3ce5a0c30381303777cd30b6da13",
+          "byteDelta": 31
+        }
+      ],
+      "evidence": [
+        {
+          "check": "§7 heading names the E04 id and fragment",
+          "observed": "`E04-06`",
+          "expected": "`E04-06`",
+          "pass": true
+        },
+        {
+          "check": "§7 clause == fragment anchor clause",
+          "observed": "§19.11.2 — fragment F12",
+          "expected": "§19.11.2 — fragment F12",
+          "pass": true
+        },
+        {
+          "check": "§7 V1.1 statement lines == registry",
+          "observed": {
+            "first": 6313,
+            "last": 6314,
+            "changed": [
+              6314
+            ]
+          },
+          "expected": {
+            "first": 6313,
+            "last": 6314,
+            "changed": [
+              6314
+            ]
+          },
+          "pass": true
+        },
+        {
+          "check": "§7 F12 fragment lines == V1.1 lines − fragment offset",
+          "observed": {
+            "first": 493,
+            "last": 494,
+            "changed": [
+              494
+            ]
+          },
+          "expected": {
+            "first": 493,
+            "last": 494,
+            "changed": [
+              494
+            ]
+          },
+          "pass": true
+        },
+        {
+          "check": "§7 enclosing function",
+          "observed": "m7.c_load_catalog_expectations_v1",
+          "expected": "m7.c_load_catalog_expectations_v1",
+          "pass": true
+        },
+        {
+          "check": "§7 arrays combined == registry",
+          "observed": 2,
+          "expected": 2,
+          "pass": true
+        },
+        {
+          "check": "Before / After labels",
+          "observed": [
+            "Before (complete statement):",
+            "After (complete statement):"
+          ],
+          "expected": [
+            "Before (complete statement):",
+            "After (complete statement):"
+          ],
+          "pass": true
+        },
+        {
+          "check": "statement lies inside the fragment body",
+          "observed": [
+            "F12",
+            "F12"
+          ],
+          "expected": [
+            "F12",
+            "F12"
+          ],
+          "pass": true
+        },
+        {
+          "check": "statement lies inside m7.c_load_catalog_expectations_v1",
+          "observed": [
+            "m7.c_load_catalog_expectations_v1",
+            "m7.c_load_catalog_expectations_v1"
+          ],
+          "expected": [
+            "m7.c_load_catalog_expectations_v1",
+            "m7.c_load_catalog_expectations_v1"
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before statement == V1.1 lines (byte-exact)",
+          "observed": [
+            "    INSERT INTO m7.m7_expected_role_member (\"manifestVersion\",\"roleName\",\"memberName\")",
+            "        SELECT p_manifest_version, a, b FROM pg_catalog.unnest(p_member_roles, p_member_names) AS t(a,b);"
+          ],
+          "expected": [
+            "    INSERT INTO m7.m7_expected_role_member (\"manifestVersion\",\"roleName\",\"memberName\")",
+            "        SELECT p_manifest_version, a, b FROM pg_catalog.unnest(p_member_roles, p_member_names) AS t(a,b);"
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before statement == Erratum 03-effective fragment lines (byte-exact)",
+          "observed": [
+            "    INSERT INTO m7.m7_expected_role_member (\"manifestVersion\",\"roleName\",\"memberName\")",
+            "        SELECT p_manifest_version, a, b FROM pg_catalog.unnest(p_member_roles, p_member_names) AS t(a,b);"
+          ],
+          "expected": [
+            "    INSERT INTO m7.m7_expected_role_member (\"manifestVersion\",\"roleName\",\"memberName\")",
+            "        SELECT p_manifest_version, a, b FROM pg_catalog.unnest(p_member_roles, p_member_names) AS t(a,b);"
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before statement occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before statement occurs exactly once in the effective fragments",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before statement: first line is the INSERT into the registered table",
+          "observed": "INSERT INTO m7.m7_expected_role_member",
+          "expected": "INSERT INTO m7.m7_expected_role_member",
+          "pass": true
+        },
+        {
+          "check": "Before statement: exactly one unnest call",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before call is schema-qualified pg_catalog.unnest with the registered number of arrays",
+          "observed": [
+            "pg_catalog",
+            2
+          ],
+          "expected": [
+            "pg_catalog",
+            2
+          ],
+          "pass": true
+        },
+        {
+          "check": "Before call occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "Before call matches the §6.3 DEFECT row of this id",
+          "observed": [
+            [
+              "pg_catalog.unnest(p_member_roles, p_member_names)",
+              2,
+              "6314"
+            ]
+          ],
+          "expected": [
+            [
+              "pg_catalog.unnest(p_member_roles, p_member_names)",
+              2,
+              "6314"
+            ]
+          ],
+          "pass": true
+        },
+        {
+          "check": "After == Before outside the FROM item (byte-exact prefix and suffix)",
+          "observed": true,
+          "expected": true,
+          "pass": true
+        },
+        {
+          "check": "After FROM item == ROWS FROM of one pg_catalog.unnest per array, same order (whitespace-normalised)",
+          "observed": "ROWS FROM (pg_catalog.unnest(p_member_roles), pg_catalog.unnest(p_member_names))",
+          "expected": "ROWS FROM (pg_catalog.unnest(p_member_roles), pg_catalog.unnest(p_member_names))",
+          "pass": true
+        },
+        {
+          "check": "After statement: unnest calls are single-array pg_catalog.unnest over the Before arrays, in order",
+          "observed": [
+            [
+              "pg_catalog",
+              [
+                "p_member_roles"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_member_names"
+              ]
+            ]
+          ],
+          "expected": [
+            [
+              "pg_catalog",
+              [
+                "p_member_roles"
+              ]
+            ],
+            [
+              "pg_catalog",
+              [
+                "p_member_names"
+              ]
+            ]
+          ],
+          "pass": true
+        },
+        {
+          "check": "After statement: exactly one ROWS FROM",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "After line count == Before line count (no line added or removed)",
+          "observed": 2,
+          "expected": 2,
+          "pass": true
+        },
+        {
+          "check": "lines differing == registered changed lines",
+          "observed": [
+            6314
+          ],
+          "expected": [
+            6314
+          ],
+          "pass": true
+        },
+        {
+          "check": "line SHA-256 items cover exactly the changed lines",
+          "observed": [
+            "Line 6314 SHA-256"
+          ],
+          "expected": [
+            "Line 6314 SHA-256"
+          ],
+          "pass": true
+        },
+        {
+          "check": "line 6314: Before line SHA-256 reproduces",
+          "observed": "09ebc18dc22ba3647f6cc021540273bb6ecf87147a0b495f4caf41603e2eb151",
+          "expected": "09ebc18dc22ba3647f6cc021540273bb6ecf87147a0b495f4caf41603e2eb151",
+          "pass": true
+        },
+        {
+          "check": "line 6314: After line SHA-256 reproduces",
+          "observed": "661b489f29b330b424e899207478c83c6ece3ce5a0c30381303777cd30b6da13",
+          "expected": "661b489f29b330b424e899207478c83c6ece3ce5a0c30381303777cd30b6da13",
+          "pass": true
+        },
+        {
+          "check": "line 6314: stated byte delta == len(After) − len(Before)",
+          "observed": 31,
+          "expected": 31,
+          "pass": true
+        },
+        {
+          "check": "line 6314: changed Before line occurs exactly once in V1.1",
+          "observed": 1,
+          "expected": 1,
+          "pass": true
+        },
+        {
+          "check": "statement SHA-256 (original) and bytes reproduce",
+          "observed": {
+            "sha256": "4381a94cf788e7db408af20b09812722dff133cbddaa4c97d44164753c796106",
+            "bytes": 192
+          },
+          "expected": {
+            "sha256": "4381a94cf788e7db408af20b09812722dff133cbddaa4c97d44164753c796106",
+            "bytes": 192
+          },
+          "pass": true
+        },
+        {
+          "check": "statement SHA-256 (corrected) and bytes reproduce",
+          "observed": {
+            "sha256": "ff375406d0e4174f8fb15bd77e758cf28064252a5eaae8e98fe991600c891e62",
+            "bytes": 223
+          },
+          "expected": {
+            "sha256": "ff375406d0e4174f8fb15bd77e758cf28064252a5eaae8e98fe991600c891e62",
+            "bytes": 223
+          },
+          "pass": true
+        },
+        {
+          "check": "stated byte delta == statement delta == sum of line deltas",
+          "observed": [
+            31,
+            31
+          ],
+          "expected": [
+            31,
+            31
+          ],
+          "pass": true
+        },
+        {
+          "check": "§7.7 summary row",
+          "observed": [
+            "§19.11.2",
+            "6313–6314 (6314)",
+            "493–494 (494)",
+            "m7.m7_expected_role_member",
+            2,
+            "+31"
+          ],
+          "expected": [
+            "§19.11.2",
+            "6313–6314 (6314)",
+            "493–494 (494)",
+            "m7.m7_expected_role_member",
+            2,
+            "+31"
+          ],
+          "pass": true
+        },
+        {
+          "check": "§7.7 summary statement SHA-256 prefixes",
+          "observed": [
+            "4381a94cf788e7db",
+            "ff375406d0e4174f"
+          ],
+          "expected": [
+            "4381a94cf788e7db",
+            "ff375406d0e4174f"
+          ],
+          "pass": true
+        },
+        {
+          "check": "no Erratum 02 occurrence lies inside the statement",
+          "observed": [],
+          "expected": [],
+          "pass": true
+        },
+        {
+          "check": "no Erratum 03 block overlaps the statement",
+          "observed": [],
+          "expected": [],
+          "pass": true
+        },
+        {
+          "check": "After block contains no CR and no fence marker",
+          "observed": false,
+          "expected": false,
+          "pass": true
+        }
+      ],
+      "pass": true
+    }
+  ],
+  "postconditions": [
+    {
+      "check": "E04-01: effective F12 lines 478–479 == After statement",
+      "observed": [
+        "    INSERT INTO m7.m7_expected_relation (\"manifestVersion\",\"relationName\",\"relKind\")",
+        "        SELECT p_manifest_version, a, b FROM ROWS FROM (pg_catalog.unnest(p_relation_names), pg_catalog.unnest(p_relation_kinds)) AS t(a,b);"
+      ],
+      "expected": [
+        "    INSERT INTO m7.m7_expected_relation (\"manifestVersion\",\"relationName\",\"relKind\")",
+        "        SELECT p_manifest_version, a, b FROM ROWS FROM (pg_catalog.unnest(p_relation_names), pg_catalog.unnest(p_relation_kinds)) AS t(a,b);"
+      ],
+      "pass": true
+    },
+    {
+      "check": "E04-01: After statement occurs exactly once in the effective fragments",
+      "observed": 1,
+      "expected": 1,
+      "pass": true
+    },
+    {
+      "check": "E04-01: stale Before statement occurrences in effective fragments",
+      "observed": 0,
+      "expected": 0,
+      "pass": true
+    },
+    {
+      "check": "E04-01: line 6299 stale Before line occurrences in effective fragments",
+      "observed": 0,
+      "expected": 0,
+      "pass": true
+    },
+    {
+      "check": "E04-02: effective F12 lines 481–483 == After statement",
+      "observed": [
+        "    INSERT INTO m7.m7_expected_relation_object (\"manifestVersion\",\"relationName\",\"objectKind\",\"objectName\",\"isUnique\")",
+        "        SELECT p_manifest_version, a, b, c, d",
+        "          FROM ROWS FROM (pg_catalog.unnest(p_object_relations), pg_catalog.unnest(p_object_kinds), pg_catalog.unnest(p_object_names), pg_catalog.unnest(p_object_unique)) AS t(a,b,c,d);"
+      ],
+      "expected": [
+        "    INSERT INTO m7.m7_expected_relation_object (\"manifestVersion\",\"relationName\",\"objectKind\",\"objectName\",\"isUnique\")",
+        "        SELECT p_manifest_version, a, b, c, d",
+        "          FROM ROWS FROM (pg_catalog.unnest(p_object_relations), pg_catalog.unnest(p_object_kinds), pg_catalog.unnest(p_object_names), pg_catalog.unnest(p_object_unique)) AS t(a,b,c,d);"
+      ],
+      "pass": true
+    },
+    {
+      "check": "E04-02: After statement occurs exactly once in the effective fragments",
+      "observed": 1,
+      "expected": 1,
+      "pass": true
+    },
+    {
+      "check": "E04-02: stale Before statement occurrences in effective fragments",
+      "observed": 0,
+      "expected": 0,
+      "pass": true
+    },
+    {
+      "check": "E04-02: line 6303 stale Before line occurrences in effective fragments",
+      "observed": 0,
+      "expected": 0,
+      "pass": true
+    },
+    {
+      "check": "E04-03: effective F12 lines 484–487 == After statement",
+      "observed": [
+        "    INSERT INTO m7.m7_expected_function (\"manifestVersion\",\"functionSignature\",\"isSecurityDefiner\",\"proconfigText\",\"sourceSha256\")",
+        "        SELECT p_manifest_version, a, b, c, d",
+        "          FROM ROWS FROM (pg_catalog.unnest(p_function_signatures), pg_catalog.unnest(p_function_definer),",
+        "                          pg_catalog.unnest(p_function_proconfig), pg_catalog.unnest(p_function_source_sha256)) AS t(a,b,c,d);"
+      ],
+      "expected": [
+        "    INSERT INTO m7.m7_expected_function (\"manifestVersion\",\"functionSignature\",\"isSecurityDefiner\",\"proconfigText\",\"sourceSha256\")",
+        "        SELECT p_manifest_version, a, b, c, d",
+        "          FROM ROWS FROM (pg_catalog.unnest(p_function_signatures), pg_catalog.unnest(p_function_definer),",
+        "                          pg_catalog.unnest(p_function_proconfig), pg_catalog.unnest(p_function_source_sha256)) AS t(a,b,c,d);"
+      ],
+      "pass": true
+    },
+    {
+      "check": "E04-03: After statement occurs exactly once in the effective fragments",
+      "observed": 1,
+      "expected": 1,
+      "pass": true
+    },
+    {
+      "check": "E04-03: stale Before statement occurrences in effective fragments",
+      "observed": 0,
+      "expected": 0,
+      "pass": true
+    },
+    {
+      "check": "E04-03: line 6306 stale Before line occurrences in effective fragments",
+      "observed": 0,
+      "expected": 0,
+      "pass": true
+    },
+    {
+      "check": "E04-03: line 6307 stale Before line occurrences in effective fragments",
+      "observed": 0,
+      "expected": 0,
+      "pass": true
+    },
+    {
+      "check": "E04-04: effective F12 lines 488–489 == After statement",
+      "observed": [
+        "    INSERT INTO m7.m7_expected_function_grant (\"manifestVersion\",\"functionSignature\",\"granteeRole\")",
+        "        SELECT p_manifest_version, a, b FROM ROWS FROM (pg_catalog.unnest(p_grant_signatures), pg_catalog.unnest(p_grant_roles)) AS t(a,b);"
+      ],
+      "expected": [
+        "    INSERT INTO m7.m7_expected_function_grant (\"manifestVersion\",\"functionSignature\",\"granteeRole\")",
+        "        SELECT p_manifest_version, a, b FROM ROWS FROM (pg_catalog.unnest(p_grant_signatures), pg_catalog.unnest(p_grant_roles)) AS t(a,b);"
+      ],
+      "pass": true
+    },
+    {
+      "check": "E04-04: After statement occurs exactly once in the effective fragments",
+      "observed": 1,
+      "expected": 1,
+      "pass": true
+    },
+    {
+      "check": "E04-04: stale Before statement occurrences in effective fragments",
+      "observed": 0,
+      "expected": 0,
+      "pass": true
+    },
+    {
+      "check": "E04-04: line 6309 stale Before line occurrences in effective fragments",
+      "observed": 0,
+      "expected": 0,
+      "pass": true
+    },
+    {
+      "check": "E04-05: effective F12 lines 490–492 == After statement",
+      "observed": [
+        "    INSERT INTO m7.m7_expected_role (\"manifestVersion\",\"roleName\",\"canLogin\",\"inheritsPrivileges\",\"hasSchemaUsage\")",
+        "        SELECT p_manifest_version, a, b, c, d",
+        "          FROM ROWS FROM (pg_catalog.unnest(p_role_names), pg_catalog.unnest(p_role_can_login), pg_catalog.unnest(p_role_inherits), pg_catalog.unnest(p_role_schema_usage)) AS t(a,b,c,d);"
+      ],
+      "expected": [
+        "    INSERT INTO m7.m7_expected_role (\"manifestVersion\",\"roleName\",\"canLogin\",\"inheritsPrivileges\",\"hasSchemaUsage\")",
+        "        SELECT p_manifest_version, a, b, c, d",
+        "          FROM ROWS FROM (pg_catalog.unnest(p_role_names), pg_catalog.unnest(p_role_can_login), pg_catalog.unnest(p_role_inherits), pg_catalog.unnest(p_role_schema_usage)) AS t(a,b,c,d);"
+      ],
+      "pass": true
+    },
+    {
+      "check": "E04-05: After statement occurs exactly once in the effective fragments",
+      "observed": 1,
+      "expected": 1,
+      "pass": true
+    },
+    {
+      "check": "E04-05: stale Before statement occurrences in effective fragments",
+      "observed": 0,
+      "expected": 0,
+      "pass": true
+    },
+    {
+      "check": "E04-05: line 6312 stale Before line occurrences in effective fragments",
+      "observed": 0,
+      "expected": 0,
+      "pass": true
+    },
+    {
+      "check": "E04-06: effective F12 lines 493–494 == After statement",
+      "observed": [
+        "    INSERT INTO m7.m7_expected_role_member (\"manifestVersion\",\"roleName\",\"memberName\")",
+        "        SELECT p_manifest_version, a, b FROM ROWS FROM (pg_catalog.unnest(p_member_roles), pg_catalog.unnest(p_member_names)) AS t(a,b);"
+      ],
+      "expected": [
+        "    INSERT INTO m7.m7_expected_role_member (\"manifestVersion\",\"roleName\",\"memberName\")",
+        "        SELECT p_manifest_version, a, b FROM ROWS FROM (pg_catalog.unnest(p_member_roles), pg_catalog.unnest(p_member_names)) AS t(a,b);"
+      ],
+      "pass": true
+    },
+    {
+      "check": "E04-06: After statement occurs exactly once in the effective fragments",
+      "observed": 1,
+      "expected": 1,
+      "pass": true
+    },
+    {
+      "check": "E04-06: stale Before statement occurrences in effective fragments",
+      "observed": 0,
+      "expected": 0,
+      "pass": true
+    },
+    {
+      "check": "E04-06: line 6314 stale Before line occurrences in effective fragments",
+      "observed": 0,
+      "expected": 0,
+      "pass": true
+    },
+    {
+      "check": "qualified multi-array unnest calls in the effective fragments",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "unqualified or non-pg_catalog unnest calls in the effective fragments",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "preserved single-array calls byte-identical at their fragment lines",
+      "observed": [
+        "        SELECT pg_catalog.string_agg(pg_catalog.quote_literal(p), ', ') INTO v_args FROM pg_catalog.unnest(r.paths) AS p;",
+        "          FROM pg_catalog.unnest(p_backends) AS u(b)",
+        "        SELECT pg_catalog.count(*) INTO v_count FROM (SELECT DISTINCT r FROM pg_catalog.unnest(p_merchant_refs) AS r) d;",
+        "          INTO v_supplied FROM pg_catalog.unnest(p_merchant_refs) AS r;",
+        "            SELECT p_vocabulary_version, r FROM pg_catalog.unnest(p_merchant_refs) AS r;",
+        "           OR EXISTS (SELECT r FROM pg_catalog.unnest(p_merchant_refs) AS r"
+      ],
+      "expected": [
+        "        SELECT pg_catalog.string_agg(pg_catalog.quote_literal(p), ', ') INTO v_args FROM pg_catalog.unnest(r.paths) AS p;",
+        "          FROM pg_catalog.unnest(p_backends) AS u(b)",
+        "        SELECT pg_catalog.count(*) INTO v_count FROM (SELECT DISTINCT r FROM pg_catalog.unnest(p_merchant_refs) AS r) d;",
+        "          INTO v_supplied FROM pg_catalog.unnest(p_merchant_refs) AS r;",
+        "            SELECT p_vocabulary_version, r FROM pg_catalog.unnest(p_merchant_refs) AS r;",
+        "           OR EXISTS (SELECT r FROM pg_catalog.unnest(p_merchant_refs) AS r"
+      ],
+      "pass": true
+    },
+    {
+      "check": "F12 qualified unnest calls: total, single-array, multi-array",
+      "observed": [
+        22,
+        22,
+        0
+      ],
+      "expected": [
+        22,
+        22,
+        0
+      ],
+      "pass": true
+    },
+    {
+      "check": "ROWS FROM lines per fragment == the six After statements",
+      "observed": [
+        [
+          "F12",
+          [
+            479,
+            483,
+            486,
+            489,
+            492,
+            494
+          ]
+        ]
+      ],
+      "expected": [
+        [
+          "F12",
+          [
+            479,
+            483,
+            486,
+            489,
+            492,
+            494
+          ]
+        ]
+      ],
+      "pass": true
+    },
+    {
+      "check": "inverse replacement of the After statements reproduces the Erratum 03-effective bytes (no other byte changed)",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "fragments whose bytes changed under Erratum 04",
+      "observed": [
+        "F12"
+      ],
+      "expected": [
+        "F12"
+      ],
+      "pass": true
+    },
+    {
+      "check": "fragments whose line count changed under Erratum 04",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "fragment count",
+      "observed": 26,
+      "expected": 26,
+      "pass": true
+    },
+    {
+      "check": "F12 Erratum 03-stage identity == pinned (sha256, bytes, lines)",
+      "observed": [
+        "572a9cf7182772f01b263ec367f993522c39e81e27edc74e59ea1ba65b6dd5a9",
+        34526,
+        498
+      ],
+      "expected": [
+        "572a9cf7182772f01b263ec367f993522c39e81e27edc74e59ea1ba65b6dd5a9",
+        34526,
+        498
+      ],
+      "pass": true
+    },
+    {
+      "check": "F12 effective identity == pinned Erratum 04 (sha256, bytes, lines)",
+      "observed": [
+        "c154aee0e1d441d405f5a0e7c25d883aa643b40fc0458a99061d9f9145c147da",
+        34819,
+        498
+      ],
+      "expected": [
+        "c154aee0e1d441d405f5a0e7c25d883aa643b40fc0458a99061d9f9145c147da",
+        34819,
+        498
+      ],
+      "pass": true
+    },
+    {
+      "check": "every other fragment matches its pinned Erratum 03 effective SHA-256",
+      "observed": [],
+      "expected": [],
+      "pass": true
+    },
+    {
+      "check": "mechanical inventory over the Erratum 04-effective fragments == over the Erratum 03-effective fragments",
+      "observed": {
+        "scope": {
+          "ddlFirstLine": 2376,
+          "ddlLastLine": 8872,
+          "rule": "V1.1 §19.14.1: DDL rules run over §19.2–§19.13 (from \"### 19.2\" up to, excluding, \"### 19.14\")"
+        },
+        "ddl": {
+          "tables": 39,
+          "tablesBySection": {
+            "19.4": 7,
+            "19.5": 6,
+            "19.6": 2,
+            "19.7": 3,
+            "19.8": 12,
+            "19.9": 9
+          },
+          "tableNames": [
+            "m7_storage_backend",
+            "m7_storage_profile",
+            "m7_retention_policy",
+            "m7_merchant_vocabulary",
+            "m7_merchant_vocabulary_entry",
+            "m7_control_plane_manifest",
+            "m7_control_plane_installation",
+            "m7_expected_relation",
+            "m7_expected_relation_object",
+            "m7_expected_function",
+            "m7_expected_function_grant",
+            "m7_expected_role",
+            "m7_expected_role_member",
+            "m7_participant_session",
+            "m7_participant_session_revocation",
+            "m7_outcome",
+            "m7_outcome_assertion",
+            "m7_outcome_command_receipt",
+            "m7_evidence_upload_intent",
+            "m7_canonical_generation",
+            "m7_generation_write_grant",
+            "m7_generation_capability_mint",
+            "m7_upload_intent_transition",
+            "m7_storage_observation",
+            "m7_evidence_submission",
+            "m7_evidence_submission_receipt",
+            "m7_evidence_artifact",
+            "m7_evidence_artifact_transition",
+            "m7_evidence_integrity_finding",
+            "m7_reconciliation_finding",
+            "m7_participant_erasure_request",
+            "m7_deletion_authorization",
+            "m7_deletion_execution",
+            "m7_storage_outbox",
+            "m7_storage_outbox_transition",
+            "m7_storage_effect_attempt",
+            "m7_deletion_execution_completion",
+            "m7_outbox_requeue_record",
+            "m7_deletion_sla_failure"
+          ],
+          "schemas": 1,
+          "enums": 31,
+          "views": 4,
+          "viewNames": [
+            "v_outcome_assertion_resolution",
+            "v_deletion_schedule_lag",
+            "v_deletion_sla_critical",
+            "v_deletion_sla_breach"
+          ],
+          "functions": 110,
+          "functionsByPrefix": {
+            "c": 9,
+            "s": 2,
+            "r": 1,
+            "p": 6,
+            "a": 1,
+            "w": 25,
+            "x": 1,
+            "i": 32,
+            "t": 33
+          },
+          "functionsDefiner": 45,
+          "functionsInvoker": 65,
+          "functionsWithPrefixSecurityMismatch": [],
+          "primaryKeys": 39,
+          "uniqueConstraints": 57,
+          "foreignKeys": 92,
+          "foreignKeysInline": 90,
+          "foreignKeysAlterTable": 2,
+          "checkConstraints": 158,
+          "indexes": 28,
+          "indexesNonUnique": 20,
+          "indexesUnique": 8,
+          "triggersExplicit": 35,
+          "triggersExplicitBeforeUpdate": 8,
+          "triggersExplicitBeforeInsert": 24,
+          "triggersExplicitAfter": 3,
+          "triggersLoopRows": 39,
+          "triggersLoopTables": [
+            "m7_storage_backend",
+            "m7_storage_profile",
+            "m7_retention_policy",
+            "m7_merchant_vocabulary",
+            "m7_merchant_vocabulary_entry",
+            "m7_control_plane_manifest",
+            "m7_control_plane_installation",
+            "m7_expected_relation",
+            "m7_expected_relation_object",
+            "m7_expected_function",
+            "m7_expected_function_grant",
+            "m7_expected_role",
+            "m7_expected_role_member",
+            "m7_participant_session",
+            "m7_participant_session_revocation",
+            "m7_outcome",
+            "m7_outcome_assertion",
+            "m7_outcome_command_receipt",
+            "m7_evidence_upload_intent",
+            "m7_canonical_generation",
+            "m7_generation_write_grant",
+            "m7_upload_intent_transition",
+            "m7_storage_observation",
+            "m7_evidence_submission",
+            "m7_evidence_submission_receipt",
+            "m7_evidence_artifact",
+            "m7_evidence_artifact_transition",
+            "m7_evidence_integrity_finding",
+            "m7_reconciliation_finding",
+            "m7_participant_erasure_request",
+            "m7_deletion_authorization",
+            "m7_deletion_execution",
+            "m7_storage_outbox",
+            "m7_storage_outbox_transition",
+            "m7_storage_effect_attempt",
+            "m7_deletion_execution_completion",
+            "m7_outbox_requeue_record",
+            "m7_deletion_sla_failure",
+            "m7_generation_capability_mint"
+          ],
+          "triggersLoopWithoutForbidUpdateTables": [
+            "m7_storage_backend",
+            "m7_storage_profile",
+            "m7_control_plane_installation",
+            "m7_outcome_assertion",
+            "m7_evidence_upload_intent",
+            "m7_storage_observation",
+            "m7_evidence_artifact",
+            "m7_storage_outbox"
+          ],
+          "triggersExplicitBeforeUpdateTables": [
+            "m7_storage_backend",
+            "m7_storage_profile",
+            "m7_control_plane_installation",
+            "m7_outcome_assertion",
+            "m7_storage_observation",
+            "m7_evidence_upload_intent",
+            "m7_evidence_artifact",
+            "m7_storage_outbox"
+          ],
+          "triggersLoopForbidUpdateRows": 31,
+          "triggersLoopStatementsPerRow": 3,
+          "triggersLoopStatementsGuardedByForbidUpdate": 1,
+          "triggersLoop": 148,
+          "triggersTotal": 183,
+          "writePaths": [
+            "M7_BEGIN_EVIDENCE_UPLOAD_V1",
+            "M7_CAPABILITY_MINT_V1",
+            "M7_CONTROL_PLANE_INSTALL_V1",
+            "M7_FINALIZE_EVIDENCE_V1",
+            "M7_ISSUE_SESSION_V1",
+            "M7_MINT_DELETION_AUTHORIZATION_V1",
+            "M7_PRIVACY_REQUEST_V1",
+            "M7_RECORD_OUTCOME_ASSERTION_V1",
+            "M7_REVOKE_SESSION_V1",
+            "M7_ROW_PURGE_V1",
+            "M7_ROW_REDACTION_V1",
+            "M7_WORKER_DELETION_V1",
+            "M7_WORKER_EFFECT_V1",
+            "M7_WORKER_RECONCILIATION_V1",
+            "M7_WORKER_UPLOAD_V1"
+          ],
+          "fragmentScopeAgreement": {
+            "tables": {
+              "scope": 39,
+              "fragments": 39
+            },
+            "schemas": {
+              "scope": 1,
+              "fragments": 1
+            },
+            "enums": {
+              "scope": 31,
+              "fragments": 31
+            },
+            "views": {
+              "scope": 4,
+              "fragments": 4
+            },
+            "functions": {
+              "scope": 110,
+              "fragments": 110
+            },
+            "primaryKeys": {
+              "scope": 39,
+              "fragments": 39
+            },
+            "uniqueConstraints": {
+              "scope": 57,
+              "fragments": 57
+            },
+            "foreignKeys": {
+              "scope": 92,
+              "fragments": 92
+            },
+            "checkConstraints": {
+              "scope": 158,
+              "fragments": 158
+            },
+            "indexes": {
+              "scope": 28,
+              "fragments": 28
+            },
+            "triggersExplicit": {
+              "scope": 35,
+              "fragments": 35
+            }
+          }
+        },
+        "sqlStates": {
+          "source": "V1.1 §19.11.0 table",
+          "rows": 14,
+          "distinct": 14,
+          "ids": [
+            "M7001",
+            "M7002",
+            "M7003",
+            "M7004",
+            "M7005",
+            "M7006",
+            "M7007",
+            "M7008",
+            "M7009",
+            "M7010",
+            "M7011",
+            "M7012",
+            "M7013",
+            "M7014"
+          ],
+          "missing": [],
+          "unexpected": [],
+          "duplicates": []
+        },
+        "roles": {
+          "all": [
+            "pagamenos_m7_owner",
+            "pagamenos_m7_participant_rt",
+            "pagamenos_m7_session_issuer_rt",
+            "pagamenos_m7_privacy_request_rt",
+            "pagamenos_m7_storage_worker_rt",
+            "pagamenos_m7_deletion_authority_rt",
+            "pagamenos_m7_capability_signer_rt"
+          ],
+          "login": [
+            "pagamenos_m7_participant_rt",
+            "pagamenos_m7_session_issuer_rt",
+            "pagamenos_m7_privacy_request_rt",
+            "pagamenos_m7_storage_worker_rt",
+            "pagamenos_m7_deletion_authority_rt",
+            "pagamenos_m7_capability_signer_rt"
+          ]
+        },
+        "databaseCredentialEnvKeys": [
+          "M7_PARTICIPANT_DATABASE_URL",
+          "M7_SESSION_ISSUER_DATABASE_URL",
+          "M7_PRIVACY_REQUEST_DATABASE_URL",
+          "M7_STORAGE_WORKER_DATABASE_URL",
+          "M7_DELETION_AUTHORITY_DATABASE_URL",
+          "M7_CAPABILITY_SIGNER_DATABASE_URL"
+        ],
+        "verificationCases": {
+          "source": "V1.1 §25 (data rows beginning with a T-ID)",
+          "rows": 210,
+          "distinct": 209,
+          "ids": [
+            "T-01",
+            "T-02",
+            "T-03",
+            "T-04",
+            "T-05",
+            "T-06",
+            "T-07",
+            "T-08",
+            "T-08b",
+            "T-09",
+            "T-10",
+            "T-11",
+            "T-12",
+            "T-13",
+            "T-14",
+            "T-15",
+            "T-16",
+            "T-17",
+            "T-18",
+            "T-19",
+            "T-20",
+            "T-21",
+            "T-22",
+            "T-23",
+            "T-24",
+            "T-25",
+            "T-26",
+            "T-27",
+            "T-28",
+            "T-29",
+            "T-30",
+            "T-31",
+            "T-32",
+            "T-33",
+            "T-34",
+            "T-35",
+            "T-36",
+            "T-37",
+            "T-38",
+            "T-39",
+            "T-40",
+            "T-41",
+            "T-42",
+            "T-43",
+            "T-44",
+            "T-45",
+            "T-46",
+            "T-47",
+            "T-48",
+            "T-49",
+            "T-50",
+            "T-51",
+            "T-52",
+            "T-53",
+            "T-54",
+            "T-55",
+            "T-56",
+            "T-57",
+            "T-58",
+            "T-59",
+            "T-60",
+            "T-61",
+            "T-62",
+            "T-63",
+            "T-64",
+            "T-65",
+            "T-66",
+            "T-67",
+            "T-68",
+            "T-69",
+            "T-70",
+            "T-71",
+            "T-72",
+            "T-73",
+            "T-74",
+            "T-75",
+            "T-76",
+            "T-77",
+            "T-78",
+            "T-79",
+            "T-80",
+            "T-81",
+            "T-82",
+            "T-83",
+            "T-84",
+            "T-85",
+            "T-86",
+            "T-87",
+            "T-88",
+            "T-89",
+            "T-90",
+            "T-91",
+            "T-92",
+            "T-93",
+            "T-94",
+            "T-95",
+            "T-96",
+            "T-97",
+            "T-98",
+            "T-99",
+            "T-99b",
+            "T-100",
+            "T-101",
+            "T-102",
+            "T-103",
+            "T-104",
+            "T-105",
+            "T-106",
+            "T-106b",
+            "T-107",
+            "T-107b",
+            "T-108",
+            "T-109",
+            "T-181",
+            "T-185",
+            "T-186",
+            "T-187",
+            "T-188",
+            "T-189",
+            "T-190",
+            "T-191",
+            "T-192",
+            "T-110",
+            "T-110b",
+            "T-111",
+            "T-112",
+            "T-113",
+            "T-114",
+            "T-115",
+            "T-116",
+            "T-117",
+            "T-118",
+            "T-118b",
+            "T-119",
+            "T-120",
+            "T-121",
+            "T-122",
+            "T-123",
+            "T-124",
+            "T-125",
+            "T-126",
+            "T-127",
+            "T-128",
+            "T-129",
+            "T-129b",
+            "T-130",
+            "T-131",
+            "T-132",
+            "T-133",
+            "T-134",
+            "T-135",
+            "T-136",
+            "T-137",
+            "T-137b",
+            "T-138",
+            "T-138b",
+            "T-139",
+            "T-140",
+            "T-141",
+            "T-142",
+            "T-143",
+            "T-143b",
+            "T-144",
+            "T-144b",
+            "T-166",
+            "T-167",
+            "T-168",
+            "T-169",
+            "T-170",
+            "T-170b",
+            "T-171",
+            "T-171c",
+            "T-171d",
+            "T-171b",
+            "T-118",
+            "T-145",
+            "T-146",
+            "T-147",
+            "T-148",
+            "T-149",
+            "T-150",
+            "T-151",
+            "T-152",
+            "T-153",
+            "T-154",
+            "T-155",
+            "T-155b",
+            "T-156",
+            "T-157",
+            "T-158",
+            "T-159",
+            "T-160",
+            "T-161",
+            "T-162",
+            "T-163",
+            "T-164",
+            "T-165",
+            "T-172",
+            "T-173",
+            "T-174",
+            "T-175",
+            "T-176",
+            "T-177",
+            "T-178",
+            "T-179",
+            "T-180",
+            "T-182",
+            "T-183",
+            "T-184",
+            "T-193"
+          ],
+          "missing": [],
+          "unexpected": [],
+          "duplicates": [
+            "T-118"
+          ]
+        },
+        "invariants": {
+          "source": "V1.1 §26 table",
+          "rows": 129,
+          "distinct": 129,
+          "ids": [
+            "M7-I01",
+            "M7-I02",
+            "M7-I03",
+            "M7-I04",
+            "M7-I05",
+            "M7-I06",
+            "M7-I07",
+            "M7-I08",
+            "M7-I09",
+            "M7-I10",
+            "M7-I11",
+            "M7-I12",
+            "M7-I13",
+            "M7-I14",
+            "M7-I15",
+            "M7-I16",
+            "M7-I17",
+            "M7-I18",
+            "M7-I19",
+            "M7-I20",
+            "M7-I21",
+            "M7-I22",
+            "M7-I23",
+            "M7-I24",
+            "M7-I25",
+            "M7-I26",
+            "M7-I27",
+            "M7-I28",
+            "M7-I29",
+            "M7-I30",
+            "M7-I31",
+            "M7-I32",
+            "M7-I33",
+            "M7-I34",
+            "M7-I35",
+            "M7-I36",
+            "M7-I37",
+            "M7-I38",
+            "M7-I39",
+            "M7-I40",
+            "M7-I41",
+            "M7-I42",
+            "M7-I43",
+            "M7-I44",
+            "M7-I45",
+            "M7-I46",
+            "M7-I47",
+            "M7-I48",
+            "M7-I49",
+            "M7-I50",
+            "M7-I51",
+            "M7-I52",
+            "M7-I53",
+            "M7-I54",
+            "M7-I55",
+            "M7-I56",
+            "M7-I57",
+            "M7-I58",
+            "M7-I59",
+            "M7-I60",
+            "M7-I61",
+            "M7-I62",
+            "M7-I63",
+            "M7-I64",
+            "M7-I65",
+            "M7-I66",
+            "M7-I67",
+            "M7-I68",
+            "M7-I69",
+            "M7-I70",
+            "M7-I71",
+            "M7-I72",
+            "M7-I73",
+            "M7-I74",
+            "M7-I75",
+            "M7-I76",
+            "M7-I77",
+            "M7-I78",
+            "M7-I79",
+            "M7-I80",
+            "M7-I81",
+            "M7-I82",
+            "M7-I83",
+            "M7-I84",
+            "M7-I85",
+            "M7-I86",
+            "M7-I87",
+            "M7-I88",
+            "M7-I89",
+            "M7-I90",
+            "M7-I91",
+            "M7-I92",
+            "M7-I93",
+            "M7-I94",
+            "M7-I95",
+            "M7-I96",
+            "M7-I97",
+            "M7-I98",
+            "M7-I99",
+            "M7-I100",
+            "M7-I101",
+            "M7-I102",
+            "M7-I103",
+            "M7-I104",
+            "M7-I105",
+            "M7-I106",
+            "M7-I107",
+            "M7-I108",
+            "M7-I109",
+            "M7-I110",
+            "M7-I111",
+            "M7-I112",
+            "M7-I113",
+            "M7-I114",
+            "M7-I115",
+            "M7-I116",
+            "M7-I117",
+            "M7-I118",
+            "M7-I119",
+            "M7-I120",
+            "M7-I121",
+            "M7-I122",
+            "M7-I123",
+            "M7-I124",
+            "M7-I125",
+            "M7-I126",
+            "M7-I127",
+            "M7-I128",
+            "M7-I129"
+          ],
+          "missing": [],
+          "unexpected": [],
+          "duplicates": []
+        },
+        "implementationPrerequisites": {
+          "source": "V1.1 §28.1 table",
+          "rows": 22,
+          "distinct": 22,
+          "ids": [
+            "IMP-01",
+            "IMP-02",
+            "IMP-03",
+            "IMP-04",
+            "IMP-05",
+            "IMP-06",
+            "IMP-07",
+            "IMP-08",
+            "IMP-09",
+            "IMP-10",
+            "IMP-11",
+            "IMP-12",
+            "IMP-13",
+            "IMP-14",
+            "IMP-15",
+            "IMP-16",
+            "IMP-17",
+            "IMP-18",
+            "IMP-19",
+            "IMP-20",
+            "IMP-21",
+            "IMP-22"
+          ],
+          "missing": [],
+          "unexpected": [],
+          "duplicates": []
+        },
+        "manifestGates": {
+          "source": "V1.1 §24.2 table",
+          "rows": 18,
+          "distinct": 18,
+          "ids": [
+            "MA-1",
+            "MA-2",
+            "MA-3",
+            "MA-4",
+            "MA-5",
+            "MA-6",
+            "MA-7",
+            "MA-8",
+            "MA-9",
+            "MA-10",
+            "MA-11",
+            "MA-12",
+            "MA-13",
+            "MA-14",
+            "MA-15",
+            "MA-16",
+            "MA-17",
+            "MA-18"
+          ],
+          "missing": [],
+          "unexpected": [],
+          "duplicates": []
+        },
+        "residuals": {
+          "source": "V1.1 §28.3 table",
+          "rows": 17,
+          "distinct": 17,
+          "ids": [
+            "M7-R-01",
+            "M7-R-02",
+            "M7-R-03",
+            "M7-R-04",
+            "M7-R-05",
+            "M7-R-06",
+            "M7-R-07",
+            "M7-R-08",
+            "M7-R-09",
+            "M7-R-12",
+            "M7-R-13",
+            "M7-R-14",
+            "M7-R-15",
+            "M7-R-16",
+            "M7-R-17",
+            "M7-R-10",
+            "M7-R-11"
+          ],
+          "missing": [],
+          "unexpected": [],
+          "duplicates": []
+        },
+        "races": {
+          "source": "V1.1 §16.3 table",
+          "rows": 29,
+          "distinct": 29,
+          "ids": [
+            "RC-01",
+            "RC-02",
+            "RC-03",
+            "RC-04",
+            "RC-05",
+            "RC-06",
+            "RC-07",
+            "RC-08",
+            "RC-09",
+            "RC-10",
+            "RC-11",
+            "RC-12",
+            "RC-13",
+            "RC-14",
+            "RC-15",
+            "RC-16",
+            "RC-17",
+            "RC-18",
+            "RC-19",
+            "RC-20",
+            "RC-21",
+            "RC-22",
+            "RC-23",
+            "RC-24",
+            "RC-25",
+            "RC-26",
+            "RC-27",
+            "RC-28",
+            "RC-29"
+          ],
+          "missing": [],
+          "unexpected": [],
+          "duplicates": []
+        },
+        "crashBoundaries": {
+          "source": "V1.1 §17.3 table",
+          "rows": 24,
+          "distinct": 24,
+          "ids": [
+            "CB-01",
+            "CB-02",
+            "CB-03",
+            "CB-04",
+            "CB-05",
+            "CB-19",
+            "CB-20",
+            "CB-21",
+            "CB-06",
+            "CB-07",
+            "CB-08",
+            "CB-09",
+            "CB-10",
+            "CB-11",
+            "CB-12",
+            "CB-13",
+            "CB-14",
+            "CB-15",
+            "CB-16",
+            "CB-17",
+            "CB-18",
+            "CB-22",
+            "CB-23",
+            "CB-24"
+          ],
+          "missing": [],
+          "unexpected": [],
+          "duplicates": []
+        },
+        "retirementRetry": {
+          "source": "V1.1 §11.10.8 table",
+          "rows": 7,
+          "distinct": 7,
+          "ids": [
+            "RR-1",
+            "RR-2",
+            "RR-3",
+            "RR-4",
+            "RR-5",
+            "RR-6",
+            "RR-7"
+          ],
+          "missing": [],
+          "unexpected": [],
+          "duplicates": []
+        },
+        "transactionOwners": {
+          "s16_2_3": {
+            "source": "V1.1 §16.2.3 table",
+            "rows": 8,
+            "distinct": 8,
+            "ids": [
+              "TO-1",
+              "TO-2",
+              "TO-3",
+              "TO-4",
+              "TO-5",
+              "TO-6",
+              "TO-7",
+              "TO-8"
+            ],
+            "missing": [],
+            "unexpected": [],
+            "duplicates": []
+          },
+          "s18_6": {
+            "source": "V1.1 §18.6 table",
+            "rows": 8,
+            "distinct": 8,
+            "ids": [
+              "TO-1",
+              "TO-2",
+              "TO-3",
+              "TO-4",
+              "TO-5",
+              "TO-6",
+              "TO-7",
+              "TO-8"
+            ],
+            "missing": [],
+            "unexpected": [],
+            "duplicates": []
+          }
+        }
+      },
+      "expected": {
+        "scope": {
+          "ddlFirstLine": 2376,
+          "ddlLastLine": 8872,
+          "rule": "V1.1 §19.14.1: DDL rules run over §19.2–§19.13 (from \"### 19.2\" up to, excluding, \"### 19.14\")"
+        },
+        "ddl": {
+          "tables": 39,
+          "tablesBySection": {
+            "19.4": 7,
+            "19.5": 6,
+            "19.6": 2,
+            "19.7": 3,
+            "19.8": 12,
+            "19.9": 9
+          },
+          "tableNames": [
+            "m7_storage_backend",
+            "m7_storage_profile",
+            "m7_retention_policy",
+            "m7_merchant_vocabulary",
+            "m7_merchant_vocabulary_entry",
+            "m7_control_plane_manifest",
+            "m7_control_plane_installation",
+            "m7_expected_relation",
+            "m7_expected_relation_object",
+            "m7_expected_function",
+            "m7_expected_function_grant",
+            "m7_expected_role",
+            "m7_expected_role_member",
+            "m7_participant_session",
+            "m7_participant_session_revocation",
+            "m7_outcome",
+            "m7_outcome_assertion",
+            "m7_outcome_command_receipt",
+            "m7_evidence_upload_intent",
+            "m7_canonical_generation",
+            "m7_generation_write_grant",
+            "m7_generation_capability_mint",
+            "m7_upload_intent_transition",
+            "m7_storage_observation",
+            "m7_evidence_submission",
+            "m7_evidence_submission_receipt",
+            "m7_evidence_artifact",
+            "m7_evidence_artifact_transition",
+            "m7_evidence_integrity_finding",
+            "m7_reconciliation_finding",
+            "m7_participant_erasure_request",
+            "m7_deletion_authorization",
+            "m7_deletion_execution",
+            "m7_storage_outbox",
+            "m7_storage_outbox_transition",
+            "m7_storage_effect_attempt",
+            "m7_deletion_execution_completion",
+            "m7_outbox_requeue_record",
+            "m7_deletion_sla_failure"
+          ],
+          "schemas": 1,
+          "enums": 31,
+          "views": 4,
+          "viewNames": [
+            "v_outcome_assertion_resolution",
+            "v_deletion_schedule_lag",
+            "v_deletion_sla_critical",
+            "v_deletion_sla_breach"
+          ],
+          "functions": 110,
+          "functionsByPrefix": {
+            "c": 9,
+            "s": 2,
+            "r": 1,
+            "p": 6,
+            "a": 1,
+            "w": 25,
+            "x": 1,
+            "i": 32,
+            "t": 33
+          },
+          "functionsDefiner": 45,
+          "functionsInvoker": 65,
+          "functionsWithPrefixSecurityMismatch": [],
+          "primaryKeys": 39,
+          "uniqueConstraints": 57,
+          "foreignKeys": 92,
+          "foreignKeysInline": 90,
+          "foreignKeysAlterTable": 2,
+          "checkConstraints": 158,
+          "indexes": 28,
+          "indexesNonUnique": 20,
+          "indexesUnique": 8,
+          "triggersExplicit": 35,
+          "triggersExplicitBeforeUpdate": 8,
+          "triggersExplicitBeforeInsert": 24,
+          "triggersExplicitAfter": 3,
+          "triggersLoopRows": 39,
+          "triggersLoopTables": [
+            "m7_storage_backend",
+            "m7_storage_profile",
+            "m7_retention_policy",
+            "m7_merchant_vocabulary",
+            "m7_merchant_vocabulary_entry",
+            "m7_control_plane_manifest",
+            "m7_control_plane_installation",
+            "m7_expected_relation",
+            "m7_expected_relation_object",
+            "m7_expected_function",
+            "m7_expected_function_grant",
+            "m7_expected_role",
+            "m7_expected_role_member",
+            "m7_participant_session",
+            "m7_participant_session_revocation",
+            "m7_outcome",
+            "m7_outcome_assertion",
+            "m7_outcome_command_receipt",
+            "m7_evidence_upload_intent",
+            "m7_canonical_generation",
+            "m7_generation_write_grant",
+            "m7_upload_intent_transition",
+            "m7_storage_observation",
+            "m7_evidence_submission",
+            "m7_evidence_submission_receipt",
+            "m7_evidence_artifact",
+            "m7_evidence_artifact_transition",
+            "m7_evidence_integrity_finding",
+            "m7_reconciliation_finding",
+            "m7_participant_erasure_request",
+            "m7_deletion_authorization",
+            "m7_deletion_execution",
+            "m7_storage_outbox",
+            "m7_storage_outbox_transition",
+            "m7_storage_effect_attempt",
+            "m7_deletion_execution_completion",
+            "m7_outbox_requeue_record",
+            "m7_deletion_sla_failure",
+            "m7_generation_capability_mint"
+          ],
+          "triggersLoopWithoutForbidUpdateTables": [
+            "m7_storage_backend",
+            "m7_storage_profile",
+            "m7_control_plane_installation",
+            "m7_outcome_assertion",
+            "m7_evidence_upload_intent",
+            "m7_storage_observation",
+            "m7_evidence_artifact",
+            "m7_storage_outbox"
+          ],
+          "triggersExplicitBeforeUpdateTables": [
+            "m7_storage_backend",
+            "m7_storage_profile",
+            "m7_control_plane_installation",
+            "m7_outcome_assertion",
+            "m7_storage_observation",
+            "m7_evidence_upload_intent",
+            "m7_evidence_artifact",
+            "m7_storage_outbox"
+          ],
+          "triggersLoopForbidUpdateRows": 31,
+          "triggersLoopStatementsPerRow": 3,
+          "triggersLoopStatementsGuardedByForbidUpdate": 1,
+          "triggersLoop": 148,
+          "triggersTotal": 183,
+          "writePaths": [
+            "M7_BEGIN_EVIDENCE_UPLOAD_V1",
+            "M7_CAPABILITY_MINT_V1",
+            "M7_CONTROL_PLANE_INSTALL_V1",
+            "M7_FINALIZE_EVIDENCE_V1",
+            "M7_ISSUE_SESSION_V1",
+            "M7_MINT_DELETION_AUTHORIZATION_V1",
+            "M7_PRIVACY_REQUEST_V1",
+            "M7_RECORD_OUTCOME_ASSERTION_V1",
+            "M7_REVOKE_SESSION_V1",
+            "M7_ROW_PURGE_V1",
+            "M7_ROW_REDACTION_V1",
+            "M7_WORKER_DELETION_V1",
+            "M7_WORKER_EFFECT_V1",
+            "M7_WORKER_RECONCILIATION_V1",
+            "M7_WORKER_UPLOAD_V1"
+          ],
+          "fragmentScopeAgreement": {
+            "tables": {
+              "scope": 39,
+              "fragments": 39
+            },
+            "schemas": {
+              "scope": 1,
+              "fragments": 1
+            },
+            "enums": {
+              "scope": 31,
+              "fragments": 31
+            },
+            "views": {
+              "scope": 4,
+              "fragments": 4
+            },
+            "functions": {
+              "scope": 110,
+              "fragments": 110
+            },
+            "primaryKeys": {
+              "scope": 39,
+              "fragments": 39
+            },
+            "uniqueConstraints": {
+              "scope": 57,
+              "fragments": 57
+            },
+            "foreignKeys": {
+              "scope": 92,
+              "fragments": 92
+            },
+            "checkConstraints": {
+              "scope": 158,
+              "fragments": 158
+            },
+            "indexes": {
+              "scope": 28,
+              "fragments": 28
+            },
+            "triggersExplicit": {
+              "scope": 35,
+              "fragments": 35
+            }
+          }
+        },
+        "sqlStates": {
+          "source": "V1.1 §19.11.0 table",
+          "rows": 14,
+          "distinct": 14,
+          "ids": [
+            "M7001",
+            "M7002",
+            "M7003",
+            "M7004",
+            "M7005",
+            "M7006",
+            "M7007",
+            "M7008",
+            "M7009",
+            "M7010",
+            "M7011",
+            "M7012",
+            "M7013",
+            "M7014"
+          ],
+          "missing": [],
+          "unexpected": [],
+          "duplicates": []
+        },
+        "roles": {
+          "all": [
+            "pagamenos_m7_owner",
+            "pagamenos_m7_participant_rt",
+            "pagamenos_m7_session_issuer_rt",
+            "pagamenos_m7_privacy_request_rt",
+            "pagamenos_m7_storage_worker_rt",
+            "pagamenos_m7_deletion_authority_rt",
+            "pagamenos_m7_capability_signer_rt"
+          ],
+          "login": [
+            "pagamenos_m7_participant_rt",
+            "pagamenos_m7_session_issuer_rt",
+            "pagamenos_m7_privacy_request_rt",
+            "pagamenos_m7_storage_worker_rt",
+            "pagamenos_m7_deletion_authority_rt",
+            "pagamenos_m7_capability_signer_rt"
+          ]
+        },
+        "databaseCredentialEnvKeys": [
+          "M7_PARTICIPANT_DATABASE_URL",
+          "M7_SESSION_ISSUER_DATABASE_URL",
+          "M7_PRIVACY_REQUEST_DATABASE_URL",
+          "M7_STORAGE_WORKER_DATABASE_URL",
+          "M7_DELETION_AUTHORITY_DATABASE_URL",
+          "M7_CAPABILITY_SIGNER_DATABASE_URL"
+        ],
+        "verificationCases": {
+          "source": "V1.1 §25 (data rows beginning with a T-ID)",
+          "rows": 210,
+          "distinct": 209,
+          "ids": [
+            "T-01",
+            "T-02",
+            "T-03",
+            "T-04",
+            "T-05",
+            "T-06",
+            "T-07",
+            "T-08",
+            "T-08b",
+            "T-09",
+            "T-10",
+            "T-11",
+            "T-12",
+            "T-13",
+            "T-14",
+            "T-15",
+            "T-16",
+            "T-17",
+            "T-18",
+            "T-19",
+            "T-20",
+            "T-21",
+            "T-22",
+            "T-23",
+            "T-24",
+            "T-25",
+            "T-26",
+            "T-27",
+            "T-28",
+            "T-29",
+            "T-30",
+            "T-31",
+            "T-32",
+            "T-33",
+            "T-34",
+            "T-35",
+            "T-36",
+            "T-37",
+            "T-38",
+            "T-39",
+            "T-40",
+            "T-41",
+            "T-42",
+            "T-43",
+            "T-44",
+            "T-45",
+            "T-46",
+            "T-47",
+            "T-48",
+            "T-49",
+            "T-50",
+            "T-51",
+            "T-52",
+            "T-53",
+            "T-54",
+            "T-55",
+            "T-56",
+            "T-57",
+            "T-58",
+            "T-59",
+            "T-60",
+            "T-61",
+            "T-62",
+            "T-63",
+            "T-64",
+            "T-65",
+            "T-66",
+            "T-67",
+            "T-68",
+            "T-69",
+            "T-70",
+            "T-71",
+            "T-72",
+            "T-73",
+            "T-74",
+            "T-75",
+            "T-76",
+            "T-77",
+            "T-78",
+            "T-79",
+            "T-80",
+            "T-81",
+            "T-82",
+            "T-83",
+            "T-84",
+            "T-85",
+            "T-86",
+            "T-87",
+            "T-88",
+            "T-89",
+            "T-90",
+            "T-91",
+            "T-92",
+            "T-93",
+            "T-94",
+            "T-95",
+            "T-96",
+            "T-97",
+            "T-98",
+            "T-99",
+            "T-99b",
+            "T-100",
+            "T-101",
+            "T-102",
+            "T-103",
+            "T-104",
+            "T-105",
+            "T-106",
+            "T-106b",
+            "T-107",
+            "T-107b",
+            "T-108",
+            "T-109",
+            "T-181",
+            "T-185",
+            "T-186",
+            "T-187",
+            "T-188",
+            "T-189",
+            "T-190",
+            "T-191",
+            "T-192",
+            "T-110",
+            "T-110b",
+            "T-111",
+            "T-112",
+            "T-113",
+            "T-114",
+            "T-115",
+            "T-116",
+            "T-117",
+            "T-118",
+            "T-118b",
+            "T-119",
+            "T-120",
+            "T-121",
+            "T-122",
+            "T-123",
+            "T-124",
+            "T-125",
+            "T-126",
+            "T-127",
+            "T-128",
+            "T-129",
+            "T-129b",
+            "T-130",
+            "T-131",
+            "T-132",
+            "T-133",
+            "T-134",
+            "T-135",
+            "T-136",
+            "T-137",
+            "T-137b",
+            "T-138",
+            "T-138b",
+            "T-139",
+            "T-140",
+            "T-141",
+            "T-142",
+            "T-143",
+            "T-143b",
+            "T-144",
+            "T-144b",
+            "T-166",
+            "T-167",
+            "T-168",
+            "T-169",
+            "T-170",
+            "T-170b",
+            "T-171",
+            "T-171c",
+            "T-171d",
+            "T-171b",
+            "T-118",
+            "T-145",
+            "T-146",
+            "T-147",
+            "T-148",
+            "T-149",
+            "T-150",
+            "T-151",
+            "T-152",
+            "T-153",
+            "T-154",
+            "T-155",
+            "T-155b",
+            "T-156",
+            "T-157",
+            "T-158",
+            "T-159",
+            "T-160",
+            "T-161",
+            "T-162",
+            "T-163",
+            "T-164",
+            "T-165",
+            "T-172",
+            "T-173",
+            "T-174",
+            "T-175",
+            "T-176",
+            "T-177",
+            "T-178",
+            "T-179",
+            "T-180",
+            "T-182",
+            "T-183",
+            "T-184",
+            "T-193"
+          ],
+          "missing": [],
+          "unexpected": [],
+          "duplicates": [
+            "T-118"
+          ]
+        },
+        "invariants": {
+          "source": "V1.1 §26 table",
+          "rows": 129,
+          "distinct": 129,
+          "ids": [
+            "M7-I01",
+            "M7-I02",
+            "M7-I03",
+            "M7-I04",
+            "M7-I05",
+            "M7-I06",
+            "M7-I07",
+            "M7-I08",
+            "M7-I09",
+            "M7-I10",
+            "M7-I11",
+            "M7-I12",
+            "M7-I13",
+            "M7-I14",
+            "M7-I15",
+            "M7-I16",
+            "M7-I17",
+            "M7-I18",
+            "M7-I19",
+            "M7-I20",
+            "M7-I21",
+            "M7-I22",
+            "M7-I23",
+            "M7-I24",
+            "M7-I25",
+            "M7-I26",
+            "M7-I27",
+            "M7-I28",
+            "M7-I29",
+            "M7-I30",
+            "M7-I31",
+            "M7-I32",
+            "M7-I33",
+            "M7-I34",
+            "M7-I35",
+            "M7-I36",
+            "M7-I37",
+            "M7-I38",
+            "M7-I39",
+            "M7-I40",
+            "M7-I41",
+            "M7-I42",
+            "M7-I43",
+            "M7-I44",
+            "M7-I45",
+            "M7-I46",
+            "M7-I47",
+            "M7-I48",
+            "M7-I49",
+            "M7-I50",
+            "M7-I51",
+            "M7-I52",
+            "M7-I53",
+            "M7-I54",
+            "M7-I55",
+            "M7-I56",
+            "M7-I57",
+            "M7-I58",
+            "M7-I59",
+            "M7-I60",
+            "M7-I61",
+            "M7-I62",
+            "M7-I63",
+            "M7-I64",
+            "M7-I65",
+            "M7-I66",
+            "M7-I67",
+            "M7-I68",
+            "M7-I69",
+            "M7-I70",
+            "M7-I71",
+            "M7-I72",
+            "M7-I73",
+            "M7-I74",
+            "M7-I75",
+            "M7-I76",
+            "M7-I77",
+            "M7-I78",
+            "M7-I79",
+            "M7-I80",
+            "M7-I81",
+            "M7-I82",
+            "M7-I83",
+            "M7-I84",
+            "M7-I85",
+            "M7-I86",
+            "M7-I87",
+            "M7-I88",
+            "M7-I89",
+            "M7-I90",
+            "M7-I91",
+            "M7-I92",
+            "M7-I93",
+            "M7-I94",
+            "M7-I95",
+            "M7-I96",
+            "M7-I97",
+            "M7-I98",
+            "M7-I99",
+            "M7-I100",
+            "M7-I101",
+            "M7-I102",
+            "M7-I103",
+            "M7-I104",
+            "M7-I105",
+            "M7-I106",
+            "M7-I107",
+            "M7-I108",
+            "M7-I109",
+            "M7-I110",
+            "M7-I111",
+            "M7-I112",
+            "M7-I113",
+            "M7-I114",
+            "M7-I115",
+            "M7-I116",
+            "M7-I117",
+            "M7-I118",
+            "M7-I119",
+            "M7-I120",
+            "M7-I121",
+            "M7-I122",
+            "M7-I123",
+            "M7-I124",
+            "M7-I125",
+            "M7-I126",
+            "M7-I127",
+            "M7-I128",
+            "M7-I129"
+          ],
+          "missing": [],
+          "unexpected": [],
+          "duplicates": []
+        },
+        "implementationPrerequisites": {
+          "source": "V1.1 §28.1 table",
+          "rows": 22,
+          "distinct": 22,
+          "ids": [
+            "IMP-01",
+            "IMP-02",
+            "IMP-03",
+            "IMP-04",
+            "IMP-05",
+            "IMP-06",
+            "IMP-07",
+            "IMP-08",
+            "IMP-09",
+            "IMP-10",
+            "IMP-11",
+            "IMP-12",
+            "IMP-13",
+            "IMP-14",
+            "IMP-15",
+            "IMP-16",
+            "IMP-17",
+            "IMP-18",
+            "IMP-19",
+            "IMP-20",
+            "IMP-21",
+            "IMP-22"
+          ],
+          "missing": [],
+          "unexpected": [],
+          "duplicates": []
+        },
+        "manifestGates": {
+          "source": "V1.1 §24.2 table",
+          "rows": 18,
+          "distinct": 18,
+          "ids": [
+            "MA-1",
+            "MA-2",
+            "MA-3",
+            "MA-4",
+            "MA-5",
+            "MA-6",
+            "MA-7",
+            "MA-8",
+            "MA-9",
+            "MA-10",
+            "MA-11",
+            "MA-12",
+            "MA-13",
+            "MA-14",
+            "MA-15",
+            "MA-16",
+            "MA-17",
+            "MA-18"
+          ],
+          "missing": [],
+          "unexpected": [],
+          "duplicates": []
+        },
+        "residuals": {
+          "source": "V1.1 §28.3 table",
+          "rows": 17,
+          "distinct": 17,
+          "ids": [
+            "M7-R-01",
+            "M7-R-02",
+            "M7-R-03",
+            "M7-R-04",
+            "M7-R-05",
+            "M7-R-06",
+            "M7-R-07",
+            "M7-R-08",
+            "M7-R-09",
+            "M7-R-12",
+            "M7-R-13",
+            "M7-R-14",
+            "M7-R-15",
+            "M7-R-16",
+            "M7-R-17",
+            "M7-R-10",
+            "M7-R-11"
+          ],
+          "missing": [],
+          "unexpected": [],
+          "duplicates": []
+        },
+        "races": {
+          "source": "V1.1 §16.3 table",
+          "rows": 29,
+          "distinct": 29,
+          "ids": [
+            "RC-01",
+            "RC-02",
+            "RC-03",
+            "RC-04",
+            "RC-05",
+            "RC-06",
+            "RC-07",
+            "RC-08",
+            "RC-09",
+            "RC-10",
+            "RC-11",
+            "RC-12",
+            "RC-13",
+            "RC-14",
+            "RC-15",
+            "RC-16",
+            "RC-17",
+            "RC-18",
+            "RC-19",
+            "RC-20",
+            "RC-21",
+            "RC-22",
+            "RC-23",
+            "RC-24",
+            "RC-25",
+            "RC-26",
+            "RC-27",
+            "RC-28",
+            "RC-29"
+          ],
+          "missing": [],
+          "unexpected": [],
+          "duplicates": []
+        },
+        "crashBoundaries": {
+          "source": "V1.1 §17.3 table",
+          "rows": 24,
+          "distinct": 24,
+          "ids": [
+            "CB-01",
+            "CB-02",
+            "CB-03",
+            "CB-04",
+            "CB-05",
+            "CB-19",
+            "CB-20",
+            "CB-21",
+            "CB-06",
+            "CB-07",
+            "CB-08",
+            "CB-09",
+            "CB-10",
+            "CB-11",
+            "CB-12",
+            "CB-13",
+            "CB-14",
+            "CB-15",
+            "CB-16",
+            "CB-17",
+            "CB-18",
+            "CB-22",
+            "CB-23",
+            "CB-24"
+          ],
+          "missing": [],
+          "unexpected": [],
+          "duplicates": []
+        },
+        "retirementRetry": {
+          "source": "V1.1 §11.10.8 table",
+          "rows": 7,
+          "distinct": 7,
+          "ids": [
+            "RR-1",
+            "RR-2",
+            "RR-3",
+            "RR-4",
+            "RR-5",
+            "RR-6",
+            "RR-7"
+          ],
+          "missing": [],
+          "unexpected": [],
+          "duplicates": []
+        },
+        "transactionOwners": {
+          "s16_2_3": {
+            "source": "V1.1 §16.2.3 table",
+            "rows": 8,
+            "distinct": 8,
+            "ids": [
+              "TO-1",
+              "TO-2",
+              "TO-3",
+              "TO-4",
+              "TO-5",
+              "TO-6",
+              "TO-7",
+              "TO-8"
+            ],
+            "missing": [],
+            "unexpected": [],
+            "duplicates": []
+          },
+          "s18_6": {
+            "source": "V1.1 §18.6 table",
+            "rows": 8,
+            "distinct": 8,
+            "ids": [
+              "TO-1",
+              "TO-2",
+              "TO-3",
+              "TO-4",
+              "TO-5",
+              "TO-6",
+              "TO-7",
+              "TO-8"
+            ],
+            "missing": [],
+            "unexpected": [],
+            "duplicates": []
+          }
+        }
+      },
+      "pass": true
+    }
+  ],
+  "informativePinCrossCheck": [
+    {
+      "check": "§7.7 F12 pin rows",
+      "observed": 2,
+      "expected": 2,
+      "pass": true
+    },
+    {
+      "check": "§7.7 effective F12 before Erratum 04: sha256, bytes, lines",
+      "observed": [
+        "572a9cf7182772f01b263ec367f993522c39e81e27edc74e59ea1ba65b6dd5a9",
+        34526,
+        498
+      ],
+      "expected": [
+        "572a9cf7182772f01b263ec367f993522c39e81e27edc74e59ea1ba65b6dd5a9",
+        34526,
+        498
+      ],
+      "pass": true
+    },
+    {
+      "check": "§7.7 effective F12 after Erratum 04: sha256, bytes, lines",
+      "observed": [
+        "c154aee0e1d441d405f5a0e7c25d883aa643b40fc0458a99061d9f9145c147da",
+        34819,
+        498
+      ],
+      "expected": [
+        "c154aee0e1d441d405f5a0e7c25d883aa643b40fc0458a99061d9f9145c147da",
+        34819,
+        498
+      ],
+      "pass": true
+    },
+    {
+      "check": "§11 pin table fragments",
+      "observed": [
+        "F12"
+      ],
+      "expected": [
+        "F12"
+      ],
+      "pass": true
+    },
+    {
+      "check": "§11 F12: file, current SHA-256, bytes, lines, SHA-256 after, bytes after, lines after, occurrences",
+      "observed": [
+        "sql/12_19.11.2_control-plane-registration.sql",
+        "572a9cf7182772f01b263ec367f993522c39e81e27edc74e59ea1ba65b6dd5a9",
+        34526,
+        498,
+        "c154aee0e1d441d405f5a0e7c25d883aa643b40fc0458a99061d9f9145c147da",
+        34819,
+        498,
+        "`E04-01` … `E04-06`"
+      ],
+      "expected": [
+        "sql/12_19.11.2_control-plane-registration.sql",
+        "572a9cf7182772f01b263ec367f993522c39e81e27edc74e59ea1ba65b6dd5a9",
+        34526,
+        498,
+        "c154aee0e1d441d405f5a0e7c25d883aa643b40fc0458a99061d9f9145c147da",
+        34819,
+        498,
+        "`E04-01` … `E04-06`"
+      ],
+      "pass": true
+    },
+    {
+      "check": "§11 occurrence range is exactly the six contiguous ids",
+      "observed": [
+        "E04-01",
+        "E04-02",
+        "E04-03",
+        "E04-04",
+        "E04-05",
+        "E04-06"
+      ],
+      "expected": [
+        "E04-01",
+        "E04-02",
+        "E04-03",
+        "E04-04",
+        "E04-05",
+        "E04-06"
+      ],
+      "pass": true
+    }
+  ],
+  "resultingFragments": [
+    {
+      "id": "F12",
+      "file": "sql/12_19.11.2_control-plane-registration.sql",
+      "before": {
+        "sha256": "572a9cf7182772f01b263ec367f993522c39e81e27edc74e59ea1ba65b6dd5a9",
+        "bytes": 34526,
+        "lines": 498
+      },
+      "after": {
+        "sha256": "c154aee0e1d441d405f5a0e7c25d883aa643b40fc0458a99061d9f9145c147da",
+        "bytes": 34819,
+        "lines": 498
+      },
+      "erratum04Corrections": [
+        "E04-01",
+        "E04-02",
+        "E04-03",
+        "E04-04",
+        "E04-05",
+        "E04-06"
+      ]
+    }
+  ],
+  "allPass": true
+}

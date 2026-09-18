@@ -1,12 +1,12 @@
 {
-  "schema": "pagamenos.m7.s01.normative-ddl-extraction.v3",
+  "schema": "pagamenos.m7.s01.normative-ddl-extraction.v4",
   "status": [
     "S01 EXTRACTION ARTIFACT — GENERATED; DO NOT EDIT BY HAND",
     "NOT A MIGRATION; NOT INSTALLED INTO POSTGRESQL; NOT A CONTROL-PLANE MANIFEST",
     "SATISFIES NO IMP-* OR MA-* ITEM; M7 GATE 2 NOT SATISFIED"
   ],
   "generator": "scripts/m7/extract-normative-ddl.ts",
-  "conformanceTarget": "M7 V1.1 + accepted Erratum 01 + accepted Erratum 02 + accepted Erratum 03",
+  "conformanceTarget": "M7 V1.1 + accepted Erratum 01 + accepted Erratum 02 + accepted Erratum 03 + accepted Erratum 04",
   "sources": {
     "specification": {
       "path": "PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1.md",
@@ -35,9 +35,16 @@
       "sha256": "b4debcb5a02e777e780e14002c5e9cdbb90f2140f5b7516592b8e05e67366160",
       "bytes": 72201,
       "lines": 779
+    },
+    "erratum04": {
+      "path": "PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_04.md",
+      "gitBlob": "c839db3948608c875c984a73e366c039c0a5e2dd",
+      "sha256": "3b07d30958aa5c7783fe7458236b8170d1f5a47c0f765e7aa95e5ae68bab00f4",
+      "bytes": 60164,
+      "lines": 660
     }
   },
-  "fragmentBytesRule": "Each sql/ file is the accepted V1.1 fence body (v11Body*) with exactly the Erratum 02 §6 substitutions listed in erratum02Corrections applied at their named lines (erratum02Sha256), and then exactly the Erratum 03 SQL block replacements listed in erratum03Corrections applied at their quoted lines. Line spans and bodyLines are those of V1.1; lines, bytes and sha256 are the effective (written) file bytes.",
+  "fragmentBytesRule": "Each sql/ file is the accepted V1.1 fence body (v11Body*) with exactly the Erratum 02 §6 substitutions listed in erratum02Corrections applied at their named lines (erratum02Sha256), and then exactly the Erratum 03 SQL block replacements listed in erratum03Corrections applied at their quoted lines (erratum03Sha256), and then exactly the Erratum 04 statement replacements listed in erratum04Corrections applied at their quoted lines. Line spans and bodyLines are those of V1.1; lines, bytes and sha256 are the effective (written) file bytes.",
   "normativeRegion": {
     "startHeading": "## 19. Complete normative DDL",
     "startLine": 2365,
@@ -47,7 +54,7 @@
     "fencesInDocument": 65,
     "sqlFencesOutsideRegion": 0
   },
-  "orderingRule": "Fragments are emitted in ascending source position of their opening fence, which equals the order of the S01 anchor registry (F01…F26); each file name carries its two-digit ordinal and clause. File bodies are the exact fence body lines, with only the Erratum 02 E02-01…E02-09 substitutions applied at their named lines and then only the six Erratum 03 SQL block replacements applied at their quoted lines, joined by LF with a final LF. JSON members are written in a fixed order, identifier lists in source order, and the file index in lexicographic path order.",
+  "orderingRule": "Fragments are emitted in ascending source position of their opening fence, which equals the order of the S01 anchor registry (F01…F26); each file name carries its two-digit ordinal and clause. File bodies are the exact fence body lines, with only the Erratum 02 E02-01…E02-09 substitutions applied at their named lines and then only the six Erratum 03 SQL block replacements applied at their quoted lines, and then only the six Erratum 04 E04-01…E04-06 statement replacements applied at their quoted lines, joined by LF with a final LF. JSON members are written in a fixed order, identifier lists in source order, and the file index in lexicographic path order.",
   "fragments": [
     {
       "id": "F01",
@@ -66,6 +73,8 @@
       "erratum03Corrections": [
         "E03-06a"
       ],
+      "erratum03Sha256": "f75c45ab8110c3fe5bce5379e77a08a51bc2e3d0561e887310d9c9361d02a6be",
+      "erratum04Corrections": [],
       "lines": 95,
       "bytes": 5074,
       "sha256": "f75c45ab8110c3fe5bce5379e77a08a51bc2e3d0561e887310d9c9361d02a6be",
@@ -86,6 +95,8 @@
       "erratum02Corrections": [],
       "erratum02Sha256": "02b51d24aabed73e7c2d1390c620f7660729ac971426329e08110061c529f0ff",
       "erratum03Corrections": [],
+      "erratum03Sha256": "02b51d24aabed73e7c2d1390c620f7660729ac971426329e08110061c529f0ff",
+      "erratum04Corrections": [],
       "lines": 50,
       "bytes": 4932,
       "sha256": "02b51d24aabed73e7c2d1390c620f7660729ac971426329e08110061c529f0ff",
@@ -106,6 +117,8 @@
       "erratum02Corrections": [],
       "erratum02Sha256": "5c09af0076a536b1c7b44f552bdcb4beb8721b36bfd136987c915e284dc214e3",
       "erratum03Corrections": [],
+      "erratum03Sha256": "5c09af0076a536b1c7b44f552bdcb4beb8721b36bfd136987c915e284dc214e3",
+      "erratum04Corrections": [],
       "lines": 275,
       "bytes": 19660,
       "sha256": "5c09af0076a536b1c7b44f552bdcb4beb8721b36bfd136987c915e284dc214e3",
@@ -126,6 +139,8 @@
       "erratum02Corrections": [],
       "erratum02Sha256": "bdca4c13560257555f810ff213afb1aeb763a651bf1f3e9c63a9ef56fa10bc59",
       "erratum03Corrections": [],
+      "erratum03Sha256": "bdca4c13560257555f810ff213afb1aeb763a651bf1f3e9c63a9ef56fa10bc59",
+      "erratum04Corrections": [],
       "lines": 65,
       "bytes": 3471,
       "sha256": "bdca4c13560257555f810ff213afb1aeb763a651bf1f3e9c63a9ef56fa10bc59",
@@ -146,6 +161,8 @@
       "erratum02Corrections": [],
       "erratum02Sha256": "8d5ba82eabb4bd9789dc6469c2973fdd509d6069a8c071656e5c700a9aafd7cc",
       "erratum03Corrections": [],
+      "erratum03Sha256": "8d5ba82eabb4bd9789dc6469c2973fdd509d6069a8c071656e5c700a9aafd7cc",
+      "erratum04Corrections": [],
       "lines": 34,
       "bytes": 2073,
       "sha256": "8d5ba82eabb4bd9789dc6469c2973fdd509d6069a8c071656e5c700a9aafd7cc",
@@ -166,6 +183,8 @@
       "erratum02Corrections": [],
       "erratum02Sha256": "9d8adb7c7bf1b4a66759640a45f4138402c510c5f4f199c690f99caee794bd52",
       "erratum03Corrections": [],
+      "erratum03Sha256": "9d8adb7c7bf1b4a66759640a45f4138402c510c5f4f199c690f99caee794bd52",
+      "erratum04Corrections": [],
       "lines": 118,
       "bytes": 8105,
       "sha256": "9d8adb7c7bf1b4a66759640a45f4138402c510c5f4f199c690f99caee794bd52",
@@ -186,6 +205,8 @@
       "erratum02Corrections": [],
       "erratum02Sha256": "697d1d93278ae4b0a4db55ce8f144b70459e1b5dea678645d4c3f2d4fd067b0f",
       "erratum03Corrections": [],
+      "erratum03Sha256": "697d1d93278ae4b0a4db55ce8f144b70459e1b5dea678645d4c3f2d4fd067b0f",
+      "erratum04Corrections": [],
       "lines": 526,
       "bytes": 37268,
       "sha256": "697d1d93278ae4b0a4db55ce8f144b70459e1b5dea678645d4c3f2d4fd067b0f",
@@ -206,6 +227,8 @@
       "erratum02Corrections": [],
       "erratum02Sha256": "d5c8827cd16c70de9020da9b93ba35f8cc7da94ca0f127be92a861b3236effa0",
       "erratum03Corrections": [],
+      "erratum03Sha256": "d5c8827cd16c70de9020da9b93ba35f8cc7da94ca0f127be92a861b3236effa0",
+      "erratum04Corrections": [],
       "lines": 317,
       "bytes": 21616,
       "sha256": "d5c8827cd16c70de9020da9b93ba35f8cc7da94ca0f127be92a861b3236effa0",
@@ -230,6 +253,8 @@
       ],
       "erratum02Sha256": "c2bb8b38feaf6cbb1559ae0c1396d34344094008a75e81f7406f9a239225c75c",
       "erratum03Corrections": [],
+      "erratum03Sha256": "c2bb8b38feaf6cbb1559ae0c1396d34344094008a75e81f7406f9a239225c75c",
+      "erratum04Corrections": [],
       "lines": 1124,
       "bytes": 64833,
       "sha256": "c2bb8b38feaf6cbb1559ae0c1396d34344094008a75e81f7406f9a239225c75c",
@@ -250,6 +275,8 @@
       "erratum02Corrections": [],
       "erratum02Sha256": "c2b0fd5bbc71c713572f2571e57909532b5ea4a90cc1adcd4c5a82ce76926c41",
       "erratum03Corrections": [],
+      "erratum03Sha256": "c2b0fd5bbc71c713572f2571e57909532b5ea4a90cc1adcd4c5a82ce76926c41",
+      "erratum04Corrections": [],
       "lines": 138,
       "bytes": 11213,
       "sha256": "c2b0fd5bbc71c713572f2571e57909532b5ea4a90cc1adcd4c5a82ce76926c41",
@@ -274,6 +301,8 @@
       "erratum03Corrections": [
         "E03-01"
       ],
+      "erratum03Sha256": "c9f5777fcc699fd9411427e4b17fd3f28258068f925bbb8fcbe3a935fbec75a9",
+      "erratum04Corrections": [],
       "lines": 606,
       "bytes": 31403,
       "sha256": "c9f5777fcc699fd9411427e4b17fd3f28258068f925bbb8fcbe3a935fbec75a9",
@@ -294,9 +323,18 @@
       "erratum02Corrections": [],
       "erratum02Sha256": "572a9cf7182772f01b263ec367f993522c39e81e27edc74e59ea1ba65b6dd5a9",
       "erratum03Corrections": [],
+      "erratum03Sha256": "572a9cf7182772f01b263ec367f993522c39e81e27edc74e59ea1ba65b6dd5a9",
+      "erratum04Corrections": [
+        "E04-01",
+        "E04-02",
+        "E04-03",
+        "E04-04",
+        "E04-05",
+        "E04-06"
+      ],
       "lines": 498,
-      "bytes": 34526,
-      "sha256": "572a9cf7182772f01b263ec367f993522c39e81e27edc74e59ea1ba65b6dd5a9",
+      "bytes": 34819,
+      "sha256": "c154aee0e1d441d405f5a0e7c25d883aa643b40fc0458a99061d9f9145c147da",
       "file": "sql/12_19.11.2_control-plane-registration.sql"
     },
     {
@@ -314,6 +352,8 @@
       "erratum02Corrections": [],
       "erratum02Sha256": "f3adfbcf898828e1abcbf134c25ac3509c1c7f3f3b9bf7c86518f8f471d587eb",
       "erratum03Corrections": [],
+      "erratum03Sha256": "f3adfbcf898828e1abcbf134c25ac3509c1c7f3f3b9bf7c86518f8f471d587eb",
+      "erratum04Corrections": [],
       "lines": 61,
       "bytes": 3829,
       "sha256": "f3adfbcf898828e1abcbf134c25ac3509c1c7f3f3b9bf7c86518f8f471d587eb",
@@ -334,6 +374,8 @@
       "erratum02Corrections": [],
       "erratum02Sha256": "0835ba74fba500c36357508ab485b2e1a96a1bbce33938bc9d108740d010ff8a",
       "erratum03Corrections": [],
+      "erratum03Sha256": "0835ba74fba500c36357508ab485b2e1a96a1bbce33938bc9d108740d010ff8a",
+      "erratum04Corrections": [],
       "lines": 375,
       "bytes": 25121,
       "sha256": "0835ba74fba500c36357508ab485b2e1a96a1bbce33938bc9d108740d010ff8a",
@@ -354,6 +396,8 @@
       "erratum02Corrections": [],
       "erratum02Sha256": "7688c488cfbbef2434f636f0de80530fcdf6ebc784b208b71477f95671f67a06",
       "erratum03Corrections": [],
+      "erratum03Sha256": "7688c488cfbbef2434f636f0de80530fcdf6ebc784b208b71477f95671f67a06",
+      "erratum04Corrections": [],
       "lines": 32,
       "bytes": 1776,
       "sha256": "7688c488cfbbef2434f636f0de80530fcdf6ebc784b208b71477f95671f67a06",
@@ -374,6 +418,8 @@
       "erratum02Corrections": [],
       "erratum02Sha256": "093d3f315dd8ac94fd4a6704899c2e0bd2e181c37c2897351cb906b9030fd943",
       "erratum03Corrections": [],
+      "erratum03Sha256": "093d3f315dd8ac94fd4a6704899c2e0bd2e181c37c2897351cb906b9030fd943",
+      "erratum04Corrections": [],
       "lines": 24,
       "bytes": 1547,
       "sha256": "093d3f315dd8ac94fd4a6704899c2e0bd2e181c37c2897351cb906b9030fd943",
@@ -396,6 +442,8 @@
       ],
       "erratum02Sha256": "ca844588d08e5eb3e40d82676daf4dbf767539d576902372738b9f15b715175c",
       "erratum03Corrections": [],
+      "erratum03Sha256": "ca844588d08e5eb3e40d82676daf4dbf767539d576902372738b9f15b715175c",
+      "erratum04Corrections": [],
       "lines": 92,
       "bytes": 5879,
       "sha256": "ca844588d08e5eb3e40d82676daf4dbf767539d576902372738b9f15b715175c",
@@ -416,6 +464,8 @@
       "erratum02Corrections": [],
       "erratum02Sha256": "8d88295459c55853396637e26fc350a00cbfd8a4118be11c2e46396bffae0a45",
       "erratum03Corrections": [],
+      "erratum03Sha256": "8d88295459c55853396637e26fc350a00cbfd8a4118be11c2e46396bffae0a45",
+      "erratum04Corrections": [],
       "lines": 370,
       "bytes": 23867,
       "sha256": "8d88295459c55853396637e26fc350a00cbfd8a4118be11c2e46396bffae0a45",
@@ -436,6 +486,8 @@
       "erratum02Corrections": [],
       "erratum02Sha256": "e79c9a264a3719d8079a49df3910e7cd2987dda70f147fd6b20f34715611062a",
       "erratum03Corrections": [],
+      "erratum03Sha256": "e79c9a264a3719d8079a49df3910e7cd2987dda70f147fd6b20f34715611062a",
+      "erratum04Corrections": [],
       "lines": 216,
       "bytes": 13929,
       "sha256": "e79c9a264a3719d8079a49df3910e7cd2987dda70f147fd6b20f34715611062a",
@@ -456,6 +508,8 @@
       "erratum02Corrections": [],
       "erratum02Sha256": "5be17cfce152379d4ecbdf711a65dd1da30d70dd8799f3ca706ce5c8c29ffc83",
       "erratum03Corrections": [],
+      "erratum03Sha256": "5be17cfce152379d4ecbdf711a65dd1da30d70dd8799f3ca706ce5c8c29ffc83",
+      "erratum04Corrections": [],
       "lines": 89,
       "bytes": 5275,
       "sha256": "5be17cfce152379d4ecbdf711a65dd1da30d70dd8799f3ca706ce5c8c29ffc83",
@@ -476,6 +530,8 @@
       "erratum02Corrections": [],
       "erratum02Sha256": "163d2c7af596a285e3d21378ea9849b7c79b18d537d6c76b01802a8b328bb8e2",
       "erratum03Corrections": [],
+      "erratum03Sha256": "163d2c7af596a285e3d21378ea9849b7c79b18d537d6c76b01802a8b328bb8e2",
+      "erratum04Corrections": [],
       "lines": 146,
       "bytes": 9321,
       "sha256": "163d2c7af596a285e3d21378ea9849b7c79b18d537d6c76b01802a8b328bb8e2",
@@ -496,6 +552,8 @@
       "erratum02Corrections": [],
       "erratum02Sha256": "cce8a66a8155c2dbee904ee21e87c97093ceaa15bf8da5b5aa32114009b97999",
       "erratum03Corrections": [],
+      "erratum03Sha256": "cce8a66a8155c2dbee904ee21e87c97093ceaa15bf8da5b5aa32114009b97999",
+      "erratum04Corrections": [],
       "lines": 362,
       "bytes": 26982,
       "sha256": "cce8a66a8155c2dbee904ee21e87c97093ceaa15bf8da5b5aa32114009b97999",
@@ -520,6 +578,8 @@
       ],
       "erratum02Sha256": "1e0891b67d2aff6deea2db244a464b0de4dd1e0da5415c9048f861d04fcc75c5",
       "erratum03Corrections": [],
+      "erratum03Sha256": "1e0891b67d2aff6deea2db244a464b0de4dd1e0da5415c9048f861d04fcc75c5",
+      "erratum04Corrections": [],
       "lines": 218,
       "bytes": 12885,
       "sha256": "1e0891b67d2aff6deea2db244a464b0de4dd1e0da5415c9048f861d04fcc75c5",
@@ -545,6 +605,8 @@
         "E03-04a",
         "E03-05a"
       ],
+      "erratum03Sha256": "f68eeea9d1f6a3b192b64163949385d89cd0b0fa369b168d8160d3eaa7006fff",
+      "erratum04Corrections": [],
       "lines": 250,
       "bytes": 14628,
       "sha256": "f68eeea9d1f6a3b192b64163949385d89cd0b0fa369b168d8160d3eaa7006fff",
@@ -565,6 +627,8 @@
       "erratum02Corrections": [],
       "erratum02Sha256": "ff8dce51a83832e2468f383c9c05634fdb535be6a7d6261dfd184c9de22513f1",
       "erratum03Corrections": [],
+      "erratum03Sha256": "ff8dce51a83832e2468f383c9c05634fdb535be6a7d6261dfd184c9de22513f1",
+      "erratum04Corrections": [],
       "lines": 146,
       "bytes": 8423,
       "sha256": "ff8dce51a83832e2468f383c9c05634fdb535be6a7d6261dfd184c9de22513f1",
@@ -587,6 +651,8 @@
       ],
       "erratum02Sha256": "3a463c0c3b9602daccfef772da49420fea2284304947bad1d8973bf0358a449f",
       "erratum03Corrections": [],
+      "erratum03Sha256": "3a463c0c3b9602daccfef772da49420fea2284304947bad1d8973bf0358a449f",
+      "erratum04Corrections": [],
       "lines": 53,
       "bytes": 2534,
       "sha256": "3a463c0c3b9602daccfef772da49420fea2284304947bad1d8973bf0358a449f",
@@ -596,15 +662,19 @@
   "files": [
     {
       "path": "ERRATUM_01_OVERRIDES.json",
-      "sha256": "18023c21b236a6e9619aeadd1261fe4e881629e31bb7c9764aa542c862110f92"
+      "sha256": "c4c56a81f673a0e9a7f17c4bff3a5f050fc2faa0b586c12f942744e8d3f76718"
     },
     {
       "path": "ERRATUM_02_CORRECTIONS.json",
-      "sha256": "2e0429b3d97347f58ed4de56a9af7b4ffaf4a30fd1c6ddec76a671523b65a0f0"
+      "sha256": "1496f879d7628213c1380122679c6fea1ad582c9cca2c99a66d22ca34156f16d"
     },
     {
       "path": "ERRATUM_03_CORRECTIONS.json",
-      "sha256": "7c256a2f56873c45f578366da5160c388a1408421f2a44618ffbb0b85b8f4dfd"
+      "sha256": "e5a0b671616eb4e78601b9854aad1520a49171c714c2ab58ac9b8726de6dd04e"
+    },
+    {
+      "path": "ERRATUM_04_CORRECTIONS.json",
+      "sha256": "20d55fe1697850a32952266c282e9349f3cd09380837b41604baa00ab7ba82a1"
     },
     {
       "path": "INVENTORY.json",
@@ -616,7 +686,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "472e8a4b9367d1548d2c0a787100f2453dbe07f17bde90225224d99e52d4cefa"
+      "sha256": "f25155edb53306bd96967d11eae271de53410ef27c5f6d3c420c9d7dc1cb0cea"
     },
     {
       "path": "sql/01_19.2_preamble.sql",
@@ -664,7 +734,7 @@
     },
     {
       "path": "sql/12_19.11.2_control-plane-registration.sql",
-      "sha256": "572a9cf7182772f01b263ec367f993522c39e81e27edc74e59ea1ba65b6dd5a9"
+      "sha256": "c154aee0e1d441d405f5a0e7c25d883aa643b40fc0458a99061d9f9145c147da"
     },
     {
       "path": "sql/13_19.11.3_session-issuer.sql",
