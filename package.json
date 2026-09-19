@@ -31,7 +31,8 @@
     "db:migrate:check": "tsx scripts/migrate-check.ts",
     "m7:ddl:extract": "tsx scripts/m7/extract-normative-ddl.ts",
     "m7:ddl:check": "tsx scripts/m7/extract-normative-ddl.ts --check",
-    "m7:pg": "tsx scripts/m7/pg-m7-harness.ts"
+    "m7:pg": "tsx scripts/m7/pg-m7-harness.ts",
+    "m7:s03": "tsx scripts/m7/pg-m7-s03.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.2.0",
