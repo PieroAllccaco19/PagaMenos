@@ -2,7 +2,14 @@
 // every structural surprise is refused rather than interpreted.
 import { describe, expect, it } from 'vitest';
 
-import { e01Bytes, e02Bytes, e03Bytes, e04Bytes, v11Bytes } from './__fixtures__/accepted-sources';
+import {
+  e01Bytes,
+  e02Bytes,
+  e03Bytes,
+  e04Bytes,
+  e05Bytes,
+  v11Bytes,
+} from './__fixtures__/accepted-sources';
 import {
   CONFORMANCE_TARGET,
   M7_V1_1,
@@ -10,6 +17,7 @@ import {
   M7_V1_1_ERRATUM_02,
   M7_V1_1_ERRATUM_03,
   M7_V1_1_ERRATUM_04,
+  M7_V1_1_ERRATUM_05,
   SourceIdentityError,
   SourceStructureError,
   gitBlobId,
@@ -105,9 +113,44 @@ describe('bound artifact identity', () => {
     expect(() => verifyBoundArtifact(M7_V1_1_ERRATUM_04, crlf)).toThrow(SourceIdentityError);
   });
 
-  it('the conformance target is V1.1 + accepted Erratum 01 + 02 + 03 + 04', () => {
+  it('the committed Erratum 05 bytes are the accepted bytes (blob, SHA-256, size, lines, LF-only)', () => {
+    expect(gitBlobId(e05Bytes)).toBe('49651e77f24538f9122c9173f2d0201823d61366');
+    expect(sha256Hex(e05Bytes)).toBe(
+      '7d0c0e639e9cda3010d2c2a67b18170accdf3ce18a2f465f98824ca4ac820e95',
+    );
+    expect(M7_V1_1_ERRATUM_05).toEqual({
+      path: 'PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_05.md',
+      gitBlob: '49651e77f24538f9122c9173f2d0201823d61366',
+      sha256: '7d0c0e639e9cda3010d2c2a67b18170accdf3ce18a2f465f98824ca4ac820e95',
+      bytes: 64_291,
+      lines: 627,
+    });
+    expect(() => verifyBoundArtifact(M7_V1_1_ERRATUM_05, e05Bytes)).not.toThrow();
+    // Another accepted document supplied in place of Erratum 05.
+    expect(() => verifyBoundArtifact(M7_V1_1_ERRATUM_05, e04Bytes)).toThrow(SourceIdentityError);
+    expect(() => verifyBoundArtifact(M7_V1_1_ERRATUM_05, v11Bytes)).toThrow(SourceIdentityError);
+    const wrong = { ...M7_V1_1_ERRATUM_05, gitBlob: 'c839db3948608c875c984a73e366c039c0a5e2dd' };
+    expect(() => verifyBoundArtifact(wrong, e05Bytes)).toThrow(/git blob/);
+    const wrongSha = { ...M7_V1_1_ERRATUM_05, sha256: '0'.repeat(64) };
+    expect(() => verifyBoundArtifact(wrongSha, e05Bytes)).toThrow(/sha256/);
+    const wrongBytes = { ...M7_V1_1_ERRATUM_05, bytes: 64_292 };
+    expect(() => verifyBoundArtifact(wrongBytes, e05Bytes)).toThrow(/bytes/);
+    const wrongLines = { ...M7_V1_1_ERRATUM_05, lines: 628 };
+    expect(() => verifyBoundArtifact(wrongLines, e05Bytes)).toThrow(/lines/);
+    const mutated = Uint8Array.from(e05Bytes);
+    mutated[4000] = mutated[4000] === 0x61 ? 0x62 : 0x61;
+    expect(() => verifyBoundArtifact(M7_V1_1_ERRATUM_05, mutated)).toThrow(SourceIdentityError);
+    const crlf = new TextEncoder().encode(
+      new TextDecoder().decode(e05Bytes).replace(/\n/g, '\r\n'),
+    );
+    expect(() => verifyBoundArtifact(M7_V1_1_ERRATUM_05, crlf)).toThrow(SourceIdentityError);
+    const truncated = e05Bytes.subarray(0, e05Bytes.byteLength - 1);
+    expect(() => verifyBoundArtifact(M7_V1_1_ERRATUM_05, truncated)).toThrow(SourceIdentityError);
+  });
+
+  it('the conformance target is V1.1 + accepted Erratum 01 + 02 + 03 + 04 + 05', () => {
     expect(CONFORMANCE_TARGET).toBe(
-      'M7 V1.1 + accepted Erratum 01 + accepted Erratum 02 + accepted Erratum 03 + accepted Erratum 04',
+      'M7 V1.1 + accepted Erratum 01 + accepted Erratum 02 + accepted Erratum 03 + accepted Erratum 04 + accepted Erratum 05',
     );
   });
 

@@ -14,6 +14,8 @@ import {
   e03Text,
   e04Bytes,
   e04Text,
+  e05Bytes,
+  e05Text,
   v11Bytes,
   v11Text,
 } from './__fixtures__/accepted-sources';
@@ -27,7 +29,12 @@ import {
   findStaleErratum03Bytes,
   readErratum03Corrections,
 } from './erratum-03-corrections';
-import { findStaleErratum04Bytes, readErratum04Corrections } from './erratum-04-corrections';
+import {
+  applyErratum04Corrections,
+  findStaleErratum04Bytes,
+  readErratum04Corrections,
+} from './erratum-04-corrections';
+import { findStaleErratum05Bytes, readErratum05Corrections } from './erratum-05-corrections';
 import { selectNormativeFragments } from './fragments';
 import {
   NORMATIVE_OUTPUT_DIR,
@@ -48,7 +55,14 @@ function readCommitted(): Map<string, string> {
   );
 }
 
-const generated = generateNormativeArtifacts(v11Bytes, e01Bytes, e02Bytes, e03Bytes, e04Bytes);
+const generated = generateNormativeArtifacts(
+  v11Bytes,
+  e01Bytes,
+  e02Bytes,
+  e03Bytes,
+  e04Bytes,
+  e05Bytes,
+);
 const v11Selection = selectNormativeFragments(v11Text);
 const { corrections } = readErratum02Corrections(v11Text, e02Text, v11Selection);
 const e02Selection = applyErratum02Corrections(v11Selection, corrections);
@@ -58,16 +72,28 @@ const { corrections: e03Corrections } = readErratum03Corrections(
   e02Selection,
   corrections,
 );
+const e03Selection = applyErratum03Corrections(e02Selection, e03Corrections);
 const e04 = readErratum04Corrections(
   v11Text,
   e04Text,
   v11Selection,
-  applyErratum03Corrections(e02Selection, e03Corrections),
+  e03Selection,
   corrections,
   e03Corrections,
 );
 const e04Corrections = e04.corrections;
+const e05 = readErratum05Corrections(
+  v11Text,
+  e05Text,
+  applyErratum04Corrections(e03Selection, e04Corrections),
+  corrections,
+  e03Corrections,
+  e04Corrections,
+);
+const e05Corrections = e05.corrections;
 const F12 = 'sql/12_19.11.2_control-plane-registration.sql';
+const F18 = 'sql/18_19.12.1_upload-pipeline.sql';
+const F22 = 'sql/22_19.12.5_row-mechanisms.sql';
 
 interface IndexFragment {
   id: string;
@@ -82,6 +108,8 @@ interface IndexFragment {
   erratum03Corrections: string[];
   erratum03Sha256: string;
   erratum04Corrections: string[];
+  erratum04Sha256: string;
+  erratum05Corrections: string[];
   lines: number;
   bytes: number;
   sha256: string;
@@ -89,28 +117,36 @@ interface IndexFragment {
 
 describe('S01 generated artifacts', () => {
   it('generation is deterministic', () => {
-    const again = generateNormativeArtifacts(v11Bytes, e01Bytes, e02Bytes, e03Bytes, e04Bytes);
+    const again = generateNormativeArtifacts(
+      v11Bytes,
+      e01Bytes,
+      e02Bytes,
+      e03Bytes,
+      e04Bytes,
+      e05Bytes,
+    );
     expect([...again.files.entries()]).toEqual([...generated.files.entries()]);
   });
 
   it('the committed directory has no drift, no missing and no extra file', () => {
     const drift = diffArtifacts(generated.files, readCommitted());
     expect(drift).toEqual({ missing: [], unexpected: [], changed: [] });
-    expect(generated.files.size).toBe(34);
+    expect(generated.files.size).toBe(35);
     expect(findStaleErratum02Bytes(readCommitted(), corrections)).toEqual([]);
     expect(findStaleErratum03Bytes(readCommitted(), e03Corrections)).toEqual([]);
     expect(findStaleErratum04Bytes(readCommitted(), e04)).toEqual([]);
+    expect(findStaleErratum05Bytes(readCommitted(), e05)).toEqual([]);
   });
 
-  it('the index records the current conformance target and all five accepted source identities', () => {
+  it('the index records the current conformance target and all six accepted source identities', () => {
     const index = JSON.parse(generated.files.get('EXTRACTION_INDEX.json')!) as {
       schema: string;
       conformanceTarget: string;
       sources: Record<string, { path: string; gitBlob: string; sha256: string }>;
     };
-    expect(index.schema).toBe('pagamenos.m7.s01.normative-ddl-extraction.v4');
+    expect(index.schema).toBe('pagamenos.m7.s01.normative-ddl-extraction.v5');
     expect(index.conformanceTarget).toBe(
-      'M7 V1.1 + accepted Erratum 01 + accepted Erratum 02 + accepted Erratum 03 + accepted Erratum 04',
+      'M7 V1.1 + accepted Erratum 01 + accepted Erratum 02 + accepted Erratum 03 + accepted Erratum 04 + accepted Erratum 05',
     );
     expect(Object.entries(index.sources).map(([k, s]) => [k, s.path, s.gitBlob, s.sha256])).toEqual(
       [
@@ -144,11 +180,17 @@ describe('S01 generated artifacts', () => {
           'c839db3948608c875c984a73e366c039c0a5e2dd',
           '3b07d30958aa5c7783fe7458236b8170d1f5a47c0f765e7aa95e5ae68bab00f4',
         ],
+        [
+          'erratum05',
+          'PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_05.md',
+          '49651e77f24538f9122c9173f2d0201823d61366',
+          '7d0c0e639e9cda3010d2c2a67b18170accdf3ce18a2f465f98824ca4ac820e95',
+        ],
       ],
     );
   });
 
-  it('every sql/ file is its V1.1 fence body with exactly its Erratum 02, 03 and 04 corrections applied', () => {
+  it('every sql/ file is its V1.1 fence body with exactly its Erratum 02, 03, 04 and 05 corrections applied', () => {
     const index = JSON.parse(generated.files.get('EXTRACTION_INDEX.json')!) as {
       fragments: IndexFragment[];
     };
@@ -179,6 +221,14 @@ describe('S01 generated artifacts', () => {
         expect(effective.slice(i, i + c.beforeBlock.length)).toEqual(c.beforeBlock);
         effective.splice(i, c.beforeBlock.length, ...c.afterBlock);
       }
+      expect(sha256Hex(`${effective.join('\n')}\n`)).toBe(f.erratum04Sha256);
+      // Erratum 05: whole quoted V1.1 blocks, same line count; the prose occurrence is never applied.
+      const own05 = e05Corrections.filter((x) => x.fragment === f.id);
+      for (const c of own05) {
+        const i = c.firstLine - f.fenceOpenLine - 1;
+        expect(effective.slice(i, i + c.beforeBlock.length)).toEqual(c.beforeBlock);
+        effective.splice(i, c.beforeBlock.length, ...c.afterBlock);
+      }
       const body = `${effective.join('\n')}\n`;
       expect(generated.files.get(f.file)).toBe(body);
       expect(sha256Hex(body)).toBe(f.sha256);
@@ -191,8 +241,10 @@ describe('S01 generated artifacts', () => {
       );
       expect(f.erratum03Corrections).toEqual(own.map((x) => x.id));
       expect(f.erratum04Corrections).toEqual(own04.map((x) => x.id));
+      expect(f.erratum05Corrections).toEqual(own05.map((x) => x.id));
       expect(f.erratum03Sha256 !== f.erratum02Sha256).toBe(f.erratum03Corrections.length > 0);
-      expect(f.sha256 !== f.erratum03Sha256).toBe(f.erratum04Corrections.length > 0);
+      expect(f.erratum04Sha256 !== f.erratum03Sha256).toBe(f.erratum04Corrections.length > 0);
+      expect(f.sha256 !== f.erratum04Sha256).toBe(f.erratum05Corrections.length > 0);
       expect(f.erratum02Sha256 !== f.v11BodySha256).toBe(f.erratum02Corrections.length > 0);
     }
     expect(
@@ -209,6 +261,52 @@ describe('S01 generated artifacts', () => {
         .filter((f) => f.erratum04Corrections.length > 0)
         .map((f) => [f.id, f.erratum02Corrections, f.erratum03Corrections, f.erratum04Corrections]),
     ).toEqual([['F12', [], [], ['E04-01', 'E04-02', 'E04-03', 'E04-04', 'E04-05', 'E04-06']]]);
+    expect(
+      index.fragments.filter((f) => f.erratum05Corrections.length > 0).map((f) => f.id),
+    ).toEqual(['F18', 'F22']);
+    expect(
+      index.fragments
+        .filter((f) => f.erratum05Corrections.length > 0)
+        .map((f) => [
+          f.id,
+          f.erratum02Corrections,
+          f.erratum03Corrections,
+          f.erratum04Corrections,
+          f.erratum05Corrections,
+          f.erratum04Sha256,
+          f.sha256,
+          f.bytes,
+          f.lines,
+        ]),
+    ).toEqual([
+      [
+        'F18',
+        [],
+        [],
+        [],
+        ['E05-01'],
+        '8d88295459c55853396637e26fc350a00cbfd8a4118be11c2e46396bffae0a45',
+        '1d30664bb00da96e24fbc9e75299e89a95a70778bedc82dc86d903aca683373d',
+        23867,
+        370,
+      ],
+      [
+        'F22',
+        [],
+        [],
+        [],
+        ['E05-02', 'E05-03'],
+        'cce8a66a8155c2dbee904ee21e87c97093ceaa15bf8da5b5aa32114009b97999',
+        'afe1c1302e973d360a3e7a7a0fe8477647ee52feb2a1d0fbd963850afb3b99e8',
+        27202,
+        362,
+      ],
+    ]);
+    expect(
+      index.fragments.filter(
+        (f) => f.erratum05Corrections.length === 0 && f.sha256 !== f.erratum04Sha256,
+      ),
+    ).toEqual([]);
     expect(
       index.fragments
         .filter((f) => f.erratum04Corrections.length > 0)
@@ -450,38 +548,267 @@ describe('S01 generated artifacts', () => {
     expect(findStaleErratum02Bytes(relocated, corrections)).toHaveLength(1);
   });
 
+  // ------------------------------------------------------------------------------------------------------
+  // Erratum 05 negative controls — every case edits an in-memory COPY of the committed artifacts.
+  // ------------------------------------------------------------------------------------------------------
+  const e05ById = (id: string) => e05Corrections.find((x) => x.id === id)!;
+  const pathOf = (fragment: string): string => (fragment === 'F18' ? F18 : F22);
+  function staleE05(mutated: ReadonlyMap<string, string>): string[] {
+    return findStaleErratum05Bytes(mutated, e05);
+  }
+  function withLines(path: string, edit: (lines: string[]) => void): Map<string, string> {
+    const committed = readCommitted();
+    const lines = committed.get(path)!.split('\n');
+    edit(lines);
+    const mutated = new Map(committed);
+    mutated.set(path, lines.join('\n'));
+    return mutated;
+  }
+
+  it.each(['E05-01', 'E05-02', 'E05-03'])(
+    'restoring the stale pre-Erratum-05 block of %s is rejected',
+    (id) => {
+      const c = e05ById(id);
+      const path = pathOf(c.fragment);
+      const committed = readCommitted();
+      const mutated = new Map(committed);
+      mutated.set(
+        path,
+        committed.get(path)!.replace(c.afterBlock.join('\n'), () => c.beforeBlock.join('\n')),
+      );
+      expect(mutated.get(path)).not.toBe(committed.get(path));
+      expect(diffArtifacts(generated.files, mutated).changed).toEqual([path]);
+      const stale = staleE05(mutated);
+      expect(stale).toContain(`${path}: ${id} stale pre-Erratum-05 block ×1`);
+      expect(stale).toContain(
+        `${path}: ${id} After block not at fragment lines ${c.fragmentFirstLine}–${c.fragmentLastLine}`,
+      );
+    },
+  );
+
+  it('F18 with E05-01 reverted is named as the defective claim order', () => {
+    const c = e05ById('E05-01');
+    const committed = readCommitted();
+    const mutated = new Map(committed);
+    mutated.set(
+      F18,
+      committed.get(F18)!.replace(c.afterBlock.join('\n'), () => c.beforeBlock.join('\n')),
+    );
+    expect(staleE05(mutated)).toContain(
+      `${F18}: E05-01 m7.w_claim_upload_intent_v1 writes not in the order G → U → W (G 81, U 101, W 94)`,
+    );
+  });
+
+  it('F22 with both E05-02 and E05-03 reverted is rejected and every omission named', () => {
+    const committed = readCommitted();
+    let text = committed.get(F22)!;
+    for (const id of ['E05-02', 'E05-03']) {
+      const c = e05ById(id);
+      text = text.replace(c.afterBlock.join('\n'), () => c.beforeBlock.join('\n'));
+    }
+    const mutated = new Map(committed);
+    mutated.set(F22, text);
+    expect(diffArtifacts(generated.files, mutated).changed).toEqual([F22]);
+    expect(staleE05(mutated)).toEqual([
+      `${F22}: E05-02 stale pre-Erratum-05 block ×1`,
+      `${F22}: E05-02 After block not at fragment lines 96–98`,
+      `${F22}: E05-03 stale pre-Erratum-05 block ×1`,
+      `${F22}: E05-03 After block not at fragment lines 354–356`,
+      `${F22}: m7.m7_deletion_execution_completion INSERT at line 96 omits withinCompletionBudget, withinHardDeadline`,
+      `${F22}: m7.m7_deletion_execution_completion INSERT at line 354 omits withinCompletionBudget, withinHardDeadline`,
+    ]);
+  });
+
+  it('a partially applied E05-01 (grant moved, transition left after it) is rejected', () => {
+    // Lines 86–105: U (86–90), blank (91), grant comment and W (92–105). Keep the blank line first but
+    // leave U after W — neither the Before nor the After block.
+    const mutated = withLines(F18, (lines) => {
+      const u = lines.slice(85, 90);
+      const blank = lines[90]!;
+      const rest = lines.slice(91, 105);
+      lines.splice(85, 20, blank, ...rest, ...u);
+    });
+    expect(diffArtifacts(generated.files, mutated).changed).toEqual([F18]);
+    const stale = staleE05(mutated);
+    expect(stale).toContain(`${F18}: E05-01 After block not at fragment lines 86–105`);
+    expect(stale).toContain(
+      `${F18}: E05-01 m7.w_claim_upload_intent_v1 writes not in the order G → U → W (G 81, U 101, W 95)`,
+    );
+  });
+
+  it('a partially applied E05-02 (columns added, values reverted) is rejected', () => {
+    const c = e05ById('E05-02');
+    const change = c.lineChanges[1]!;
+    const mutated = withLines(F22, (lines) => {
+      lines[change.fragmentLine - 1] = change.beforeLine;
+    });
+    expect(diffArtifacts(generated.files, mutated).changed).toEqual([F22]);
+    expect(staleE05(mutated)).toEqual([
+      `${F22}: E05-02 stale pre-Erratum-05 line 7893 ×1`,
+      `${F22}: E05-02 After block not at fragment lines 96–98`,
+    ]);
+  });
+
+  it('a partially applied E05-03 (values added, columns reverted) is rejected', () => {
+    const c = e05ById('E05-03');
+    const change = c.lineChanges[0]!;
+    const mutated = withLines(F22, (lines) => {
+      lines[change.fragmentLine - 1] = change.beforeLine;
+    });
+    expect(diffArtifacts(generated.files, mutated).changed).toEqual([F22]);
+    expect(staleE05(mutated)).toEqual([
+      `${F22}: E05-03 stale pre-Erratum-05 line 8150 ×1`,
+      `${F22}: E05-03 After block not at fragment lines 354–356`,
+      `${F22}: m7.m7_deletion_execution_completion INSERT at line 354 omits withinCompletionBudget, withinHardDeadline`,
+    ]);
+  });
+
+  it('an E05-01 re-order moved to the neighbouring statement (transition before the generation) is rejected', () => {
+    // Lines 81–85: G. Put U (86–90) ahead of G instead of ahead of the grant comment and W.
+    const mutated = withLines(F18, (lines) => {
+      const g = lines.slice(80, 85);
+      const u = lines.slice(85, 90);
+      lines.splice(80, 10, ...u, ...g);
+    });
+    expect(diffArtifacts(generated.files, mutated).changed).toEqual([F18]);
+    const stale = staleE05(mutated);
+    expect(stale).toContain(`${F18}: E05-01 After block not at fragment lines 86–105`);
+    expect(stale).toContain(
+      `${F18}: E05-01 m7.w_claim_upload_intent_v1 writes not in the order G → U → W (G 86, U 81, W 100)`,
+    );
+  });
+
+  it('an E05 SQL correction placed in the wrong fragment is rejected', () => {
+    const c = e05ById('E05-02');
+    const f21 = 'sql/21_19.12.4_effect-confirmation.sql';
+    const committed = readCommitted();
+    const mutated = new Map(committed);
+    mutated.set(
+      F22,
+      committed.get(F22)!.replace(c.afterBlock.join('\n'), () => c.beforeBlock.join('\n')),
+    );
+    mutated.set(f21, `${committed.get(f21)}${c.afterBlock.join('\n')}\n`);
+    expect(diffArtifacts(generated.files, mutated).changed).toEqual([f21, F22]);
+    const stale = staleE05(mutated);
+    expect(stale).toContain(`${f21}: E05-02 After block outside F22 ×1`);
+    expect(stale).toContain(`${F22}: E05-02 stale pre-Erratum-05 block ×1`);
+  });
+
+  it('a duplicated E05 correction is rejected', () => {
+    const c = e05ById('E05-03');
+    const committed = readCommitted();
+    const mutated = new Map(committed);
+    mutated.set(F22, `${committed.get(F22)}${c.afterBlock.join('\n')}\n`);
+    expect(diffArtifacts(generated.files, mutated).changed).toEqual([F22]);
+    expect(staleE05(mutated)).toEqual([
+      `${F22}: E05-03 changed line 8150 duplicated ×2`,
+      `${F22}: E05-03 changed line 8151 duplicated ×2`,
+      `${F22}: E05-03 After block duplicated ×2`,
+    ]);
+  });
+
+  it('an unexpected E05-like modification in an unaffected fragment is rejected', () => {
+    const f21 = 'sql/21_19.12.4_effect-confirmation.sql';
+    const f09 = 'sql/09_19.10_trigger-functions.sql';
+    const committed = readCommitted();
+    const mutated = new Map(committed);
+    // F21: the conforming writer loses its lateness columns.
+    mutated.set(
+      f21,
+      committed
+        .get(f21)!
+        .replace(
+          '                 "withinCompletionBudget","withinHardDeadline","completedBy","generationPath")',
+          '                 "completedBy","generationPath")',
+        ),
+    );
+    // F09: an E05 changed line pasted into a trigger function body.
+    const line = e05ById('E05-02').lineChanges[0]!.afterLine;
+    mutated.set(f09, `${committed.get(f09)}${line}\n`);
+    expect(diffArtifacts(generated.files, mutated).changed).toEqual([f09, f21]);
+    expect(staleE05(mutated)).toEqual([
+      `${f09}: E05-02 changed line 7892 outside F22 ×1`,
+      `${f21}: m7.m7_deletion_execution_completion INSERT at line 67 omits withinCompletionBudget, withinHardDeadline`,
+    ]);
+  });
+
+  it('E05-04 (prose only) treated as SQL is rejected', () => {
+    const f26 = 'sql/26_19.13.4_grants-and-completion.sql';
+    const committed = readCommitted();
+    const mutated = new Map(committed);
+    mutated.set(f26, `${committed.get(f26)}-- ${e05.proseOccurrences[0]!.afterLine}\n`);
+    expect(diffArtifacts(generated.files, mutated).changed).toEqual([f26]);
+    expect(staleE05(mutated)).toEqual([`${f26}: E05-04 prose occurrence text in a SQL fragment`]);
+  });
+
+  it('a CRLF representation of a corrected fragment is drift', () => {
+    const committed = readCommitted();
+    const mutated = new Map(committed);
+    mutated.set(F22, committed.get(F22)!.replace(/\n/g, '\r\n'));
+    expect(diffArtifacts(generated.files, mutated).changed).toEqual([F22]);
+  });
+
   it('refuses to generate from bytes that are not the accepted specification or errata', () => {
     const mutated = Uint8Array.from(v11Bytes);
     mutated[mutated.length - 2] = 0x20;
     expect(() =>
-      generateNormativeArtifacts(mutated, e01Bytes, e02Bytes, e03Bytes, e04Bytes),
+      generateNormativeArtifacts(mutated, e01Bytes, e02Bytes, e03Bytes, e04Bytes, e05Bytes),
     ).toThrow(SourceIdentityError);
     expect(() =>
-      generateNormativeArtifacts(e01Bytes, v11Bytes, e02Bytes, e03Bytes, e04Bytes),
+      generateNormativeArtifacts(e01Bytes, v11Bytes, e02Bytes, e03Bytes, e04Bytes, e05Bytes),
     ).toThrow(SourceIdentityError);
     const e02Mutated = Uint8Array.from(e02Bytes);
     e02Mutated[1000] = e02Mutated[1000] === 0x61 ? 0x62 : 0x61;
     expect(() =>
-      generateNormativeArtifacts(v11Bytes, e01Bytes, e02Mutated, e03Bytes, e04Bytes),
+      generateNormativeArtifacts(v11Bytes, e01Bytes, e02Mutated, e03Bytes, e04Bytes, e05Bytes),
     ).toThrow(SourceIdentityError);
     expect(() =>
-      generateNormativeArtifacts(v11Bytes, e01Bytes, e01Bytes, e03Bytes, e04Bytes),
+      generateNormativeArtifacts(v11Bytes, e01Bytes, e01Bytes, e03Bytes, e04Bytes, e05Bytes),
     ).toThrow(SourceIdentityError);
     const e03Mutated = Uint8Array.from(e03Bytes);
     e03Mutated[2000] = e03Mutated[2000] === 0x61 ? 0x62 : 0x61;
     expect(() =>
-      generateNormativeArtifacts(v11Bytes, e01Bytes, e02Bytes, e03Mutated, e04Bytes),
+      generateNormativeArtifacts(v11Bytes, e01Bytes, e02Bytes, e03Mutated, e04Bytes, e05Bytes),
     ).toThrow(SourceIdentityError);
     expect(() =>
-      generateNormativeArtifacts(v11Bytes, e01Bytes, e02Bytes, e02Bytes, e04Bytes),
+      generateNormativeArtifacts(v11Bytes, e01Bytes, e02Bytes, e02Bytes, e04Bytes, e05Bytes),
     ).toThrow(SourceIdentityError);
     const e04Mutated = Uint8Array.from(e04Bytes);
     e04Mutated[2500] = e04Mutated[2500] === 0x61 ? 0x62 : 0x61;
     expect(() =>
-      generateNormativeArtifacts(v11Bytes, e01Bytes, e02Bytes, e03Bytes, e04Mutated),
+      generateNormativeArtifacts(v11Bytes, e01Bytes, e02Bytes, e03Bytes, e04Mutated, e05Bytes),
     ).toThrow(SourceIdentityError);
     expect(() =>
-      generateNormativeArtifacts(v11Bytes, e01Bytes, e02Bytes, e03Bytes, e03Bytes),
+      generateNormativeArtifacts(v11Bytes, e01Bytes, e02Bytes, e03Bytes, e03Bytes, e05Bytes),
+    ).toThrow(SourceIdentityError);
+    // Erratum 05: mutated bytes, a substituted accepted document, CRLF and truncation all refuse before
+    // anything is parsed.
+    const e05Mutated = Uint8Array.from(e05Bytes);
+    e05Mutated[3000] = e05Mutated[3000] === 0x61 ? 0x62 : 0x61;
+    expect(() =>
+      generateNormativeArtifacts(v11Bytes, e01Bytes, e02Bytes, e03Bytes, e04Bytes, e05Mutated),
+    ).toThrow(SourceIdentityError);
+    expect(() =>
+      generateNormativeArtifacts(v11Bytes, e01Bytes, e02Bytes, e03Bytes, e04Bytes, e04Bytes),
+    ).toThrow(SourceIdentityError);
+    const e05Crlf = new TextEncoder().encode(
+      new TextDecoder().decode(e05Bytes).replace(/\n/g, '\r\n'),
+    );
+    expect(() =>
+      generateNormativeArtifacts(v11Bytes, e01Bytes, e02Bytes, e03Bytes, e04Bytes, e05Crlf),
+    ).toThrow(SourceIdentityError);
+    expect(() =>
+      generateNormativeArtifacts(
+        v11Bytes,
+        e01Bytes,
+        e02Bytes,
+        e03Bytes,
+        e04Bytes,
+        e05Bytes.subarray(0, e05Bytes.byteLength - 1),
+      ),
+    ).toThrow(SourceIdentityError);
+    expect(() =>
+      generateNormativeArtifacts(v11Bytes, e01Bytes, e02Bytes, e03Bytes, e05Bytes, e04Bytes),
     ).toThrow(SourceIdentityError);
   });
 });
