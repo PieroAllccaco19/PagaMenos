@@ -94,8 +94,8 @@ BEGIN
     GET DIAGNOSTICS v_n2 = ROW_COUNT;
 
     INSERT INTO m7.m7_deletion_execution_completion
-        ("id","executionId","confirmingOutboxId","affectedRowCount","completedAt","completedBy","generationPath")
-    VALUES (pg_catalog.gen_random_uuid(), v_e."id", NULL, v_n1 + v_n2, v_now, session_user, 'M7_ROW_REDACTION_V1');
+        ("id","executionId","confirmingOutboxId","affectedRowCount","completedAt","withinCompletionBudget","withinHardDeadline","completedBy","generationPath")
+    VALUES (pg_catalog.gen_random_uuid(), v_e."id", NULL, v_n1 + v_n2, v_now, v_now <= v_e."completionBudgetDueAt", v_now <= v_e."hardDueAt", session_user, 'M7_ROW_REDACTION_V1');
     PERFORM pg_catalog.set_config('pagamenos.m7.write_path', '', true);
     RETURN v_n1 + v_n2;
 END
@@ -352,8 +352,8 @@ BEGIN
     IF v_auth."retainDeletionHistory" THEN
         v_now := pg_catalog.clock_timestamp();
         INSERT INTO m7.m7_deletion_execution_completion
-            ("id","executionId","confirmingOutboxId","affectedRowCount","completedAt","completedBy","generationPath")
-        VALUES (pg_catalog.gen_random_uuid(), v_e."id", NULL, v_n, v_now, session_user, 'M7_ROW_PURGE_V1');
+            ("id","executionId","confirmingOutboxId","affectedRowCount","completedAt","withinCompletionBudget","withinHardDeadline","completedBy","generationPath")
+        VALUES (pg_catalog.gen_random_uuid(), v_e."id", NULL, v_n, v_now, v_now <= v_e."completionBudgetDueAt", v_now <= v_e."hardDueAt", session_user, 'M7_ROW_PURGE_V1');
     END IF;
     PERFORM pg_catalog.set_config('pagamenos.m7.write_path', '', true);
     RETURN v_n;   -- in the residue-prohibited case this count is returned to the caller only and never persisted;

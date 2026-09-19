@@ -83,6 +83,12 @@ BEGIN
          "allocatedAt","grantExpiresAt","writeFenceAt","allocatedBy","generationPath")
     VALUES (v_i."id", v_epoch, v_key, v_pr."id", v_i."backendSha256", v_now, v_grant_exp, v_fence,
             session_user, 'M7_WORKER_UPLOAD_V1');
+    UPDATE m7.m7_evidence_upload_intent
+       SET "state" = 'PROCESSING', "stateVersion" = "stateVersion" + 1, "leaseOwner" = p_worker_id,
+           "leaseEpoch" = v_epoch, "leaseExpiresAt" = v_now + v_pol."workerLease", "updatedAt" = v_now
+     WHERE "id" = p_upload_intent_id
+     RETURNING * INTO v_i;
+
     -- XF-2 / XF-9 / XF-11: allocate the ONE authorization envelope for this generation, addressable by
     -- one opaque generationGrantId. Every component is derived here from immutable rows; no caller
     -- supplies any of them, and no function can ever alter them (t_forbid_mutation). A second claim on
@@ -97,12 +103,6 @@ BEGIN
     VALUES (v_grant_id, v_i."id", v_epoch, 'CANONICAL_CREATE', v_key, v_i."backendSha256",
             v_grant_exp, v_pr."writeCapabilityMode", v_pr."envelopeEnforcement", v_now, session_user,
             'M7_WORKER_UPLOAD_V1');
-
-    UPDATE m7.m7_evidence_upload_intent
-       SET "state" = 'PROCESSING', "stateVersion" = "stateVersion" + 1, "leaseOwner" = p_worker_id,
-           "leaseEpoch" = v_epoch, "leaseExpiresAt" = v_now + v_pol."workerLease", "updatedAt" = v_now
-     WHERE "id" = p_upload_intent_id
-     RETURNING * INTO v_i;
 
     PERFORM pg_catalog.set_config('pagamenos.m7.write_path', '', true);
     RETURN QUERY SELECT v_i."leaseEpoch", v_i."stagingObjectKey", v_key, v_i."maxBytes",

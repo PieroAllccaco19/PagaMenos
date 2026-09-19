@@ -1,4 +1,4 @@
-// Test fixture: the accepted M7 V1.1, Erratum 01, Erratum 02, Erratum 03 and Erratum 04 bytes as committed in the repository, and a helper
+// Test fixture: the accepted M7 V1.1, Erratum 01, Erratum 02, Erratum 03, Erratum 04 and Erratum 05 bytes as committed in the repository, and a helper
 // that applies line-level mutations to COPIES of them (negative controls never touch the files).
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -9,6 +9,7 @@ import {
   M7_V1_1_ERRATUM_02,
   M7_V1_1_ERRATUM_03,
   M7_V1_1_ERRATUM_04,
+  M7_V1_1_ERRATUM_05,
 } from '../source';
 
 export const REPO_ROOT = process.cwd();
@@ -18,11 +19,13 @@ export const e01Bytes: Uint8Array = readFileSync(join(REPO_ROOT, M7_V1_1_ERRATUM
 export const e02Bytes: Uint8Array = readFileSync(join(REPO_ROOT, M7_V1_1_ERRATUM_02.path));
 export const e03Bytes: Uint8Array = readFileSync(join(REPO_ROOT, M7_V1_1_ERRATUM_03.path));
 export const e04Bytes: Uint8Array = readFileSync(join(REPO_ROOT, M7_V1_1_ERRATUM_04.path));
+export const e05Bytes: Uint8Array = readFileSync(join(REPO_ROOT, M7_V1_1_ERRATUM_05.path));
 export const v11Text = new TextDecoder().decode(v11Bytes);
 export const e01Text = new TextDecoder().decode(e01Bytes);
 export const e02Text = new TextDecoder().decode(e02Bytes);
 export const e03Text = new TextDecoder().decode(e03Bytes);
 export const e04Text = new TextDecoder().decode(e04Bytes);
+export const e05Text = new TextDecoder().decode(e05Bytes);
 
 /**
  * Returns `text` with `edit` applied to its lines. `lines[i]` is source line `i + 1`; the edit may

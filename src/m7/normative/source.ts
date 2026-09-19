@@ -59,9 +59,18 @@ export const M7_V1_1_ERRATUM_04: BoundArtifact = {
   lines: 660,
 };
 
-/** The current M7 conformance target (Register §18.2 Layer A; Erratum 04 §4 item 9). */
+/** M7 V1.1 Erratum 05 — accepted and protected-integrated, occurrence-scoped (Register §19.1). */
+export const M7_V1_1_ERRATUM_05: BoundArtifact = {
+  path: 'PAGAMENOS_M7_OUTCOME_EVIDENCE_EFFECTIVE_SPEC_V1_1_ERRATUM_05.md',
+  gitBlob: '49651e77f24538f9122c9173f2d0201823d61366',
+  sha256: '7d0c0e639e9cda3010d2c2a67b18170accdf3ce18a2f465f98824ca4ac820e95',
+  bytes: 64_291,
+  lines: 627,
+};
+
+/** The current M7 conformance target (Register §19.2; Erratum 05 §3 item 9). */
 export const CONFORMANCE_TARGET =
-  'M7 V1.1 + accepted Erratum 01 + accepted Erratum 02 + accepted Erratum 03 + accepted Erratum 04';
+  'M7 V1.1 + accepted Erratum 01 + accepted Erratum 02 + accepted Erratum 03 + accepted Erratum 04 + accepted Erratum 05';
 
 export class SourceIdentityError extends Error {
   constructor(message: string) {
