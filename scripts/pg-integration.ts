@@ -136,10 +136,14 @@ async function main(): Promise<number> {
     runTool('npx prisma migrate deploy', { env: mainEnv, label: 'prisma migrate deploy (main)' });
     // Main phase runs BOTH the accepted M3.5A decision integration suite AND the M3.5B-A1 study
     // authority suite against the same clean database (the A1 migration composed over the M3.5A ones).
+    // CCA Amendment 01 §48: the CCA runtime-foundation adversarial suite runs in this same main
+    // phase (same clean database, same accepted A1/A2 services), so outer-transaction detection,
+    // the zero-in-flight commit gate and accepted-owner preservation are proven against real
+    // PostgreSQL rather than mocks.
     const main = runTool(
       'npx vitest run -c vitest.integration.config.ts ' +
         'src/db/decision-snapshot.integration.test.ts src/db/study-authority.integration.test.ts ' +
-        'src/db/purchase-intent.integration.test.ts',
+        'src/db/purchase-intent.integration.test.ts src/cca/cca-engine.integration.test.ts',
       { env: mainEnv, label: 'vitest integration (main)', allowFail: true },
     );
 

@@ -328,6 +328,26 @@ export default tseslint.config(
     },
   },
   {
+    // CCA Amendment 01 §25: `no-floating-promises` is REQUIRED as defense-in-depth over the CCA
+    // runtime surface (engine, foundation modules, leaves, executors, tracked adapters). It is
+    // supplementary only — the authoritative closure is the runtime zero-in-flight gate (§22–§24).
+    // Type-aware linting is enabled for exactly these files, so the rest of the lint run is unchanged.
+    files: [
+      'src/cca/**/*.ts',
+      'src/db/cca-engine.ts',
+      'src/**/*.cca-leaf.ts',
+      'src/**/*.cca-executor.ts',
+      'src/**/*.cca-adapter.ts',
+    ],
+    ignores: ['src/cca/**/*.test.ts'],
+    languageOptions: {
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+    },
+    rules: {
+      '@typescript-eslint/no-floating-promises': 'error',
+    },
+  },
+  {
     // CommonJS build/CI tooling scripts (e.g. the shared runtime-authority verifier consumed by the CI
     // authority-gate). Node CommonJS module scope: `require`, `module`, `process` are ambient globals.
     files: ['scripts/**/*.cjs'],

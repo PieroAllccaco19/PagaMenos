@@ -586,3 +586,258 @@ describe('M3.5B-A1 study capability ownership — arbitrary-module probes (§11/
     ).not.toEqual([]);
   });
 });
+
+// ===================================================================================================
+// CCA Amendment 01 §33–§39 / §42 — accepted transaction & assignment owner manifest.
+//
+// APPEND-ONLY: nothing above is modified, removed or relaxed. This section ADDS the CCA capability
+// manifest enforcement on top of the accepted A1/A2 boundaries: the exact §34 inventory of accepted
+// owners stays permitted (class A), the CCA engine + its registration point are the only additions
+// (class B), and any other module that opens a transaction, locks/writes `experiment_assignment`, or
+// reaches a raw SQL helper FAILS (class C). Counts are exact, so a NEW site inside an accepted owner
+// is caught as surely as a new owner file.
+// ===================================================================================================
+import {
+  analyzeAdapterClosure,
+  analyzeCcaTopology,
+  fsSourceProvider,
+  overlayProvider,
+  roleOf,
+} from '@/cca/capability-analysis';
+import {
+  ACCEPTED_ASSIGNMENT_ACCESS,
+  ACCEPTED_TRANSACTION_OWNERS,
+  assignmentAccessViolations,
+  countAssignmentAccess,
+  countTransactionSites,
+  rawSqlViolations,
+  transactionOwnerViolations,
+  type SourceFile,
+} from './cca-owner-manifest';
+
+/** Every production (non-test) source file of the real tree. */
+function productionSources(): SourceFile[] {
+  return walk(SRC)
+    .map((abs) => ({
+      rel: path.relative(SRC, abs).replace(/\\/g, '/'),
+      code: readFileSync(abs, 'utf8'),
+    }))
+    .filter(({ rel }) => !/\.test\.tsx?$/.test(rel));
+}
+
+describe('CCA §33–§36 — accepted transaction-owner allowlist (three classes)', () => {
+  it('the real tree matches the accepted-owner manifest EXACTLY', () => {
+    expect(transactionOwnerViolations(productionSources())).toEqual([]);
+  });
+
+  it('re-enumerates §34: 15 accepted interactive transaction sites across 8 accepted files', () => {
+    const accepted = Object.entries(ACCEPTED_TRANSACTION_OWNERS).filter(
+      ([, e]) => e.class !== 'CCA_GOVERNANCE_INFRA',
+    );
+    expect(accepted).toHaveLength(8);
+    expect(accepted.reduce((n, [, e]) => n + e.sites, 0)).toBe(15);
+    const sources = new Map(productionSources().map((f) => [f.rel, f.code]));
+    for (const [rel, entry] of accepted) {
+      expect(countTransactionSites(sources.get(rel)!), rel).toBe(entry.sites);
+    }
+  });
+
+  it('§48.3 — the accepted A1 and A2 transaction owners remain PERMITTED', () => {
+    const violations = transactionOwnerViolations(productionSources()).join();
+    for (const rel of [
+      'db/study-consent-repository.ts',
+      'db/purchase-intent-repository.ts',
+      'db/purchase-intent-decision-repository.ts',
+    ]) {
+      expect(ACCEPTED_TRANSACTION_OWNERS[rel]).toBeDefined();
+      expect(violations).not.toMatch(rel);
+    }
+  });
+
+  it('§36 — a NEW unauthorized module calling $transaction FAILS', () => {
+    for (const code of [
+      'export const go = async (p: any) => p.$transaction(async (tx: any) => tx);',
+      "export const go = async (p: any) => p['$transaction'](async (tx: any) => tx);",
+      'export const wrap = { $transaction: async (f: any) => f({}) };',
+    ]) {
+      expect(
+        transactionOwnerViolations([
+          ...productionSources(),
+          { rel: 'services/evil-service.ts', code },
+        ]),
+        code,
+      ).toContainEqual(
+        expect.stringContaining('UNAUTHORIZED_TRANSACTION_OWNER:services/evil-service.ts'),
+      );
+    }
+  });
+
+  it('a NEW site added inside an accepted owner FAILS (counts are exact)', () => {
+    const files = productionSources().map((f) =>
+      f.rel === 'db/study-consent-repository.ts'
+        ? {
+            ...f,
+            code: `${f.code}\nexport const extra = (p: any) => p.$transaction(async () => 1);`,
+          }
+        : f,
+    );
+    expect(transactionOwnerViolations(files)).toContainEqual(
+      expect.stringContaining('TRANSACTION_SITE_COUNT_CHANGED:db/study-consent-repository.ts'),
+    );
+  });
+
+  it('MUTATION CONTROL — removing an accepted-owner manifest entry makes the rule FAIL', () => {
+    const mutated = { ...ACCEPTED_TRANSACTION_OWNERS };
+    delete (mutated as Record<string, unknown>)['db/purchase-intent-repository.ts'];
+    expect(transactionOwnerViolations(productionSources(), mutated)).toContainEqual(
+      expect.stringContaining('UNAUTHORIZED_TRANSACTION_OWNER:db/purchase-intent-repository.ts'),
+    );
+  });
+
+  it('MUTATION CONTROL — an accepted owner that vanished from the tree FAILS', () => {
+    const files = productionSources().filter((f) => f.rel !== 'db/study-consent-repository.ts');
+    expect(transactionOwnerViolations(files)).toContainEqual(
+      expect.stringContaining('ACCEPTED_OWNER_MISSING:db/study-consent-repository.ts'),
+    );
+  });
+});
+
+describe('CCA §37–§39 — ExperimentAssignment access', () => {
+  it('the real tree matches the accepted assignment-access manifest EXACTLY', () => {
+    expect(assignmentAccessViolations(productionSources())).toEqual([]);
+  });
+
+  it('§48.3 — accepted A1/A2 assignment access is preserved and classified', () => {
+    for (const rel of [
+      'db/study-consent-repository.ts',
+      'db/purchase-intent-repository.ts',
+      'db/study-assignment-repository.ts',
+    ]) {
+      expect(ACCEPTED_ASSIGNMENT_ACCESS[rel]!.class).toBe('ACCEPTED_ASSIGNMENT_OWNER');
+    }
+    expect(ACCEPTED_ASSIGNMENT_ACCESS['db/cca-engine.ts']!.class).toBe('CCA_ENGINE');
+  });
+
+  it('§37/§48.3 — a new M7 leaf/executor touching experiment_assignment FAILS', () => {
+    const probes: Array<readonly [string, string]> = [
+      [
+        'cca/__probe__/x.cca-executor.ts',
+        'export const go = async (tx: any) => tx.$queryRawUnsafe(`SELECT 1 FROM "experiment_assignment"`);',
+      ],
+      [
+        'cca/__probe__/x.cca-leaf.ts',
+        'export const go = async (tx: any) => tx.experimentAssignment.findUnique({ where: { id: 1 } });',
+      ],
+      [
+        'services/evil-service.ts',
+        'export const go = async (tx: any) => tx.experimentAssignmentReceipt.create({ data: {} });',
+      ],
+    ];
+    for (const [rel, code] of probes) {
+      expect(
+        assignmentAccessViolations([...productionSources(), { rel, code }]),
+        rel,
+      ).toContainEqual(expect.stringContaining(`UNAUTHORIZED_ASSIGNMENT_ACCESS:${rel}`));
+    }
+  });
+
+  it('MUTATION CONTROL — removing an accepted assignment owner from the manifest FAILS', () => {
+    const mutated = { ...ACCEPTED_ASSIGNMENT_ACCESS };
+    delete (mutated as Record<string, unknown>)['db/study-consent-repository.ts'];
+    expect(assignmentAccessViolations(productionSources(), mutated)).toContainEqual(
+      expect.stringContaining('UNAUTHORIZED_ASSIGNMENT_ACCESS:db/study-consent-repository.ts'),
+    );
+  });
+
+  it('detects every access spelling (delegate, receipt delegate, raw SQL, tagged template)', () => {
+    expect(
+      countAssignmentAccess('const a = (tx: any) => tx.experimentAssignment.findMany();'),
+    ).toBe(1);
+    expect(
+      countAssignmentAccess('const a = (tx: any) => tx.experimentAssignmentReceipt.create({});'),
+    ).toBe(1);
+    expect(countAssignmentAccess('const a = `SELECT 1 FROM "experiment_assignment"`;')).toBe(1);
+    expect(
+      countAssignmentAccess(
+        'const a = (tx: any, id: string) => tx.$queryRaw`SELECT 1 FROM "experiment_assignment" WHERE id = ${id} FOR UPDATE`;',
+      ),
+    ).toBe(1);
+    expect(countAssignmentAccess('const a = 1;')).toBe(0);
+  });
+});
+
+describe('CCA §42 — raw SQL helpers stay inside the db layer and the private tracked adapters', () => {
+  it('the real tree has no raw SQL helper outside the accepted owners', () => {
+    expect(rawSqlViolations(productionSources())).toEqual([]);
+  });
+
+  it('a service, leaf or executor reaching a raw SQL helper FAILS', () => {
+    for (const rel of [
+      'services/evil-service.ts',
+      'cca/__probe__/x.cca-leaf.ts',
+      'cca/__probe__/x.cca-executor.ts',
+    ]) {
+      expect(
+        rawSqlViolations([
+          { rel, code: 'export const go = (tx: any) => tx.$executeRawUnsafe("SELECT 1");' },
+        ]),
+      ).toEqual([`RAW_SQL_OUTSIDE_ACCEPTED_OWNER:${rel}`]);
+    }
+    expect(
+      rawSqlViolations([
+        {
+          rel: 'services/evil-service.ts',
+          code: 'import { Prisma } from "@prisma/client";\nexport const q = Prisma.sql`SELECT 1`;',
+        },
+      ]),
+    ).toHaveLength(1);
+  });
+});
+
+// ===================================================================================================
+// AUD-CCA-FND-01 — the LEGACY raw-capability exemption must not cover CCA adapter implementations.
+//
+// `exemptFromRaw()` above deliberately exempts db/** and persistence/** (A1/A2 need raw capability
+// there, and that stays true). Independent audit showed that a CCA tracked-adapter implementation
+// PLACED INSIDE one of those directories therefore inherited the exemption and could construct its
+// own PrismaClient — a second DB capability the accepted architecture forbids. The CCA rule overlays
+// a STRICTER constraint on adapter implementations wherever they live, without touching the legacy
+// exemption that A1/A2 rely on.
+// ===================================================================================================
+describe('CCA §16/§17/§39 — the legacy db/** + persistence/** exemption does not cover CCA adapters', () => {
+  const tree = fsSourceProvider(SRC);
+
+  it('the legacy exemption itself is UNCHANGED (A1/A2 keep their raw capability)', () => {
+    expect(exemptFromRaw('db/study-consent-repository.ts')).toBe(true);
+    expect(exemptFromRaw('db/purchase-intent-repository.ts')).toBe(true);
+    expect(exemptFromRaw('persistence/snapshot.ts')).toBe(true);
+    expect(exemptFromRaw('services/evil-service.ts')).toBe(false);
+  });
+
+  it('a CCA adapter inside a legacy-exempt directory is STILL rejected for a separate DB capability', () => {
+    for (const rel of [
+      'persistence/evil.cca-adapter.ts',
+      'db/evil.cca-adapter.ts',
+      'cca/__probe__/evil.cca-adapter.ts',
+    ]) {
+      // Legacy view: db/ and persistence/ are exempt from the raw-capability check…
+      const legacyExempt = exemptFromRaw(rel);
+      expect(typeof legacyExempt).toBe('boolean');
+      // …but the CCA adapter closure rejects the escape regardless of location.
+      const provider = overlayProvider(tree, {
+        [rel]: `import { PrismaClient } from '@prisma/client';
+export const a = { async op() { return new PrismaClient(); } };`,
+      });
+      expect(analyzeAdapterClosure(rel, provider).violations.join('\n'), rel).toMatch(
+        /RUNTIME_PRISMA_CAPABILITY|ADAPTER_PRISMA_CLIENT_CONSTRUCTION/,
+      );
+    }
+  });
+
+  it('the accepted A1/A2 owners are NOT swept in by the CCA adapter rule', () => {
+    // The rule applies to ADAPTER_IMPL modules only; an accepted repository is not one.
+    expect(roleOf('db/study-consent-repository.ts')).toBe('OTHER');
+    expect(roleOf('db/purchase-intent-repository.ts')).toBe('OTHER');
+    expect(analyzeCcaTopology(tree, { includeFixtures: true })).toEqual([]);
+  });
+});
