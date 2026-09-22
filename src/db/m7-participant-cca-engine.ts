@@ -22,7 +22,10 @@
 //        * the short pre-CCA `m7.p_lookup_outcome_receipt_v1` replay lookup;
 //        * the authorized CCA transaction;
 //        * `m7.p_lock_and_prove_assignment_v1` inside it;
-//        * the tracked adapter's single `m7.p_record_outcome_assertion_v1` write.
+//        * the tracked adapter's single `m7.p_record_outcome_assertion_v1` write (SO-1), or the
+//          SO-2 tracked adapter's single `m7.p_begin_evidence_upload_v1` call. SO-2 has NO pre-CCA
+//          lookup at all (§9.5.2): its idempotency is UNIQUE(decisionBindingId, nonce) inside the
+//          function, so an exact SO-2 retry always re-enters CCA and re-evaluates current consent.
 //
 // WHY READING CONSENT ON THE OTHER CONNECTION IS STILL CORRECTLY SERIALIZED. The accepted foundation
 // reads consent inside the same transaction that holds the assignment lock. Here the lock is held by
@@ -43,9 +46,19 @@
 //
 // ─── CAPABILITY BOUNDARY (§18.3 CS-1, AUTH §10, §13, §20) ───────────────────────────────────────
 // The hidden participant client is constructed ONLY here and is NEVER exported. This module exports
-// exactly ONE value — `defineSealedOutcomeAssertionOperation` — and therefore exports no
-// `PrismaClient`, no `TransactionClient`, no `$queryRaw`/`$executeRaw`/`$transaction`, no raw SQL, no
-// repository, no generic query callback and no DB facade.
+// exactly TWO definition entry points — `defineSealedOutcomeAssertionOperation` (SO-1) and
+// `defineSealedEvidenceUploadOperation` (SO-2) — plus the name of its credential key, and therefore
+// exports no `PrismaClient`, no `TransactionClient`, no `$queryRaw`/`$executeRaw`/`$transaction`, no
+// raw SQL, no repository, no generic query callback and no DB facade.
+//
+// ─── TWO SEALED FAMILIES, NO GENERIC DISPATCH (SO-2 AUTH §9, §10) ───────────────────────────────
+// Each entry point is statically bound to ONE policy, ONE input type, ONE adapter context type and
+// ONE result type, and each seals its own implementation. There is no `defineM7Operation(policy,
+// ...)`, no operation enum, no registry and no purpose parameter: a caller of one family cannot
+// reach, select or switch into the other. The two implementations share only the module-private,
+// capability-free pieces both already needed (the entry-topology preflight, the hidden client
+// constructor, the assignment-reference read and the refusal mapping). The SO-1 implementation is
+// unchanged by the addition of SO-2.
 //
 // The pre-CCA replay of §9.5.2 is implemented HERE, by this engine, statically bound to the Outcome
 // receipt lookup. The leaf supplies NO replay function and receives no database capability, so
@@ -89,6 +102,11 @@ import type {
   M7OutcomeAssertionInput,
   M7OutcomeAssertionResult,
 } from '@/m7/so1/outcome-assertion-input';
+import type {
+  M7EvidenceUploadAuthorization,
+  M7EvidenceUploadInput,
+} from '@/m7/so2/evidence-upload-input';
+import type { M7EvidenceUploadOperationContext } from '@/m7/so2/m7-evidence-upload-operation-context';
 import { readM7ParticipantSessionSecret } from '@/services/m7-participant-session';
 import { isTrustedParticipantContext, type TrustedParticipantContext } from '@/study';
 
@@ -99,6 +117,13 @@ export const M7_PARTICIPANT_DATABASE_URL_ENV = 'M7_PARTICIPANT_DATABASE_URL';
 
 /** SO-1 is sealed to the Outcome-collection policy at composition time (V1.1 §9.2, CCA §7). */
 const SO1_POLICY: CollectionConsentPolicy = 'GENERAL_COLLECTION';
+
+/**
+ * SO-2 is sealed to the SavingEvidence upload policy at composition time (V1.1 §9.2 "A1 §8.8 +
+ * RT-17", AC-07, CCA §7): the general A1 predicate first, then AGR. Never GENERAL_COLLECTION, never
+ * caller-selectable.
+ */
+const SO2_POLICY: CollectionConsentPolicy = 'OPTIONAL_EVIDENCE';
 
 /** Private rollback signal for CCA §30 step M (never escapes this module). */
 class NotAuthorizedRollback extends Error {}
@@ -411,6 +436,168 @@ export function defineSealedOutcomeAssertionOperation<M>(
             expectedManifestSha256,
           });
           const handle = constructTrackedAdapter<M7ParticipantOperationContext, M>(
+            operationContext,
+            adapterSpec,
+            { scope, locks: createLockSequencer(lockOrder, frame.noteLockRank) },
+          );
+          try {
+            // O–R
+            return await executeUnderZeroInFlightGate(handle, () =>
+              executor(input, scope, handle.adapter as M),
+            );
+          } finally {
+            handle.gate.finalize();
+          }
+        },
+      );
+    } catch (e) {
+      if (e instanceof NotAuthorizedRollback) return NOT_AUTHORIZED as NotAuthorized;
+      return refuse(e);
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------------------------------
+// SO-2 — beginAuthorizedEvidenceUpload (V1.1 §9.2, §9.4, §9.5.2, §10, §19.11.4)
+// ---------------------------------------------------------------------------------------------------
+
+export interface SealedEvidenceUploadDefinition<M> {
+  readonly operationId: string;
+  /** Declared at composition time and REQUIRED to be the sealed SO-2 policy. Never a parameter. */
+  readonly policy: CollectionConsentPolicy;
+  /** CCA §9.1 operation grammar; throws on malformed material → CCA never runs. */
+  readonly parseInput: (snapshot: unknown) => M7EvidenceUploadInput;
+  readonly lockOrder: LockOrderPlan;
+  readonly adapter: AdapterImplementation<M7EvidenceUploadOperationContext, M>;
+  readonly executor: (
+    input: Readonly<M7EvidenceUploadInput>,
+    scope: LockedCollectionScope,
+    adapter: M,
+  ) => Promise<M7EvidenceUploadAuthorization>;
+}
+
+/**
+ * Composition-time definition of the ONE sealed M7 evidence-upload authorization operation (SO-2).
+ *
+ * Not in the definition, by design: no replay function and no receipt lookup (SO-2 has none —
+ * §9.5.2), no assignment reference function (derived from the A2 chain inside CCA), no connection, no
+ * client, no storage profile, no policy choice at call time, and no callback.
+ *
+ * The procedure, in the only order it can run:
+ *   A    trusted context + exact immutable input (before any database access)
+ *   B–C  the SAME private entry-topology preflight as SO-1 (AUD-M7-SO1-01): re-entry, then an
+ *        outer application transaction — before the digest, the secret, the client, the assignment
+ *        and consent
+ *   E    runCcaTransaction on the hidden participant client (its own B–C check is the second check)
+ *   F–H  assignment derived from purchaseIntentId, then `m7.p_lock_and_prove_assignment_v1`
+ *   I    the trusted service clock, sampled ONCE, after the proof → LockedCollectionScope.collectionAt
+ *   J–M  the accepted A1 reader, then the UNCHANGED `evaluateCollectionConsent(OPTIONAL_EVIDENCE, …)`
+ *        — general A1 §8.8 first, AGR second; refusal → rollback → generic NOT_AUTHORIZED
+ *   N–S  fixed executor → SO-2 tracked adapter → ONE `m7.p_begin_evidence_upload_v1` call → commit
+ */
+export function defineSealedEvidenceUploadOperation<M>(
+  definition: SealedEvidenceUploadDefinition<M>,
+): SealedOperation<
+  M7EvidenceUploadInput,
+  M7EvidenceUploadAuthorization,
+  TrustedParticipantContext
+> {
+  for (const key of Object.keys(definition)) {
+    if (!DEFINITION_KEYS.has(key)) throw invalidDefinition(`unknown definition key ${key}`);
+  }
+  const { operationId, policy, parseInput, lockOrder, executor } = definition;
+  if (typeof operationId !== 'string' || operationId.length === 0) {
+    throw invalidDefinition('operationId');
+  }
+  if (policy !== SO2_POLICY) throw invalidDefinition(`SO-2 policy must be ${SO2_POLICY}`);
+  if (typeof parseInput !== 'function') throw invalidDefinition('parseInput');
+  if (typeof executor !== 'function') throw invalidDefinition('executor');
+  if (!Object.isFrozen(lockOrder) || !Array.isArray(lockOrder.ranks)) {
+    throw invalidDefinition('lockOrder');
+  }
+  const adapterSpec = freezeAdapterSpec<M7EvidenceUploadOperationContext, M>(definition.adapter);
+
+  return sealOperation<
+    M7EvidenceUploadInput,
+    M7EvidenceUploadAuthorization,
+    TrustedParticipantContext
+  >(async (context, rawInput) => {
+    // ── A — trusted context, immutable input, exact grammar; all BEFORE any database access ────
+    if (!isTrustedParticipantContext(context)) {
+      throw new CcaError(
+        'CCA_UNTRUSTED_PARTICIPANT_CONTEXT',
+        'trusted participant context required',
+      );
+    }
+    const snapshot = snapshotOperationInput(rawInput);
+    let input: Readonly<M7EvidenceUploadInput>;
+    try {
+      input = deepFreeze(parseInput(snapshot));
+    } catch (cause) {
+      throw new CcaError('CCA_INVALID_OPERATION_INPUT', 'operation input rejected', { cause });
+    }
+    if (typeof input !== 'object' || input === null) {
+      throw new CcaError('CCA_INVALID_OPERATION_INPUT', 'operation grammar produced no material');
+    }
+
+    // ── B–C — CCA ENTRY TOPOLOGY, IMMEDIATELY AFTER A AND BEFORE ANY DATABASE ACCESS ────────────
+    // The accepted AUD-M7-SO1-01 order, inherited unchanged: nothing below — not the digest, not
+    // the session capability, not the participant client, not assignment resolution, not consent —
+    // can run under a forbidden topology. runCcaTransaction re-checks at transaction entry.
+    assertCcaEntryTopology();
+
+    // §23.6: never caller input, fail closed, one controlled reader.
+    const expectedManifestSha256 = expectedControlPlaneManifestDigest();
+    // §8.2: the raw secret, from the M7 session module's registry, against the GENUINE context.
+    const sessionSecret = readM7ParticipantSessionSecret(context);
+
+    // §9.5.2: SO-2 has NO pre-CCA replay. Every call — first attempt and exact retry alike — goes
+    // straight into the CCA transaction and is evaluated against CURRENT consent.
+    try {
+      return await runCcaTransaction(
+        participant(),
+        { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+        async (rawTx, frame): Promise<M7EvidenceUploadAuthorization> => {
+          const tx = rawTx as Prisma.TransactionClient;
+          // F–H — the target assignment reference, derived read-only from the accepted A2 chain,
+          // only now, inside the authorized phase. Absent → roll back → generic refusal.
+          const derivedAssignmentId = await resolveAssignmentReference(input.purchaseIntentId);
+          if (derivedAssignmentId === null) throw new NotAuthorizedRollback();
+          // F–G — the M7 participant-role lock and ownership/session proof, as ONE accepted
+          // function (void → `$executeRaw`). Raises 28000 / 55000 on failure.
+          await tx.$executeRaw`
+              SELECT m7.p_lock_and_prove_assignment_v1(
+                ${expectedManifestSha256}::text,
+                ${sessionSecret}::bytea,
+                ${context.participantId}::uuid,
+                ${derivedAssignmentId}::uuid)`;
+          frame.noteLockRank(0);
+          // I — the accepted trusted service clock, sampled ONCE, after the lock/proof. It is the
+          // consent-evaluation instant AND the adapter's `p_captured_at`.
+          const evidenceCollectionAt = new Date();
+          // H — only the PROVED assignment becomes the LockedCollectionScope assignment.
+          const scope = mintLockedCollectionScope({
+            assignmentId: derivedAssignmentId,
+            participantId: context.participantId,
+            operationId,
+            policy,
+            collectionAt: evidenceCollectionAt.toISOString(),
+          });
+          // J — the ACCEPTED A1 reader, on the ACCEPTED application connection (§12, §18.3.1).
+          const facts = await readConsentAuthorizationFacts(prisma, derivedAssignmentId);
+          // K–L — the UNCHANGED accepted evaluation for the sealed OPTIONAL_EVIDENCE policy: the
+          // A1 §8.8 general predicate FIRST, then AGR (RT-17). This engine never reads
+          // optional-evidence consent itself and has no second AGR. M — refusal rolls back.
+          if (!evaluateCollectionConsent(policy, facts, evidenceCollectionAt)) {
+            throw new NotAuthorizedRollback();
+          }
+          // N — the hidden SO-2 tracked adapter, constructed here and nowhere else.
+          const operationContext: M7EvidenceUploadOperationContext = Object.freeze({
+            tx,
+            sessionSecret,
+            expectedManifestSha256,
+          });
+          const handle = constructTrackedAdapter<M7EvidenceUploadOperationContext, M>(
             operationContext,
             adapterSpec,
             { scope, locks: createLockSequencer(lockOrder, frame.noteLockRank) },

@@ -21,6 +21,8 @@ export default defineConfig({
       // installed M7 control plane and the two M7 role credentials; it is driven by its own
       // orchestrator, exactly like the two suites above, so this suite stays fully offline.
       '**/*.m7-so1.test.ts',
+      // The M7 SO-2 real-PostgreSQL suite (vitest.m7-so2.config.ts, `pnpm m7:so2`), likewise.
+      '**/*.m7-so2.test.ts',
     ],
     // The boundary self-test spins up ESLint programmatically; give it room.
     testTimeout: 30_000,

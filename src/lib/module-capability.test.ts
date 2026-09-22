@@ -158,6 +158,9 @@ const exemptFromRaw = (rel: string): boolean =>
   // property is PROVED, not asserted: `analyzeM7So1Topology` rule M7 fails if this file contains
   // any runtime statement or exports any value.
   rel === 'm7/so1/m7-participant-operation-context.ts' ||
+  // The SO-2-LOCAL types-only context (M7 SO-2 AUTH §23): same exact-path treatment, same proof —
+  // `analyzeM7So1Topology` rule M7 fails if it contains any runtime statement or exports any value.
+  rel === 'm7/so2/m7-evidence-upload-operation-context.ts' ||
   isTestOrFixture(rel);
 // The deep DI module may be imported only by the barrel, the module itself, and — for the INTERNAL
 // §18 finder capability (Sol Closure 3) — the sanctioned A2 decision/repair saga, which is the sole

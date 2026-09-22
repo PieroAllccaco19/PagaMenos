@@ -215,6 +215,9 @@ export const CCA_ENGINE_MODULES: ReadonlySet<string> = new Set([
 export const SEALED_DEFINITION_FUNCTIONS: readonly string[] = [
   'defineSealedOperation',
   'defineSealedOutcomeAssertionOperation',
+  // M7 SO-2 (V1.1 §9.2): the second, separately sealed M7 family. A DISTINCT entry point, never a
+  // generic one — the leaf still calls exactly one definition function, exactly once.
+  'defineSealedEvidenceUploadOperation',
 ];
 
 export function roleOf(rel: string): ModuleRole {
@@ -309,6 +312,9 @@ export const EXECUTOR_TYPE_ONLY_MODULES: ReadonlySet<string> = new Set([
   // no repository, no query, no environment read and no clock — so a TYPE-ONLY edge to it carries
   // none either. A value edge is still rejected, exactly as for the CCA contracts above.
   'm7/so1/outcome-assertion-input.ts',
+  // M7 V1.1 §9.3 SO-2: the pure SO-2 input/result contract. Same status as the SO-1 contract above:
+  // no client, no repository, no query, no environment, no clock — a type-only edge carries nothing.
+  'm7/so2/evidence-upload-input.ts',
 ]);
 
 /** Explicitly allowlisted pure, DB-free utilities an executor may import by value (§15 item 4). */
@@ -373,6 +379,9 @@ export const ADAPTER_VALUE_MODULES: ReadonlySet<string> = new Set([
  */
 export const ADAPTER_M7_TYPES_ONLY_MODULES: ReadonlySet<string> = new Set([
   'm7/so1/m7-participant-operation-context.ts',
+  // The SO-2-LOCAL context declaration (SO-2 AUTH §23): SO-2 names its own shape rather than taking a
+  // productive SO-2 -> SO-1 edge. Proved types-only by the same rule M7.
+  'm7/so2/m7-evidence-upload-operation-context.ts',
 ]);
 
 const PRISMA_PACKAGE = /^(@prisma\/|\.prisma|prisma$)/;
@@ -979,6 +988,38 @@ export const M7_SO1_MODULES = Object.freeze({
   controlPlaneDigest: 'm7/runtime/control-plane-digest.ts',
 });
 
+/**
+ * The SO-2 modules, by path (SO-2 AUTH §22). SO-2 is the SECOND and last sealed M7 family this
+ * analyzer admits: SO-3, the storage worker and the capability signer remain forbidden (rule M4).
+ */
+export const M7_SO2_MODULES = Object.freeze({
+  leaf: 'm7/so2/m7-evidence-upload.cca-leaf.ts',
+  executor: 'm7/so2/m7-evidence-upload.cca-executor.ts',
+  adapterInterface: 'm7/so2/m7-evidence-upload.cca-adapter-interface.ts',
+  adapter: 'm7/so2/m7-evidence-upload.cca-adapter.ts',
+  inputGrammar: 'm7/so2/evidence-upload-input.ts',
+  operationContext: 'm7/so2/m7-evidence-upload-operation-context.ts',
+});
+
+/**
+ * Every productive CCA role module that may exist, per role, at its exact path. The accepted SO-1
+ * rule was "exactly one of each role"; with SO-2 it becomes "exactly THESE, one per sealed family" —
+ * a closed path set, which is strictly stronger than a count.
+ */
+export const M7_PRODUCTIVE_ROLE_MODULES: Readonly<Record<string, readonly string[]>> = {
+  LEAF: [M7_SO1_MODULES.leaf, M7_SO2_MODULES.leaf],
+  EXECUTOR: [M7_SO1_MODULES.executor, M7_SO2_MODULES.executor],
+  ADAPTER_INTERFACE: [M7_SO1_MODULES.adapterInterface, M7_SO2_MODULES.adapterInterface],
+  ADAPTER_IMPL: [M7_SO1_MODULES.adapter, M7_SO2_MODULES.adapter],
+};
+
+/** The EXACT value exports of the private M7 engine: two sealed entry points + its credential key. */
+export const M7_ENGINE_EXPORTED_VALUES: readonly string[] = [
+  'M7_PARTICIPANT_DATABASE_URL_ENV',
+  'defineSealedEvidenceUploadOperation',
+  'defineSealedOutcomeAssertionOperation',
+];
+
 /** V1.1 §9.3 SO-1: the EXACT closed caller key set. Any drift here is a specification change. */
 export const M7_SO1_EXPECTED_INPUT_KEYS: readonly string[] = [
   'purchaseIntentId',
@@ -1137,6 +1178,31 @@ function exportsBindingNamed(code: string, name: string): boolean {
   return false;
 }
 
+/** Every exported VALUE binding name of `code`, sorted (types and type-only exports excluded). */
+function exportedValueNames(code: string): string[] {
+  const out = new Set<string>();
+  for (const st of parse(code).statements) {
+    const mods = ts.canHaveModifiers(st) ? ts.getModifiers(st) : undefined;
+    const exported = mods?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) === true;
+    if (ts.isVariableStatement(st) && exported) {
+      for (const d of st.declarationList.declarations) {
+        out.add(ts.isIdentifier(d.name) ? d.name.text : '<pattern>');
+      }
+    }
+    if ((ts.isFunctionDeclaration(st) || ts.isClassDeclaration(st)) && exported) {
+      out.add(st.name?.text ?? '<default>');
+    }
+    if (ts.isExportAssignment(st)) out.add('<default>');
+    if (ts.isExportDeclaration(st) && !st.isTypeOnly) {
+      if (st.exportClause === undefined) out.add('<star>');
+      else if (ts.isNamedExports(st.exportClause)) {
+        for (const el of st.exportClause.elements) if (!el.isTypeOnly) out.add(el.name.text);
+      } else out.add('<namespace>');
+    }
+  }
+  return [...out].sort();
+}
+
 export interface M7So1TopologyReport {
   readonly violations: readonly string[];
   readonly credentialReaders: Readonly<Record<string, readonly string[]>>;
@@ -1185,7 +1251,7 @@ export function analyzeM7So1Topology(provider: SourceProvider): M7So1TopologyRep
   const importersOf = (rel: string, files: readonly string[]): string[] =>
     files.filter((f) => localTargetsOf(f).includes(rel));
 
-  // ── M1 / M2 — exactly one of each SO-1 role, at the expected path ─────────────────────────────
+  // ── M1 / M2 — exactly the SO-1 and SO-2 role modules, one per family, at the expected paths ───
   const roleCounts: Record<string, number> = {
     LEAF: 0,
     EXECUTOR: 0,
@@ -1204,7 +1270,14 @@ export function analyzeM7So1Topology(provider: SourceProvider): M7So1TopologyRep
     ['ADAPTER_IMPL', M7_SO1_MODULES.adapter],
   ] as const) {
     if (provider.read(rel) === null) v.push(`M7_SO1_MISSING_${label}:${rel}`);
-    if (roleCounts[label] !== 1) v.push(`M7_SO1_${label}_COUNT:${roleCounts[label] ?? 0}`);
+    const expected = M7_PRODUCTIVE_ROLE_MODULES[label]!;
+    if (roleCounts[label] !== expected.length) {
+      v.push(`M7_SO1_${label}_COUNT:${roleCounts[label] ?? 0}`);
+    }
+    // Closed path set: a role module anywhere else is a violation, whatever the count says.
+    for (const f of productive) {
+      if (roleOf(f) === label && !expected.includes(f)) v.push(`M7_UNEXPECTED_${label}:${f}`);
+    }
   }
 
   // ── M3 — the leaf binds to the M7 engine, its fixed executor and its own adapter ──────────────
@@ -1216,10 +1289,20 @@ export function analyzeM7So1Topology(provider: SourceProvider): M7So1TopologyRep
   if (!leafTargets.includes(M7_SO1_MODULES.adapter)) v.push('M7_SO1_LEAF_NOT_BOUND_TO_ADAPTER');
   if (leafTargets.includes(CCA_ENGINE_MODULE)) v.push('M7_SO1_LEAF_BOUND_TO_FOUNDATION_ENGINE');
 
-  // ── M4 — SO-2 / SO-3 / Evidence are NOT implemented in this slice (AUTH §29) ──────────────────
+  // ── M4 — SO-3 / storage worker / signer are NOT implemented (AUTH §29; SO-2 AUTH §32) ──────────
+  // The ONLY evidence-family role modules admitted are the exact SO-2 family paths. Any other
+  // evidence / upload-intent / submission / worker / signer role module is still a violation.
   const EVIDENCE = /(evidence|upload-intent|saving-evidence|storage-worker|capability-signer)/i;
+  const SO2_FAMILY: readonly string[] = [
+    M7_SO2_MODULES.leaf,
+    M7_SO2_MODULES.executor,
+    M7_SO2_MODULES.adapterInterface,
+    M7_SO2_MODULES.adapter,
+  ];
   for (const f of productive) {
-    if (roleOf(f) !== 'OTHER' && EVIDENCE.test(f)) v.push(`M7_SO2_SO3_MODULE_PRESENT:${f}`);
+    if (roleOf(f) !== 'OTHER' && EVIDENCE.test(f) && !SO2_FAMILY.includes(f)) {
+      v.push(`M7_SO2_SO3_MODULE_PRESENT:${f}`);
+    }
   }
   for (const f of [M7_SO1_MODULES.leaf, M7_SO1_MODULES.executor, M7_SO1_MODULES.adapter]) {
     for (const t of localTargetsOf(f)) {
@@ -1269,16 +1352,28 @@ export function analyzeM7So1Topology(provider: SourceProvider): M7So1TopologyRep
     if (exportedValueCount(code) !== 0) v.push(`M7_TYPES_ONLY_MODULE_EXPORTS_VALUE:${rel}`);
   }
 
-  // ── M8 — the private M7 engine exposes ONE definition entry point and no DB capability ────────
+  // ── M8 — the private M7 engine exposes EXACTLY its two definition entry points, no DB capability
   const engineCode = provider.read(M7_PARTICIPANT_CCA_ENGINE_MODULE);
   if (engineCode === null) {
     v.push(`M7_ENGINE_MISSING:${M7_PARTICIPANT_CCA_ENGINE_MODULE}`);
   } else {
     const exported = exportedValueCount(engineCode);
-    // One definition entry point, plus the named environment-key constant the census reads.
-    if (exported > 2) v.push(`M7_ENGINE_EXPORTS_MORE_THAN_DEFINITION:${exported}`);
-    if (!exportsBindingNamed(engineCode, 'defineSealedOutcomeAssertionOperation')) {
-      v.push('M7_ENGINE_MISSING_DEFINITION_ENTRY_POINT');
+    // Two sealed definition entry points (SO-1, SO-2), plus the named environment-key constant the
+    // census reads — and the exported NAME set must be exactly that, not merely no larger.
+    if (exported > M7_ENGINE_EXPORTED_VALUES.length) {
+      v.push(`M7_ENGINE_EXPORTS_MORE_THAN_DEFINITION:${exported}`);
+    }
+    for (const entry of [
+      'defineSealedOutcomeAssertionOperation',
+      'defineSealedEvidenceUploadOperation',
+    ]) {
+      if (!exportsBindingNamed(engineCode, entry)) {
+        v.push(`M7_ENGINE_MISSING_DEFINITION_ENTRY_POINT:${entry}`);
+      }
+    }
+    const names = exportedValueNames(engineCode);
+    if (JSON.stringify(names) !== JSON.stringify([...M7_ENGINE_EXPORTED_VALUES].sort())) {
+      v.push(`M7_ENGINE_EXPORT_SET:[${names.join(',')}]`);
     }
     for (const forbidden of [
       'PrismaClient',
@@ -1313,6 +1408,10 @@ export function analyzeM7So1Topology(provider: SourceProvider): M7So1TopologyRep
     M7_SO1_MODULES.leaf,
     M7_SO1_MODULES.executor,
     M7_SO1_MODULES.adapter,
+    M7_SO2_MODULES.leaf,
+    M7_SO2_MODULES.executor,
+    M7_SO2_MODULES.adapter,
+    M7_SO2_MODULES.inputGrammar,
     M7_PARTICIPANT_CCA_ENGINE_MODULE,
     M7_SESSION_MODULE,
   ];
@@ -1424,15 +1523,16 @@ function calleeName(expr: ts.Expression): string {
   return '?';
 }
 
-/** Every entry-guard ORDER violation in the M7 engine source. Empty ⇒ compliant. */
-export function analyzeM7EntryGuardOrder(code: string): string[] {
-  const v: string[] = [];
-  const sf = parse(code);
-
+/** The `sealOperation(<impl>)` implementation lexically inside the named definition function. */
+function sealedImplementationIn(
+  sf: ts.SourceFile,
+  definitionFunction: string,
+): ts.FunctionLikeDeclaration | undefined {
   let impl: ts.FunctionLikeDeclaration | undefined;
-  let guardDecl: ts.FunctionDeclaration | undefined;
-  const find = (n: ts.Node): void => {
+  const find = (n: ts.Node, inside: boolean): void => {
+    const here = inside || (ts.isFunctionDeclaration(n) && n.name?.text === definitionFunction);
     if (
+      here &&
       ts.isCallExpression(n) &&
       ts.isIdentifier(n.expression) &&
       n.expression.text === 'sealOperation' &&
@@ -1441,10 +1541,33 @@ export function analyzeM7EntryGuardOrder(code: string): string[] {
       const a = n.arguments[0]!;
       if (ts.isArrowFunction(a) || ts.isFunctionExpression(a)) impl = a;
     }
-    if (ts.isFunctionDeclaration(n) && n.name?.text === M7_ENTRY_GUARD) guardDecl = n;
+    ts.forEachChild(n, (c) => find(c, here));
+  };
+  find(sf, false);
+  return impl;
+}
+
+/** The module-private entry-topology preflight declaration. */
+function entryGuardDeclaration(sf: ts.SourceFile): ts.FunctionDeclaration | undefined {
+  let decl: ts.FunctionDeclaration | undefined;
+  const find = (n: ts.Node): void => {
+    if (ts.isFunctionDeclaration(n) && n.name?.text === M7_ENTRY_GUARD) decl = n;
     ts.forEachChild(n, find);
   };
   find(sf);
+  return decl;
+}
+
+/** Every entry-guard ORDER violation in the M7 engine source. Empty ⇒ compliant. */
+export function analyzeM7EntryGuardOrder(code: string): string[] {
+  const v: string[] = [];
+  const sf = parse(code);
+
+  // With SO-2 present the engine seals TWO implementations; this rule judges the SO-1 one — the
+  // `sealOperation` implementation inside `defineSealedOutcomeAssertionOperation`. The SO-2
+  // implementation is judged by `analyzeM7So2EntryGuardOrder`, under its own, stricter rules.
+  const impl = sealedImplementationIn(sf, 'defineSealedOutcomeAssertionOperation');
+  const guardDecl = entryGuardDeclaration(sf);
   if (impl === undefined || impl.body === undefined || !ts.isBlock(impl.body)) {
     return ['M7_ENTRY_GUARD_IMPL_NOT_FOUND'];
   }
@@ -1548,5 +1671,674 @@ export function analyzeM7EntryGuardOrder(code: string): string[] {
   const iRe = gtext.indexOf('CCA_REENTRY_FORBIDDEN');
   const iTop = gtext.indexOf('CCA_TOP_LEVEL_TRANSACTION_REQUIRED');
   if (iRe < 0 || iTop < 0 || iRe > iTop) v.push('M7_ENTRY_GUARD_ERROR_CODES');
+  return v;
+}
+
+// ---------------------------------------------------------------------------------------------------
+// M7 SO-2 productive topology (M7 V1.1 §9.2, §9.3, §9.4, §9.5.2, §10, §19.11.4; SO-2 AUTH §9–§32)
+//
+// ADDITIVE, exactly like the SO-1 block above: every SO-1 rule and every accepted CCA rule still runs
+// over the same tree. These rules pin the SECOND sealed family and prove the two families cannot
+// reach, select or switch into each other, and that nothing of SO-3 / the storage worker / the
+// capability signer / a provider SDK has appeared.
+// ---------------------------------------------------------------------------------------------------
+
+/** V1.1 §9.3 SO-2: the EXACT closed caller key set. */
+export const M7_SO2_EXPECTED_INPUT_KEYS: readonly string[] = [
+  'purchaseIntentId',
+  'clientCorrelationNonce',
+];
+
+/** SO-2 AUTH §6: forbidden caller inputs (the closed key set already excludes them structurally). */
+export const M7_SO2_FORBIDDEN_INPUT_KEYS: readonly string[] = [
+  'participantId',
+  'assignmentId',
+  'sessionSecret',
+  'capturedAt',
+  'manifestSha256',
+  'manifestVersion',
+  'storageProfileId',
+  'credentialProfileId',
+  'backendSha256',
+  'stagingObjectKey',
+  'uploadTransport',
+  'uploadExpiresAt',
+  'maxBytes',
+  'mediaPolicyVersion',
+  'retentionPolicyVersion',
+  'installationId',
+  'policy',
+  'operationId',
+  'executor',
+  'callback',
+  'transaction',
+  'objectKey',
+  'providerCredential',
+  'signedUrl',
+];
+
+/** The only `m7.*` database functions productive M7 runtime code may name, and who may name each. */
+export const M7_DB_FUNCTION_OWNERS: Readonly<Record<string, readonly string[]>> = {
+  p_lock_and_prove_assignment_v1: [M7_PARTICIPANT_CCA_ENGINE_MODULE],
+  p_lookup_outcome_receipt_v1: [M7_PARTICIPANT_CCA_ENGINE_MODULE],
+  p_record_outcome_assertion_v1: [M7_SO1_MODULES.adapter],
+  p_begin_evidence_upload_v1: [M7_SO2_MODULES.adapter],
+  s_issue_participant_session_v1: [M7_SESSION_MODULE],
+  s_revoke_participant_session_v1: [M7_SESSION_MODULE],
+};
+
+/** Later-slice database functions that no productive runtime code may name (SO-2 AUTH §4, §32). */
+export const M7_LATER_SLICE_DB_FUNCTIONS: readonly RegExp[] = [
+  /\bp_finalize_evidence_submission_v1\b/,
+  /\bp_lookup_evidence_receipt_v1\b/,
+  /\bx_mint_generation_capability_v1\b/,
+  /\bw_[a-z0-9_]+_v1\b/,
+];
+
+/**
+ * Verification tooling (the accepted S03 catalog verifier, the normative-DDL generator and the S02
+ * testkit). They legitimately NAME every §19 function in order to verify the installed catalog; they
+ * are never imported by the M7 runtime (rule S8 proves it), so they are outside the runtime census.
+ */
+export const M7_VERIFICATION_TOOLING_PREFIXES: readonly string[] = [
+  'm7/s03/',
+  'm7/normative/',
+  'm7/testkit/',
+];
+
+/** Object-store provider SDKs. None is authorized in this slice (SO-2 AUTH §17, §32). */
+export const PROVIDER_SDK_PACKAGE =
+  /^(@aws-sdk\/|aws-sdk$|@vercel\/blob|@google-cloud\/storage|@azure\/storage|@smithy\/|minio$|s3-)/;
+
+/** The M7 runtime files: the engine, the session module, and every productive so1/so2/runtime file. */
+function m7RuntimeFiles(productive: readonly string[]): string[] {
+  return productive.filter(
+    (f) =>
+      f === M7_PARTICIPANT_CCA_ENGINE_MODULE ||
+      f === M7_SESSION_MODULE ||
+      f.startsWith('m7/so1/') ||
+      f.startsWith('m7/so2/') ||
+      f.startsWith('m7/runtime/'),
+  );
+}
+
+/** Text of every string / template literal part in `code` (comments are never seen). */
+function literalTexts(code: string): string[] {
+  const out: string[] = [];
+  const visit = (n: ts.Node): void => {
+    if (
+      ts.isStringLiteral(n) ||
+      ts.isNoSubstitutionTemplateLiteral(n) ||
+      ts.isTemplateHead(n) ||
+      ts.isTemplateMiddle(n) ||
+      ts.isTemplateTail(n)
+    ) {
+      out.push(n.text);
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(parse(code));
+  return out;
+}
+
+/** `m7.<x>_<name>` database-function names named in string/template literal text. */
+function m7FunctionMentions(code: string): string[] {
+  const out = new Set<string>();
+  for (const text of literalTexts(code)) {
+    for (const m of text.matchAll(/\bm7\.([a-z]_[a-z0-9_]+)/g)) out.add(m[1]!);
+  }
+  return [...out].sort();
+}
+
+/** Every identifier in `code` (comments never seen). */
+function identifiersIn(code: string): Set<string> {
+  const out = new Set<string>();
+  const visit = (n: ts.Node): void => {
+    if (ts.isIdentifier(n)) out.add(n.text);
+    ts.forEachChild(n, visit);
+  };
+  visit(parse(code));
+  return out;
+}
+
+interface DefinitionCallFacts {
+  readonly callee: string;
+  readonly policy: string | null;
+  readonly keys: readonly string[];
+}
+
+/** Every call of a sealed definition function in `code`, with its literal `policy` (if any). */
+function definitionCallFacts(code: string): DefinitionCallFacts[] {
+  const out: DefinitionCallFacts[] = [];
+  const visit = (n: ts.Node): void => {
+    if (
+      ts.isCallExpression(n) &&
+      ts.isIdentifier(n.expression) &&
+      SEALED_DEFINITION_FUNCTIONS.includes(n.expression.text)
+    ) {
+      const arg = n.arguments[0];
+      let policy: string | null = null;
+      const keys: string[] = [];
+      if (arg !== undefined && ts.isObjectLiteralExpression(arg)) {
+        for (const p of arg.properties) {
+          const name = p.name !== undefined && ts.isIdentifier(p.name) ? p.name.text : '<computed>';
+          keys.push(ts.isSpreadAssignment(p) ? '<spread>' : name);
+          if (
+            ts.isPropertyAssignment(p) &&
+            name === 'policy' &&
+            ts.isStringLiteral(p.initializer)
+          ) {
+            policy = p.initializer.text;
+          }
+        }
+      }
+      out.push({ callee: n.expression.text, policy, keys });
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(parse(code));
+  return out;
+}
+
+/** The string literal a module-scope `const <name> ... = '<literal>'` is initialized with. */
+function constStringInitializer(code: string, name: string): string | null {
+  for (const st of parse(code).statements) {
+    if (!ts.isVariableStatement(st)) continue;
+    for (const d of st.declarationList.declarations) {
+      if (!ts.isIdentifier(d.name) || d.name.text !== name || d.initializer === undefined) continue;
+      let e: ts.Expression = d.initializer;
+      while (ts.isAsExpression(e) || ts.isParenthesizedExpression(e)) e = e.expression;
+      return ts.isStringLiteral(e) ? e.text : null;
+    }
+  }
+  return null;
+}
+
+export interface M7So2TopologyReport {
+  readonly violations: readonly string[];
+  readonly so2InputKeys: readonly string[] | null;
+  readonly dbFunctionMentions: Readonly<Record<string, readonly string[]>>;
+  readonly leafPolicies: Readonly<Record<string, string | null>>;
+}
+
+/**
+ * Every M7 SO-2 productive-topology rule (S1–S13). `violations` is empty when the tree is
+ * compliant; the other fields are the observed censuses, recorded as audit evidence.
+ */
+export function analyzeM7So2Topology(provider: SourceProvider): M7So2TopologyReport {
+  const all = provider.list();
+  const productive = all.filter(isProductive);
+  const v: string[] = [];
+  const read = (rel: string): string => provider.read(rel) ?? '';
+  const edgesOf = (rel: string): { edge: ImportEdge; target: Resolved }[] =>
+    memoEdges(read(rel)).map((edge) => ({
+      edge,
+      target: resolveSpecifier(edge.specifier, rel, provider),
+    }));
+  const localTargetsOf = (rel: string): string[] =>
+    edgesOf(rel).flatMap((e) => (e.target.type === 'local' ? [e.target.rel] : []));
+
+  const SO1_FAMILY = [
+    M7_SO1_MODULES.leaf,
+    M7_SO1_MODULES.executor,
+    M7_SO1_MODULES.adapterInterface,
+    M7_SO1_MODULES.adapter,
+    M7_SO1_MODULES.inputGrammar,
+    'm7/so1/m7-participant-operation-context.ts',
+  ];
+  const SO2_FAMILY = [
+    M7_SO2_MODULES.leaf,
+    M7_SO2_MODULES.executor,
+    M7_SO2_MODULES.adapterInterface,
+    M7_SO2_MODULES.adapter,
+    M7_SO2_MODULES.inputGrammar,
+    M7_SO2_MODULES.operationContext,
+  ];
+
+  // ── S1 — the SO-2 family exists at its exact paths, with the right roles ────────────────────────
+  for (const [label, rel, role] of [
+    ['LEAF', M7_SO2_MODULES.leaf, 'LEAF'],
+    ['EXECUTOR', M7_SO2_MODULES.executor, 'EXECUTOR'],
+    ['ADAPTER_INTERFACE', M7_SO2_MODULES.adapterInterface, 'ADAPTER_INTERFACE'],
+    ['ADAPTER_IMPL', M7_SO2_MODULES.adapter, 'ADAPTER_IMPL'],
+    ['INPUT_GRAMMAR', M7_SO2_MODULES.inputGrammar, 'OTHER'],
+    ['OPERATION_CONTEXT', M7_SO2_MODULES.operationContext, 'OTHER'],
+  ] as const) {
+    if (provider.read(rel) === null) v.push(`M7_SO2_MISSING_${label}:${rel}`);
+    else if (roleOf(rel) !== role) v.push(`M7_SO2_ROLE:${rel}:${roleOf(rel)}`);
+  }
+
+  // ── S2 — the SO-2 leaf binds EXACTLY {M7 engine, own executor, own adapter, own grammar} ───────
+  const leafTargets = new Set(localTargetsOf(M7_SO2_MODULES.leaf));
+  const expectedLeafTargets = new Set([
+    M7_PARTICIPANT_CCA_ENGINE_MODULE,
+    M7_SO2_MODULES.executor,
+    M7_SO2_MODULES.adapter,
+    M7_SO2_MODULES.inputGrammar,
+  ]);
+  for (const t of expectedLeafTargets) {
+    if (!leafTargets.has(t)) v.push(`M7_SO2_LEAF_NOT_BOUND:${t}`);
+  }
+  for (const t of leafTargets) {
+    if (!expectedLeafTargets.has(t)) v.push(`M7_SO2_LEAF_EXTRA_EDGE:${t}`);
+  }
+  // The literal, composition-time policy of each leaf, and the definition function it calls.
+  const leafPolicies: Record<string, string | null> = {};
+  for (const [leaf, callee, policy] of [
+    [M7_SO1_MODULES.leaf, 'defineSealedOutcomeAssertionOperation', 'GENERAL_COLLECTION'],
+    [M7_SO2_MODULES.leaf, 'defineSealedEvidenceUploadOperation', 'OPTIONAL_EVIDENCE'],
+  ] as const) {
+    const calls = definitionCallFacts(read(leaf));
+    leafPolicies[leaf] = calls[0]?.policy ?? null;
+    if (calls.length !== 1) v.push(`M7_LEAF_DEFINITION_CALLS:${leaf}:${calls.length}`);
+    for (const c of calls) {
+      if (c.callee !== callee) v.push(`M7_LEAF_WRONG_DEFINITION_FUNCTION:${leaf}:${c.callee}`);
+      if (c.policy !== policy) v.push(`M7_LEAF_POLICY:${leaf}:${String(c.policy)}`);
+      const expectedKeys = [
+        'adapter',
+        'executor',
+        'lockOrder',
+        'operationId',
+        'parseInput',
+        'policy',
+      ];
+      if (JSON.stringify([...c.keys].sort()) !== JSON.stringify(expectedKeys)) {
+        v.push(`M7_LEAF_DEFINITION_KEYS:${leaf}:[${c.keys.join(',')}]`);
+      }
+    }
+  }
+
+  // ── S3 — the SO-2 executor: type-only closure, sole DB edge = its own adapter interface ────────
+  const exec = analyzeExecutorClosure(M7_SO2_MODULES.executor, provider);
+  for (const x of exec.violations) v.push(`M7_SO2_EXECUTOR:${x}`);
+  const ifaces = new Set(
+    exec.entries
+      .filter((e) => e.class === 'APPROVED_TRACKED_ADAPTER_INTERFACE')
+      .map((e) => e.module),
+  );
+  if (ifaces.size !== 1 || !ifaces.has(M7_SO2_MODULES.adapterInterface)) {
+    v.push(`M7_SO2_EXECUTOR_INTERFACES:[${[...ifaces].join(',')}]`);
+  }
+  for (const e of exec.entries) {
+    if (e.class === 'APPROVED_TRACKED_ADAPTER_INTERFACE') continue;
+    if (!e.typeOnly) v.push(`M7_SO2_EXECUTOR_VALUE_EDGE:${e.module}`);
+  }
+  // It forwards EXACTLY the two RQ fields to the one modeled method.
+  const execCode = read(M7_SO2_MODULES.executor);
+  const forwarded: string[][] = [];
+  const methodCalls: string[] = [];
+  const visitExec = (n: ts.Node): void => {
+    if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression)) {
+      methodCalls.push(n.expression.name.text);
+      const a = n.arguments[0];
+      if (a !== undefined && ts.isObjectLiteralExpression(a)) {
+        forwarded.push(
+          a.properties.map((p) =>
+            p.name !== undefined && ts.isIdentifier(p.name) ? p.name.text : '<computed>',
+          ),
+        );
+      }
+    }
+    ts.forEachChild(n, visitExec);
+  };
+  visitExec(parse(execCode));
+  if (JSON.stringify(methodCalls) !== JSON.stringify(['executeEvidenceUploadAuthorization'])) {
+    v.push(`M7_SO2_EXECUTOR_CALLS:[${methodCalls.join(',')}]`);
+  }
+  if (
+    forwarded.length !== 1 ||
+    JSON.stringify([...forwarded[0]!].sort()) !==
+      JSON.stringify([...M7_SO2_EXPECTED_INPUT_KEYS].sort())
+  ) {
+    v.push(`M7_SO2_EXECUTOR_FORWARDS:${JSON.stringify(forwarded)}`);
+  }
+
+  // ── S4 — the SO-2 adapter: hidden tx only, ONE exact p_begin_evidence_upload_v1 statement ─────
+  const adapterReport = analyzeAdapterClosure(M7_SO2_MODULES.adapter, provider);
+  for (const x of adapterReport.violations) v.push(`M7_SO2_ADAPTER:${x}`);
+  const adapterCode = read(M7_SO2_MODULES.adapter);
+  const tagged: { tag: string; sql: string; args: number }[] = [];
+  const visitAdapter = (n: ts.Node): void => {
+    if (ts.isTaggedTemplateExpression(n)) {
+      const t = n.template;
+      const sql = ts.isNoSubstitutionTemplateLiteral(t)
+        ? t.text
+        : [t.head.text, ...t.templateSpans.map((s) => s.literal.text)].join('?');
+      const args = ts.isNoSubstitutionTemplateLiteral(t) ? 0 : t.templateSpans.length;
+      tagged.push({ tag: n.tag.getText(adapterSf), sql, args });
+    }
+    ts.forEachChild(n, visitAdapter);
+  };
+  const adapterSf = parse(adapterCode);
+  visitAdapter(adapterSf);
+  if (tagged.length !== 1) v.push(`M7_SO2_ADAPTER_STATEMENT_COUNT:${tagged.length}`);
+  for (const s of tagged) {
+    if (s.tag !== 'context.tx.$queryRaw') v.push(`M7_SO2_ADAPTER_STATEMENT_TAG:${s.tag}`);
+    if (!/^\s*SELECT \* FROM m7\.p_begin_evidence_upload_v1\(/.test(s.sql)) {
+      v.push('M7_SO2_ADAPTER_STATEMENT_NOT_EXACT_FUNCTION');
+    }
+    if (s.args !== 7) v.push(`M7_SO2_ADAPTER_ARGUMENT_COUNT:${s.args}`);
+  }
+  const adapterIds = identifiersIn(adapterCode);
+  for (const forbidden of [
+    '$executeRaw',
+    '$transaction',
+    '$queryRawUnsafe',
+    '$executeRawUnsafe',
+    'PrismaClient',
+    'prisma',
+  ]) {
+    if (adapterIds.has(forbidden)) v.push(`M7_SO2_ADAPTER_FORBIDDEN_IDENTIFIER:${forbidden}`);
+  }
+  // The interface models exactly ONE method.
+  const ifaceMethods: string[] = [];
+  for (const st of parse(read(M7_SO2_MODULES.adapterInterface)).statements) {
+    if (ts.isInterfaceDeclaration(st) && st.name.text === 'M7EvidenceUploadAdapter') {
+      for (const m of st.members) {
+        ifaceMethods.push(m.name !== undefined && ts.isIdentifier(m.name) ? m.name.text : '?');
+      }
+    }
+  }
+  if (JSON.stringify(ifaceMethods) !== JSON.stringify(['executeEvidenceUploadAuthorization'])) {
+    v.push(`M7_SO2_ADAPTER_INTERFACE_METHODS:[${ifaceMethods.join(',')}]`);
+  }
+
+  // ── S5 — the §9.3 SO-2 caller key set is exactly the accepted one ─────────────────────────────
+  const grammar = provider.read(M7_SO2_MODULES.inputGrammar);
+  const so2InputKeys = grammar === null ? null : exportedStringArray(grammar, 'SO2_INPUT_KEYS');
+  if (so2InputKeys === null) {
+    v.push('M7_SO2_INPUT_KEYS_UNREADABLE');
+  } else {
+    if (
+      JSON.stringify([...so2InputKeys].sort()) !==
+      JSON.stringify([...M7_SO2_EXPECTED_INPUT_KEYS].sort())
+    ) {
+      v.push(`M7_SO2_INPUT_KEY_SET:[${so2InputKeys.join(',')}]`);
+    }
+    for (const forbidden of M7_SO2_FORBIDDEN_INPUT_KEYS) {
+      if (so2InputKeys.includes(forbidden)) v.push(`M7_SO2_FORBIDDEN_INPUT_KEY:${forbidden}`);
+    }
+  }
+
+  // ── S6 — cross-purpose isolation: no SO1<->SO2 edge of ANY kind; engine edges are type-only ────
+  for (const f of SO1_FAMILY) {
+    for (const t of localTargetsOf(f)) {
+      if (t.startsWith('m7/so2/')) v.push(`M7_CROSS_FAMILY_EDGE:${f} -> ${t}`);
+    }
+  }
+  for (const f of SO2_FAMILY) {
+    for (const t of localTargetsOf(f)) {
+      if (t.startsWith('m7/so1/')) v.push(`M7_CROSS_FAMILY_EDGE:${f} -> ${t}`);
+    }
+  }
+  for (const { edge, target } of edgesOf(M7_PARTICIPANT_CCA_ENGINE_MODULE)) {
+    if (target.type !== 'local') continue;
+    if ((target.rel.startsWith('m7/so1/') || target.rel.startsWith('m7/so2/')) && !edge.typeOnly) {
+      v.push(`M7_ENGINE_FAMILY_VALUE_EDGE:${target.rel}`);
+    }
+  }
+  // Transitive VALUE closure from each leaf, never traversing the engine, stays in its family.
+  for (const [leaf, other] of [
+    [M7_SO1_MODULES.leaf, 'm7/so2/'],
+    [M7_SO2_MODULES.leaf, 'm7/so1/'],
+  ] as const) {
+    const seen = new Set<string>([leaf]);
+    const stack: string[] = [leaf];
+    while (stack.length > 0) {
+      const cur = stack.pop()!;
+      for (const { edge, target } of edgesOf(cur)) {
+        if (edge.typeOnly || target.type !== 'local') continue;
+        if (target.rel === M7_PARTICIPANT_CCA_ENGINE_MODULE || seen.has(target.rel)) continue;
+        if (target.rel.startsWith(other)) v.push(`M7_CROSS_FAMILY_REACH:${leaf} -> ${target.rel}`);
+        seen.add(target.rel);
+        stack.push(target.rel);
+      }
+    }
+  }
+
+  // ── S7 — every m7.* function the M7 runtime names is allowlisted and named only by its owner ───
+  const runtime = m7RuntimeFiles(productive);
+  const dbFunctionMentions: Record<string, string[]> = {};
+  for (const f of runtime) {
+    for (const fn of m7FunctionMentions(read(f))) {
+      (dbFunctionMentions[fn] ??= []).push(f);
+      const owners = M7_DB_FUNCTION_OWNERS[fn];
+      if (owners === undefined) v.push(`M7_DB_FUNCTION_NOT_ALLOWLISTED:${fn}:${f}`);
+      else if (!owners.includes(f)) v.push(`M7_DB_FUNCTION_WRONG_OWNER:${fn}:${f}`);
+    }
+  }
+
+  // ── S8 — no later-slice function, no provider SDK, no tooling edge in productive runtime ───────
+  const outsideTooling = productive.filter(
+    (f) => !M7_VERIFICATION_TOOLING_PREFIXES.some((p) => f.startsWith(p)),
+  );
+  for (const f of outsideTooling) {
+    const text = literalTexts(read(f)).join('\n');
+    for (const re of M7_LATER_SLICE_DB_FUNCTIONS) {
+      if (re.test(text)) v.push(`M7_LATER_SLICE_FUNCTION:${re.source}:${f}`);
+    }
+    for (const { target } of edgesOf(f)) {
+      if (target.type === 'external' && PROVIDER_SDK_PACKAGE.test(target.name)) {
+        v.push(`M7_PROVIDER_SDK_IMPORT:${target.name}:${f}`);
+      }
+    }
+  }
+  for (const f of runtime) {
+    for (const t of localTargetsOf(f)) {
+      if (M7_VERIFICATION_TOOLING_PREFIXES.some((p) => t.startsWith(p))) {
+        v.push(`M7_RUNTIME_IMPORTS_VERIFICATION_TOOLING:${f} -> ${t}`);
+      }
+    }
+    for (const id of identifiersIn(read(f))) {
+      if (/presign|signedurl|signurl/i.test(id)) v.push(`M7_SIGNED_URL_IDENTIFIER:${id}:${f}`);
+    }
+  }
+
+  // ── S9 — ONE AGR implementation; no M7 runtime file reads optional-evidence consent itself ─────
+  for (const f of productive) {
+    if (f !== 'cca/consent-evaluation.ts' && identifiersIn(read(f)).has('applyAgr')) {
+      v.push(`M7_SECOND_AGR_REFERENCE:${f}`);
+    }
+  }
+  for (const f of runtime) {
+    const code = read(f);
+    if (
+      identifiersIn(code).has('optionalEvidenceConsent') ||
+      /optionalEvidenceConsent/.test(literalTexts(code).join('\n'))
+    ) {
+      v.push(`M7_RUNTIME_READS_OPTIONAL_EVIDENCE_CONSENT:${f}`);
+    }
+  }
+
+  // ── S10 — the engine's sealed policies are fixed constants, and each factory enforces its own ──
+  const engineCode = provider.read(M7_PARTICIPANT_CCA_ENGINE_MODULE);
+  if (engineCode === null) {
+    v.push('M7_SO2_ENGINE_MISSING');
+  } else {
+    if (constStringInitializer(engineCode, 'SO1_POLICY') !== 'GENERAL_COLLECTION') {
+      v.push('M7_ENGINE_SO1_POLICY_CONSTANT');
+    }
+    if (constStringInitializer(engineCode, 'SO2_POLICY') !== 'OPTIONAL_EVIDENCE') {
+      v.push('M7_ENGINE_SO2_POLICY_CONSTANT');
+    }
+    const sf = parse(engineCode);
+    for (const [fn, constant] of [
+      ['defineSealedOutcomeAssertionOperation', 'SO1_POLICY'],
+      ['defineSealedEvidenceUploadOperation', 'SO2_POLICY'],
+    ] as const) {
+      let guarded = false;
+      const visit = (n: ts.Node, inside: boolean): void => {
+        const here = inside || (ts.isFunctionDeclaration(n) && n.name?.text === fn);
+        if (
+          here &&
+          ts.isIfStatement(n) &&
+          ts.isBinaryExpression(n.expression) &&
+          n.expression.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken &&
+          n.expression.left.getText(sf) === 'policy' &&
+          n.expression.right.getText(sf) === constant
+        ) {
+          guarded = true;
+        }
+        ts.forEachChild(n, (c) => visit(c, here));
+      };
+      visit(sf, false);
+      if (!guarded) v.push(`M7_ENGINE_POLICY_NOT_ENFORCED:${fn}`);
+    }
+    // ── S11 — the SO-2 CCA entry order (AUD-M7-SO1-01 inherited) and NO pre-CCA replay ──────────
+    for (const x of analyzeM7So2EntryGuardOrder(engineCode)) v.push(x);
+  }
+
+  return { violations: v, so2InputKeys, dbFunctionMentions, leafPolicies };
+}
+
+// ---------------------------------------------------------------------------------------------------
+// S11 — CCA ENTRY-GUARD ORDER and NO-REPLAY for the SO-2 implementation
+//
+// The SO-2 implementation is the `sealOperation(...)` implementation inside
+// `defineSealedEvidenceUploadOperation`. It must satisfy the SAME order rule as SO-1 (preflight first,
+// unconditional, before any database-reaching step), and additionally — because SO-2 has NO pre-CCA
+// replay (§9.5.2) — it must perform NO database-reaching step at all outside the CCA transaction
+// except the digest read, the session-capability read and naming the participant client as the
+// transaction's first argument. Inside the transaction the order is fixed:
+//   resolveAssignmentReference → lock/prove statement → clock (ONCE) → mintLockedCollectionScope →
+//   readConsentAuthorizationFacts → evaluateCollectionConsent(policy, …) → constructTrackedAdapter →
+//   executeUnderZeroInFlightGate
+// ---------------------------------------------------------------------------------------------------
+
+/** Pre-transaction steps the SO-2 implementation may take (after the guard). */
+const SO2_PRE_TX_ALLOWED: readonly string[] = [
+  'expectedControlPlaneManifestDigest',
+  'readM7ParticipantSessionSecret',
+  'participant',
+  'runCcaTransaction',
+];
+
+/** The fixed in-transaction order of the SO-2 implementation. */
+export const M7_SO2_IN_TRANSACTION_ORDER: readonly string[] = [
+  'resolveAssignmentReference',
+  'tagged:tx.$executeRaw',
+  'new:Date',
+  'mintLockedCollectionScope',
+  'readConsentAuthorizationFacts',
+  'evaluateCollectionConsent',
+  'constructTrackedAdapter',
+  'executeUnderZeroInFlightGate',
+];
+
+export function analyzeM7So2EntryGuardOrder(code: string): string[] {
+  const v: string[] = [];
+  const sf = parse(code);
+  const impl = sealedImplementationIn(sf, 'defineSealedEvidenceUploadOperation');
+  if (impl === undefined || impl.body === undefined || !ts.isBlock(impl.body)) {
+    return ['M7_SO2_ENTRY_GUARD_IMPL_NOT_FOUND'];
+  }
+  const body = impl.body;
+
+  const sites: SiteRecord[] = [];
+  const collect = (n: ts.Node): void => {
+    if (ts.isCallExpression(n)) {
+      sites.push({ name: calleeName(n.expression), pos: n.getStart(sf), end: n.getEnd(), node: n });
+    } else if (ts.isNewExpression(n)) {
+      sites.push({
+        name: `new:${calleeName(n.expression)}`,
+        pos: n.getStart(sf),
+        end: n.getEnd(),
+        node: n,
+      });
+    } else if (ts.isTaggedTemplateExpression(n)) {
+      sites.push({
+        name: `tagged:${calleeName(n.tag)}`,
+        pos: n.getStart(sf),
+        end: n.getEnd(),
+        node: n,
+      });
+    } else if (
+      ts.isPropertyAccessExpression(n) &&
+      ts.isIdentifier(n.expression) &&
+      n.expression.text === 'prisma'
+    ) {
+      sites.push({ name: `prisma.${n.name.text}`, pos: n.getStart(sf), end: n.getEnd(), node: n });
+    }
+    ts.forEachChild(n, collect);
+  };
+  collect(body);
+
+  // — the preflight: present exactly once, unconditional, first —
+  const guards = sites.filter((s) => s.name === M7_ENTRY_GUARD);
+  if (guards.length === 0) return ['M7_SO2_ENTRY_GUARD_MISSING'];
+  if (guards.length > 1) v.push(`M7_SO2_ENTRY_GUARD_CALLED_${guards.length}_TIMES`);
+  const guard = guards[0]!;
+  const stmt = guard.node.parent;
+  if (!(stmt !== undefined && ts.isExpressionStatement(stmt) && stmt.parent === body)) {
+    v.push('M7_SO2_ENTRY_GUARD_NOT_UNCONDITIONAL_TOP_LEVEL');
+  }
+  const dbReaching = (s: SiteRecord): boolean =>
+    M7_POST_GUARD_CALLS.includes(s.name) ||
+    s.name.startsWith('prisma.') ||
+    s.name.startsWith('tagged:') ||
+    /lookup|replay|receipt/i.test(s.name) ||
+    /\.\$(queryRaw|executeRaw|queryRawUnsafe|executeRawUnsafe|transaction)$/.test(s.name);
+  for (const s of sites) {
+    if (s.name !== M7_ENTRY_GUARD && dbReaching(s) && s.pos < guard.pos) {
+      v.push(`M7_SO2_DB_WORK_BEFORE_ENTRY_GUARD:${s.name}`);
+    }
+  }
+  const early = (n: ts.Node): void => {
+    if (ts.isReturnStatement(n) && n.getStart(sf) < guard.pos) {
+      v.push('M7_SO2_RETURN_BEFORE_ENTRY_GUARD');
+    }
+    if (ts.isFunctionLike(n) && n !== impl) return;
+    ts.forEachChild(n, early);
+  };
+  early(body);
+
+  // — exactly one CCA transaction; NOTHING database-reaching outside it (no pre-CCA replay) —
+  const txCalls = sites.filter((s) => s.name === 'runCcaTransaction');
+  if (txCalls.length !== 1) v.push(`M7_SO2_CCA_TRANSACTION_CALL_COUNT:${txCalls.length}`);
+  const tx = txCalls[0];
+  const insideTx = (s: SiteRecord): boolean =>
+    tx !== undefined && s !== tx && s.pos > tx.pos && s.end <= tx.end;
+  for (const s of sites) {
+    if (/lookup|replay|receipt/i.test(s.name)) v.push(`M7_SO2_REPLAY_STEP_PRESENT:${s.name}`);
+    if (!dbReaching(s) || insideTx(s) || s.name === M7_ENTRY_GUARD) continue;
+    if (!SO2_PRE_TX_ALLOWED.includes(s.name))
+      v.push(`M7_SO2_DB_WORK_OUTSIDE_CCA_TRANSACTION:${s.name}`);
+  }
+  const clients = sites.filter((s) => s.name === 'participant');
+  if (clients.length !== 1) v.push(`M7_SO2_PARTICIPANT_CLIENT_USES:${clients.length}`);
+  if (tx !== undefined && ts.isCallExpression(tx.node)) {
+    const first = tx.node.arguments[0];
+    if (!(first !== undefined && clients[0] !== undefined && first === clients[0].node)) {
+      v.push('M7_SO2_PARTICIPANT_CLIENT_NOT_TRANSACTION_ARGUMENT');
+    }
+  }
+
+  // — the fixed in-transaction order, each step exactly once and inside the transaction —
+  let last = -1;
+  for (const step of M7_SO2_IN_TRANSACTION_ORDER) {
+    const hits = sites.filter((s) => s.name === step);
+    if (hits.length !== 1) {
+      v.push(`M7_SO2_STEP_COUNT:${step}:${hits.length}`);
+      continue;
+    }
+    const h = hits[0]!;
+    if (!insideTx(h)) v.push(`M7_SO2_STEP_OUTSIDE_CCA_TRANSACTION:${step}`);
+    if (h.pos < last) v.push(`M7_SO2_STEP_ORDER:${step}`);
+    last = h.pos;
+  }
+  // The lock/prove statement is the accepted function, bound to the DERIVED assignment.
+  for (const s of sites.filter((x) => x.name === 'tagged:tx.$executeRaw')) {
+    const text = s.node.getText(sf);
+    if (!/m7\.p_lock_and_prove_assignment_v1\(/.test(text)) {
+      v.push('M7_SO2_LOCK_STATEMENT_NOT_ACCEPTED_FUNCTION');
+    }
+  }
+  // Consent is evaluated for the definition's (validated) policy — never a literal, never input.
+  for (const s of sites.filter((x) => x.name === 'evaluateCollectionConsent')) {
+    const first = ts.isCallExpression(s.node) ? s.node.arguments[0] : undefined;
+    if (first === undefined || !ts.isIdentifier(first) || first.text !== 'policy') {
+      v.push('M7_SO2_CONSENT_POLICY_ARGUMENT');
+    }
+  }
   return v;
 }

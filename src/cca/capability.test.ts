@@ -12,7 +12,9 @@ import {
   analyzeCcaTopology,
   analyzeExecutorClosure,
   analyzeM7So1Topology,
+  analyzeM7So2Topology,
   analyzeM7EntryGuardOrder,
+  analyzeM7So2EntryGuardOrder,
   ambientViolations,
   extractImportEdges,
   fsSourceProvider,
@@ -24,6 +26,10 @@ import {
   M7_SESSION_MODULE,
   M7_SO1_EXPECTED_INPUT_KEYS,
   M7_SO1_MODULES,
+  M7_PRODUCTIVE_ROLE_MODULES,
+  M7_SO2_MODULES,
+  M7_SO2_EXPECTED_INPUT_KEYS,
+  M7_DB_FUNCTION_OWNERS,
   type SourceProvider,
 } from './capability-analysis';
 
@@ -819,11 +825,18 @@ describe('AUTH §25 — the productive SO-1 topology is exactly one sealed opera
   });
 
   it('there is exactly one Outcome leaf, executor, adapter interface and adapter implementation', () => {
+    // With SO-2 authored, each role has exactly TWO productive modules: one per sealed family, at
+    // the exact paths of M7_PRODUCTIVE_ROLE_MODULES. Exactly ONE of each is the Outcome (SO-1) one.
     const { roleCounts } = analyzeM7So1Topology(tree);
-    expect(roleCounts.LEAF).toBe(1);
-    expect(roleCounts.EXECUTOR).toBe(1);
-    expect(roleCounts.ADAPTER_INTERFACE).toBe(1);
-    expect(roleCounts.ADAPTER_IMPL).toBe(1);
+    expect(roleCounts.LEAF).toBe(2);
+    expect(roleCounts.EXECUTOR).toBe(2);
+    expect(roleCounts.ADAPTER_INTERFACE).toBe(2);
+    expect(roleCounts.ADAPTER_IMPL).toBe(2);
+    for (const [role, paths] of Object.entries(M7_PRODUCTIVE_ROLE_MODULES)) {
+      const actual = productiveModules().filter((rel) => roleOf(rel) === role);
+      expect(new Set(actual)).toEqual(new Set(paths));
+      expect(actual.filter((rel) => rel.startsWith('m7/so1/'))).toHaveLength(1);
+    }
     // Two engines: the accepted CCA foundation engine and the productive M7 specialization.
     expect(roleCounts.ENGINE).toBe(2);
     expect(roleOf(M7_LEAF)).toBe('LEAF');
@@ -859,12 +872,23 @@ describe('AUTH §25 — the productive SO-1 topology is exactly one sealed opera
     for (const e of prismaEdges) expect(e.typeOnly).toBe(true);
   });
 
-  it('no Evidence / SO-2 / SO-3 productive module exists, and none is reachable', () => {
+  it('no Evidence module OTHER THAN the exact SO-2 family exists, and none is reachable from SO-1', () => {
     const report = analyzeM7So1Topology(tree);
     expect(report.violations.filter((x) => x.startsWith('M7_SO2_SO3'))).toEqual([]);
     expect(report.violations.filter((x) => x.startsWith('M7_SO1_EVIDENCE_EDGE'))).toEqual([]);
+    const so2Family: string[] = [
+      M7_SO2_MODULES.leaf,
+      M7_SO2_MODULES.executor,
+      M7_SO2_MODULES.adapterInterface,
+      M7_SO2_MODULES.adapter,
+    ];
     for (const rel of productiveModules()) {
+      if (so2Family.includes(rel)) continue;
       expect(rel).not.toMatch(/evidence.*\.cca-(leaf|executor|adapter)/i);
+      // SO-3 / storage worker / capability signer remain absent in every naming.
+      expect(rel).not.toMatch(
+        /(saving-evidence|evidence-submission|storage-worker|capability-signer)/i,
+      );
     }
   });
 
@@ -1355,5 +1379,597 @@ describe('AUD-M7-SO1-01 — the CCA entry guard precedes ALL database-reaching S
     expect(m7Violations({ [M7_ENGINE]: mutate(GUARD_LINE, '') })).toContain(
       'M7_ENTRY_GUARD_MISSING',
     );
+  });
+});
+
+// ===================================================================================================
+// M7 SO-2 PRODUCTIVE TOPOLOGY (SO-2 AUTH §9–§32; M7 V1.1 §9.2–§9.5.2, §10, §19.11.4)
+//
+// Everything above is the accepted CCA foundation enforcement and the accepted SO-1 enforcement.
+// The suites below pin the SECOND sealed family. As above, every negative control is a virtual
+// overlay over the REAL tree, so a mutation is judged in the real topology.
+// ===================================================================================================
+
+const SO2_LEAF = M7_SO2_MODULES.leaf;
+const SO2_EXECUTOR = M7_SO2_MODULES.executor;
+const SO2_ADAPTER = M7_SO2_MODULES.adapter;
+const SO2_GRAMMAR = M7_SO2_MODULES.inputGrammar;
+const SO2_MARKER = 'export function defineSealedEvidenceUploadOperation';
+
+/** M7 SO-2 topology rules only. */
+function so2Violations(overlay: Record<string, string | null> = {}): string[] {
+  return [...analyzeM7So2Topology(providerFor(overlay)).violations];
+}
+
+/** Patch ONLY the SO-2 part of the engine (everything from the SO-2 definition function on). */
+function mutateSo2Engine(from: string, to: string, base = realSource(M7_ENGINE)): string {
+  const at = base.indexOf(SO2_MARKER);
+  expect(at, 'SO-2 definition function missing from the engine').toBeGreaterThan(0);
+  const head = base.slice(0, at);
+  const tail = base.slice(at);
+  expect(tail.includes(from), `SO-2 mutation anchor missing: ${from.slice(0, 60)}`).toBe(true);
+  return head + tail.replace(from, to);
+}
+
+/** Patch one line of a real productive module, asserting the anchor exists. */
+function mutateModule(rel: string, from: string, to: string): Record<string, string> {
+  const src = realSource(rel);
+  expect(src.includes(from), `mutation anchor missing in ${rel}: ${from.slice(0, 60)}`).toBe(true);
+  return { [rel]: src.replace(from, to) };
+}
+
+describe('SO-2 AUTH §22 / §30 — the productive SO-2 topology is exactly one sealed family', () => {
+  it('the real tree has NO SO-2 topology violation, and SO-1 + accepted CCA stay green', () => {
+    expect(analyzeM7So2Topology(tree).violations).toEqual([]);
+    expect(analyzeM7So1Topology(tree).violations).toEqual([]);
+    expect(analyzeCcaTopology(tree)).toEqual([]);
+  });
+
+  it('the SO-2 family sits at its exact paths with the exact roles', () => {
+    expect(roleOf(SO2_LEAF)).toBe('LEAF');
+    expect(roleOf(SO2_EXECUTOR)).toBe('EXECUTOR');
+    expect(roleOf(M7_SO2_MODULES.adapterInterface)).toBe('ADAPTER_INTERFACE');
+    expect(roleOf(SO2_ADAPTER)).toBe('ADAPTER_IMPL');
+    expect(roleOf(SO2_GRAMMAR)).toBe('OTHER');
+    expect(roleOf(M7_SO2_MODULES.operationContext)).toBe('OTHER');
+  });
+
+  it('SO-2 policy is OPTIONAL_EVIDENCE by construction; SO-1 stays GENERAL_COLLECTION', () => {
+    const { leafPolicies } = analyzeM7So2Topology(tree);
+    expect(leafPolicies[SO2_LEAF]).toBe('OPTIONAL_EVIDENCE');
+    expect(leafPolicies[M7_LEAF]).toBe('GENERAL_COLLECTION');
+    expect(codeOnly(SO2_LEAF)).toContain("policy: 'OPTIONAL_EVIDENCE'");
+    expect(codeOnly(M7_ENGINE)).toContain(
+      "const SO2_POLICY: CollectionConsentPolicy = 'OPTIONAL_EVIDENCE';",
+    );
+  });
+
+  it('the SO-2 executor closure is EXACTLY {own adapter interface, type-only contracts}', () => {
+    const report = analyzeExecutorClosure(SO2_EXECUTOR, tree);
+    expect(report.violations).toEqual([]);
+    const interfaces = report.entries.filter(
+      (e) => e.class === 'APPROVED_TRACKED_ADAPTER_INTERFACE',
+    );
+    expect(new Set(interfaces.map((e) => e.module))).toEqual(
+      new Set([M7_SO2_MODULES.adapterInterface]),
+    );
+    for (const e of report.entries) {
+      if (e.class === 'APPROVED_TRACKED_ADAPTER_INTERFACE') continue;
+      expect(e.class).toBe('PURE');
+      expect(e.typeOnly).toBe(true);
+    }
+  });
+
+  it('the SO-2 adapter holds the hidden transaction edge ONLY, with no second capability', () => {
+    const report = analyzeAdapterClosure(SO2_ADAPTER, tree);
+    expect(report.violations).toEqual([]);
+    const prismaEdges = report.entries.filter((e) => /^@prisma\//.test(e.module));
+    expect(prismaEdges.length).toBeGreaterThan(0);
+    for (const e of prismaEdges) expect(e.typeOnly).toBe(true);
+    // Its ONLY SO-2 context edge is the SO-2-local one — never the SO-1 context.
+    expect(report.entries.map((e) => e.module)).not.toContain(
+      'm7/so1/m7-participant-operation-context.ts',
+    );
+  });
+
+  it('records the observed SO-2 censuses: input keys and the m7.* function binding', () => {
+    const report = analyzeM7So2Topology(tree);
+    expect(report.so2InputKeys).toEqual([...M7_SO2_EXPECTED_INPUT_KEYS]);
+    expect(report.dbFunctionMentions.p_begin_evidence_upload_v1).toEqual([SO2_ADAPTER]);
+    expect(report.dbFunctionMentions.p_record_outcome_assertion_v1).toEqual([M7_ADAPTER]);
+    expect(Object.keys(report.dbFunctionMentions).sort()).toEqual(
+      Object.keys(M7_DB_FUNCTION_OWNERS).sort(),
+    );
+  });
+
+  it('the credential census is unchanged: ONE participant-credential reader, the engine', () => {
+    const report = analyzeM7So1Topology(tree);
+    expect(report.credentialReaders.M7_PARTICIPANT_DATABASE_URL).toEqual([M7_ENGINE]);
+    expect(report.credentialReaders.M7_SESSION_ISSUER_DATABASE_URL).toEqual([M7_SESSION_MODULE]);
+    expect(report.secretAccessorImporters).toEqual([M7_ENGINE]);
+  });
+
+  it('the SO-2 entry-guard order rule holds on the real engine', () => {
+    expect(analyzeM7So2EntryGuardOrder(realSource(M7_ENGINE))).toEqual([]);
+    // …and the SO-1 rule still judges ONLY the SO-1 implementation, unchanged.
+    expect(analyzeM7EntryGuardOrder(realSource(M7_ENGINE))).toEqual([]);
+  });
+
+  it('MUTATION CONTROL — removing the SO-2 leaf, adapter or engine FAILS (rules are not vacuous)', () => {
+    expect(so2Violations({ [SO2_LEAF]: null })).not.toEqual([]);
+    expect(so2Violations({ [SO2_ADAPTER]: null })).not.toEqual([]);
+    expect(so2Violations({ [M7_ENGINE]: null })).not.toEqual([]);
+  });
+});
+
+describe('SO-2 AUTH §31 — negative mutations (every one FAILS CLOSED)', () => {
+  const prepend = (rel: string, line: string): Record<string, string> => ({
+    [rel]: `${line}\n${realSource(rel)}`,
+  });
+
+  it('FAILS: the SO-2 leaf imports the shared DB client', () => {
+    const overlay = prepend(SO2_LEAF, "import { prisma } from '@/db/client';\nvoid prisma;");
+    expect(ccaViolations(overlay)).toContainEqual(
+      expect.stringContaining('LEAF_DB_EDGE_OUTSIDE_ENGINE:db/client.ts'),
+    );
+    expect(so2Violations(overlay)).toContainEqual('M7_SO2_LEAF_EXTRA_EDGE:db/client.ts');
+  });
+
+  it('FAILS: the SO-2 executor imports Prisma', () => {
+    expect(
+      so2Violations(prepend(SO2_EXECUTOR, "import { PrismaClient } from '@prisma/client';")),
+    ).toContainEqual(expect.stringContaining('M7_SO2_EXECUTOR:'));
+  });
+
+  it('FAILS: the SO-2 executor imports an accepted repository', () => {
+    const v = so2Violations(
+      prepend(
+        SO2_EXECUTOR,
+        "import { findPurchaseIntent } from '@/db/purchase-intent-repository';",
+      ),
+    );
+    expect(v.some((x) => x.startsWith('M7_SO2_EXECUTOR:'))).toBe(true);
+  });
+
+  it('FAILS: the SO-2 adapter constructs a PrismaClient', () => {
+    const v = so2Violations(
+      prepend(
+        SO2_ADAPTER,
+        "import { PrismaClient } from '@prisma/client';\nconst second = new PrismaClient();\nvoid second;",
+      ),
+    );
+    expect(v.some((x) => x.startsWith('M7_SO2_ADAPTER:'))).toBe(true);
+    expect(v).toContainEqual('M7_SO2_ADAPTER_FORBIDDEN_IDENTIFIER:PrismaClient');
+  });
+
+  it('FAILS: the SO-2 adapter opens its own $transaction', () => {
+    const v = so2Violations(
+      mutateModule(
+        SO2_ADAPTER,
+        '    const rows = await context.tx.$queryRaw',
+        '    await (context.tx as never as { $transaction: (f: unknown) => Promise<void> }).$transaction(async () => undefined);\n    const rows = await context.tx.$queryRaw',
+      ),
+    );
+    expect(v).toContainEqual('M7_SO2_ADAPTER_FORBIDDEN_IDENTIFIER:$transaction');
+  });
+
+  it('FAILS: the SO-2 adapter issues a SECOND statement', () => {
+    const v = so2Violations(
+      mutateModule(
+        SO2_ADAPTER,
+        '    const row = rows[0];',
+        '    await context.tx.$queryRaw`SELECT 1`;\n    const row = rows[0];',
+      ),
+    );
+    expect(v).toContainEqual('M7_SO2_ADAPTER_STATEMENT_COUNT:2');
+  });
+
+  it('FAILS: the SO-2 adapter calls a different m7 function', () => {
+    const v = so2Violations(
+      mutateModule(
+        SO2_ADAPTER,
+        '      SELECT * FROM m7.p_begin_evidence_upload_v1(\n',
+        '      SELECT * FROM m7.p_record_outcome_assertion_v1(\n',
+      ),
+    );
+    expect(v).toContainEqual('M7_SO2_ADAPTER_STATEMENT_NOT_EXACT_FUNCTION');
+    expect(v).toContainEqual(
+      `M7_DB_FUNCTION_WRONG_OWNER:p_record_outcome_assertion_v1:${SO2_ADAPTER}`,
+    );
+  });
+
+  it('FAILS: the SO-2 adapter sends an eighth, storage-profile argument', () => {
+    const v = so2Violations(
+      mutateModule(
+        SO2_ADAPTER,
+        '        ${args.clientCorrelationNonce}::text)`;',
+        "        ${args.clientCorrelationNonce}::text, ${'profile-b'}::text)`;",
+      ),
+    );
+    expect(v).toContainEqual('M7_SO2_ADAPTER_ARGUMENT_COUNT:8');
+  });
+
+  it('FAILS: the SO-2 executor forwards a field beyond the two RQ fields', () => {
+    const v = so2Violations(
+      mutateModule(
+        SO2_EXECUTOR,
+        '    clientCorrelationNonce: input.clientCorrelationNonce,',
+        "    clientCorrelationNonce: input.clientCorrelationNonce,\n    storageProfileId: 'b',",
+      ),
+    );
+    expect(v.some((x) => x.startsWith('M7_SO2_EXECUTOR_FORWARDS'))).toBe(true);
+  });
+
+  it('FAILS: the SO-2 leaf uses GENERAL_COLLECTION', () => {
+    const overlay = mutateModule(
+      SO2_LEAF,
+      "policy: 'OPTIONAL_EVIDENCE'",
+      "policy: 'GENERAL_COLLECTION'",
+    );
+    expect(so2Violations(overlay)).toContainEqual(`M7_LEAF_POLICY:${SO2_LEAF}:GENERAL_COLLECTION`);
+  });
+
+  it('FAILS: the engine SO-2 policy constant is changed to GENERAL_COLLECTION', () => {
+    const mutated = realSource(M7_ENGINE).replace(
+      "const SO2_POLICY: CollectionConsentPolicy = 'OPTIONAL_EVIDENCE';",
+      "const SO2_POLICY: CollectionConsentPolicy = 'GENERAL_COLLECTION';",
+    );
+    expect(so2Violations({ [M7_ENGINE]: mutated })).toContainEqual('M7_ENGINE_SO2_POLICY_CONSTANT');
+  });
+
+  it('FAILS: the SO-2 factory stops enforcing its sealed policy', () => {
+    const mutated = mutateSo2Engine(
+      '  if (policy !== SO2_POLICY) throw invalidDefinition(`SO-2 policy must be ${SO2_POLICY}`);\n',
+      '',
+    );
+    expect(so2Violations({ [M7_ENGINE]: mutated })).toContainEqual(
+      'M7_ENGINE_POLICY_NOT_ENFORCED:defineSealedEvidenceUploadOperation',
+    );
+  });
+
+  it('FAILS: the SO-2 leaf takes its policy from the caller / environment', () => {
+    const overlay = mutateModule(
+      SO2_LEAF,
+      "policy: 'OPTIONAL_EVIDENCE'",
+      'policy: process.env.M7_SO2_POLICY as never',
+    );
+    expect(so2Violations(overlay)).toContainEqual(`M7_LEAF_POLICY:${SO2_LEAF}:null`);
+  });
+
+  it('FAILS: consent is evaluated with a literal policy instead of the sealed one', () => {
+    const mutated = mutateSo2Engine(
+      'evaluateCollectionConsent(policy, facts, evidenceCollectionAt)',
+      "evaluateCollectionConsent('GENERAL_COLLECTION', facts, evidenceCollectionAt)",
+    );
+    expect(so2Violations({ [M7_ENGINE]: mutated })).toContainEqual(
+      'M7_SO2_CONSENT_POLICY_ARGUMENT',
+    );
+  });
+
+  it.each([
+    'policy',
+    'assignmentId',
+    'participantId',
+    'credentialProfileId',
+    'stagingObjectKey',
+    'storageProfileId',
+    'uploadTransport',
+    'sessionSecret',
+    'operationId',
+    'signedUrl',
+  ])('FAILS: the forbidden caller input %s is added to the SO-2 grammar', (key) => {
+    const v = so2Violations(
+      mutateModule(SO2_GRAMMAR, "  'purchaseIntentId',", `  '${key}',\n  'purchaseIntentId',`),
+    );
+    expect(v).toContainEqual(`M7_SO2_FORBIDDEN_INPUT_KEY:${key}`);
+    expect(v.some((x) => x.startsWith('M7_SO2_INPUT_KEY_SET'))).toBe(true);
+  });
+
+  it('FAILS: a generic purpose / operation selector is added to the engine surface', () => {
+    const mutated = mutateSo2Engine(
+      SO2_MARKER,
+      'export function defineM7Operation(policy: CollectionConsentPolicy) { return policy; }\n' +
+        SO2_MARKER,
+    );
+    expect(m7Violations({ [M7_ENGINE]: mutated })).toContainEqual(
+      expect.stringContaining('M7_ENGINE_EXPORT_SET'),
+    );
+  });
+
+  it('FAILS: the SO-2 leaf imports the SO-1 adapter', () => {
+    const overlay = prepend(
+      SO2_LEAF,
+      "import { m7OutcomeAssertionAdapter } from '@/m7/so1/m7-outcome-assertion.cca-adapter';\nvoid m7OutcomeAssertionAdapter;",
+    );
+    const v = so2Violations(overlay);
+    expect(v).toContainEqual(`M7_CROSS_FAMILY_EDGE:${SO2_LEAF} -> ${M7_ADAPTER}`);
+    expect(ccaViolations(overlay)).toContainEqual(expect.stringContaining('LEAF_ADAPTER_COUNT:2'));
+  });
+
+  it('FAILS: the SO-1 leaf imports the SO-2 adapter', () => {
+    const overlay = prepend(
+      M7_LEAF,
+      "import { m7EvidenceUploadAdapter } from '@/m7/so2/m7-evidence-upload.cca-adapter';\nvoid m7EvidenceUploadAdapter;",
+    );
+    expect(so2Violations(overlay)).toContainEqual(
+      `M7_CROSS_FAMILY_EDGE:${M7_LEAF} -> ${SO2_ADAPTER}`,
+    );
+    expect(m7Violations(overlay)).toContainEqual(expect.stringContaining('M7_SO1_EVIDENCE_EDGE'));
+  });
+
+  it('FAILS: the SO-2 executor reaches the SO-1 adapter interface', () => {
+    const overlay = prepend(
+      SO2_EXECUTOR,
+      "import type { M7OutcomeAssertionAdapter } from '@/m7/so1/m7-outcome-assertion.cca-adapter-interface';",
+    );
+    expect(so2Violations(overlay)).toContainEqual(
+      `M7_CROSS_FAMILY_EDGE:${SO2_EXECUTOR} -> ${M7_SO1_MODULES.adapterInterface}`,
+    );
+  });
+
+  it('FAILS: the SO-2 adapter reuses the SO-1 context type (a productive SO2→SO1 edge)', () => {
+    const overlay = prepend(
+      SO2_ADAPTER,
+      "import type { M7ParticipantOperationContext } from '@/m7/so1/m7-participant-operation-context';",
+    );
+    expect(so2Violations(overlay)).toContainEqual(
+      `M7_CROSS_FAMILY_EDGE:${SO2_ADAPTER} -> m7/so1/m7-participant-operation-context.ts`,
+    );
+  });
+
+  it('FAILS: a second module (the SO-2 adapter) reads M7_PARTICIPANT_DATABASE_URL', () => {
+    const overlay = prepend(
+      SO2_ADAPTER,
+      "const stolen = process.env['M7_PARTICIPANT_DATABASE_URL'];\nvoid stolen;",
+    );
+    expect(m7Violations(overlay)).toContainEqual(
+      expect.stringContaining('M7_CREDENTIAL_READER_CENSUS:M7_PARTICIPANT_DATABASE_URL'),
+    );
+  });
+
+  it.each(['M7_STORAGE_WORKER_DATABASE_URL', 'M7_CAPABILITY_SIGNER_DATABASE_URL'])(
+    'FAILS: the out-of-scope credential %s appears in the SO-2 family',
+    (key) => {
+      expect(
+        m7Violations(prepend(SO2_ADAPTER, `const k = process.env['${key}'];\nvoid k;`)),
+      ).toContainEqual(expect.stringContaining(`M7_CREDENTIAL_NOT_IN_THIS_SLICE:${key}`));
+    },
+  );
+
+  it('FAILS: the SO-2 implementation bypasses the topology preflight', () => {
+    const mutated = mutateSo2Engine('    assertCcaEntryTopology();\n', '');
+    expect(so2Violations({ [M7_ENGINE]: mutated })).toContainEqual('M7_SO2_ENTRY_GUARD_MISSING');
+    // …and the SO-1 rule is not fooled into passing SO-2's defect as its own.
+    expect(analyzeM7EntryGuardOrder(mutated)).toEqual([]);
+  });
+
+  it('FAILS: the SO-2 preflight is moved below the digest and session reads', () => {
+    const noGuard = mutateSo2Engine('    assertCcaEntryTopology();\n', '');
+    const mutated = mutateSo2Engine(
+      '    try {\n      return await runCcaTransaction(',
+      '    assertCcaEntryTopology();\n    try {\n      return await runCcaTransaction(',
+      noGuard,
+    );
+    const v = analyzeM7So2EntryGuardOrder(mutated);
+    expect(v).toContain('M7_SO2_DB_WORK_BEFORE_ENTRY_GUARD:expectedControlPlaneManifestDigest');
+    expect(v).toContain('M7_SO2_DB_WORK_BEFORE_ENTRY_GUARD:readM7ParticipantSessionSecret');
+  });
+
+  it('FAILS: the SO-2 preflight is made conditional', () => {
+    const mutated = mutateSo2Engine(
+      '    assertCcaEntryTopology();\n',
+      "    if (input.purchaseIntentId !== '') assertCcaEntryTopology();\n",
+    );
+    expect(analyzeM7So2EntryGuardOrder(mutated)).toContain(
+      'M7_SO2_ENTRY_GUARD_NOT_UNCONDITIONAL_TOP_LEVEL',
+    );
+  });
+
+  it('FAILS: SO-2 resolves the assignment before the allowed CCA phase', () => {
+    const withoutInTx = mutateSo2Engine(
+      '          const derivedAssignmentId = await resolveAssignmentReference(input.purchaseIntentId);\n',
+      '',
+    );
+    const mutated = mutateSo2Engine(
+      '    try {\n      return await runCcaTransaction(',
+      '    const derivedAssignmentId = await resolveAssignmentReference(input.purchaseIntentId);\n' +
+        '    try {\n      return await runCcaTransaction(',
+      withoutInTx,
+    );
+    const v = analyzeM7So2EntryGuardOrder(mutated);
+    expect(v).toContain('M7_SO2_DB_WORK_OUTSIDE_CCA_TRANSACTION:resolveAssignmentReference');
+    expect(v).toContain('M7_SO2_STEP_OUTSIDE_CCA_TRANSACTION:resolveAssignmentReference');
+  });
+
+  it('FAILS: SO-2 adds a pre-CCA replay lookup', () => {
+    const mutated = mutateSo2Engine(
+      '    try {\n      return await runCcaTransaction(',
+      '    const replay = await lookupOutcomeReceipt(expectedManifestSha256, sessionSecret, context.participantId, input as never);\n' +
+        "    if (replay.lookup_status === 'MATCH') return replay as never;\n" +
+        '    try {\n      return await runCcaTransaction(',
+    );
+    const v = analyzeM7So2EntryGuardOrder(mutated);
+    expect(v).toContain('M7_SO2_REPLAY_STEP_PRESENT:lookupOutcomeReceipt');
+    expect(v).toContain('M7_SO2_DB_WORK_OUTSIDE_CCA_TRANSACTION:lookupOutcomeReceipt');
+  });
+
+  it('FAILS: SO-2 adds ANY pre-CCA database statement on the participant client', () => {
+    const mutated = mutateSo2Engine(
+      '    try {\n      return await runCcaTransaction(',
+      '    await participant().$queryRaw`SELECT 1`;\n    try {\n      return await runCcaTransaction(',
+    );
+    const v = analyzeM7So2EntryGuardOrder(mutated);
+    expect(v).toContain('M7_SO2_PARTICIPANT_CLIENT_USES:2');
+    expect(v.some((x) => x.startsWith('M7_SO2_DB_WORK_OUTSIDE_CCA_TRANSACTION:tagged:'))).toBe(
+      true,
+    );
+  });
+
+  it('FAILS: the SO-2 clock is sampled before the assignment proof', () => {
+    const mutated = mutateSo2Engine(
+      '          const derivedAssignmentId = await resolveAssignmentReference(input.purchaseIntentId);\n',
+      '          const early = new Date();\n          void early;\n' +
+        '          const derivedAssignmentId = await resolveAssignmentReference(input.purchaseIntentId);\n',
+    );
+    expect(analyzeM7So2EntryGuardOrder(mutated)).toContain('M7_SO2_STEP_COUNT:new:Date:2');
+  });
+
+  it('FAILS: consent is read before the lock/proof statement', () => {
+    const src = realSource(M7_ENGINE);
+    const read =
+      '          const facts = await readConsentAuthorizationFacts(prisma, derivedAssignmentId);\n';
+    const moved = mutateSo2Engine(
+      '          if (derivedAssignmentId === null) throw new NotAuthorizedRollback();\n',
+      '          if (derivedAssignmentId === null) throw new NotAuthorizedRollback();\n' + read,
+      mutateSo2Engine(read, '', src),
+    );
+    expect(analyzeM7So2EntryGuardOrder(moved)).toContain(
+      'M7_SO2_STEP_ORDER:readConsentAuthorizationFacts',
+    );
+  });
+
+  it('FAILS: an SO-3 / worker / signer productive module appears', () => {
+    const v = m7Violations({
+      'm7/so3/m7-saving-evidence.cca-leaf.ts': 'export const x = 1;',
+    });
+    expect(v).toContainEqual(
+      expect.stringContaining('M7_UNEXPECTED_LEAF:m7/so3/m7-saving-evidence.cca-leaf.ts'),
+    );
+    expect(v).toContainEqual(expect.stringContaining('M7_SO2_SO3_MODULE_PRESENT'));
+  });
+
+  it.each([
+    ['p_finalize_evidence_submission_v1', 'services/premature-so3.ts'],
+    ['x_mint_generation_capability_v1', 'services/premature-signer.ts'],
+    ['w_claim_upload_intent_v1', 'services/premature-worker.ts'],
+  ])('FAILS: the later-slice function %s is named in productive source', (fn, rel) => {
+    expect(
+      so2Violations({ [rel]: `export const sql = 'SELECT * FROM m7.${fn}($1)';` }),
+    ).toContainEqual(expect.stringContaining(`M7_LATER_SLICE_FUNCTION:`));
+  });
+
+  it('FAILS: a provider SDK is imported by productive source', () => {
+    expect(
+      so2Violations({
+        'services/presign.ts':
+          "import { S3Client } from '@aws-sdk/client-s3';\nexport const c = S3Client;",
+      }),
+    ).toContainEqual('M7_PROVIDER_SDK_IMPORT:@aws-sdk/client-s3:services/presign.ts');
+  });
+
+  it('FAILS: a signed-URL / presign capability appears in the M7 runtime', () => {
+    const overlay = prepend(SO2_ADAPTER, 'export function presignStagingPut() { return 1; }');
+    expect(so2Violations(overlay)).toContainEqual(
+      `M7_SIGNED_URL_IDENTIFIER:presignStagingPut:${SO2_ADAPTER}`,
+    );
+  });
+
+  it('FAILS: a second AGR implementation / a direct optionalEvidenceConsent read', () => {
+    const agr = prepend(
+      M7_ENGINE,
+      "import { applyAgr } from '@/cca/consent-evaluation';\nvoid applyAgr;",
+    );
+    expect(so2Violations(agr)).toContainEqual(`M7_SECOND_AGR_REFERENCE:${M7_ENGINE}`);
+    const direct = mutateModule(
+      SO2_EXECUTOR,
+      '  return adapter.executeEvidenceUploadAuthorization({',
+      '  if ((_scope as unknown as { optionalEvidenceConsent?: boolean }).optionalEvidenceConsent === false) throw new Error();\n  return adapter.executeEvidenceUploadAuthorization({',
+    );
+    expect(so2Violations(direct)).toContainEqual(
+      `M7_RUNTIME_READS_OPTIONAL_EVIDENCE_CONSENT:${SO2_EXECUTOR}`,
+    );
+  });
+
+  it.each([
+    ['a Next.js route', 'app/api/m7/evidence/route.ts'],
+    ['the public services barrel', 'services/index.ts'],
+  ])('FAILS: %s exposes the SO-2 sealed operation', (_label, rel) => {
+    const base = rel === 'services/index.ts' ? realSource(rel) : '';
+    expect(
+      m7Violations({
+        [rel]: `${base}\nimport { beginAuthorizedEvidenceUpload } from '@/m7/so2/m7-evidence-upload.cca-leaf';\nexport const POST = beginAuthorizedEvidenceUpload;\n`,
+      }),
+    ).toContainEqual(expect.stringContaining(`M7_SO1_PUBLIC_EXPOSURE:${rel} -> ${SO2_LEAF}`));
+  });
+
+  it('FAILS: the SO-2 types-only operation context gains runtime code', () => {
+    const rel = M7_SO2_MODULES.operationContext;
+    expect(
+      m7Violations({ [rel]: `${realSource(rel)}\nexport const leak = () => 1;` }),
+    ).toContainEqual(expect.stringContaining(`M7_TYPES_ONLY_MODULE_HAS_RUNTIME_CODE:${rel}`));
+  });
+});
+
+describe('SO-2 AUTH §10 / §13 — the SO-2 sealed definition surface admits no injected capability', () => {
+  async function so2Parts() {
+    const { defineSealedEvidenceUploadOperation } = await import('@/db/m7-participant-cca-engine');
+    const { m7EvidenceUploadLockOrder, m7EvidenceUploadAdapter } =
+      await import('@/m7/so2/m7-evidence-upload.cca-adapter');
+    const { m7EvidenceUploadExecutor } = await import('@/m7/so2/m7-evidence-upload.cca-executor');
+    const { parseEvidenceUploadInput } = await import('@/m7/so2/evidence-upload-input');
+    return {
+      define: defineSealedEvidenceUploadOperation,
+      base: {
+        operationId: 'probe',
+        policy: 'OPTIONAL_EVIDENCE' as const,
+        parseInput: parseEvidenceUploadInput,
+        lockOrder: m7EvidenceUploadLockOrder,
+        adapter: m7EvidenceUploadAdapter,
+        executor: m7EvidenceUploadExecutor,
+      },
+    };
+  }
+
+  it('rejects an unknown definition key, so no replay/callback/policy selector can be injected', async () => {
+    const { define, base } = await so2Parts();
+    expect(() => define(base)).not.toThrow();
+    for (const injected of [
+      'preCcaReplayLookup',
+      'replay',
+      'lookup',
+      'query',
+      'callback',
+      'client',
+      'transaction',
+      'assignmentRef',
+      'storageProfile',
+      'purpose',
+    ]) {
+      expect(() => define({ ...base, [injected]: () => undefined } as never)).toThrowError(
+        /CCA_INVALID_DEFINITION/,
+      );
+    }
+  });
+
+  it('rejects any policy other than OPTIONAL_EVIDENCE (GENERAL_COLLECTION included)', async () => {
+    const { define, base } = await so2Parts();
+    for (const policy of ['GENERAL_COLLECTION', 'NONE', '', undefined]) {
+      expect(() => define({ ...base, policy } as never)).toThrowError(/CCA_INVALID_DEFINITION/);
+    }
+  });
+
+  it('the SO-1 factory refuses the SO-2 policy and the SO-2 factory refuses the SO-1 policy', async () => {
+    const { defineSealedOutcomeAssertionOperation } =
+      await import('@/db/m7-participant-cca-engine');
+    const { define, base } = await so2Parts();
+    expect(() =>
+      defineSealedOutcomeAssertionOperation({ ...base, policy: 'OPTIONAL_EVIDENCE' } as never),
+    ).toThrowError(/CCA_INVALID_DEFINITION/);
+    expect(() => define({ ...base, policy: 'GENERAL_COLLECTION' } as never)).toThrowError(
+      /CCA_INVALID_DEFINITION/,
+    );
+  });
+
+  it('the SO-2 sealed surface exposes only `execute`, and rejects a third argument', async () => {
+    const { beginAuthorizedEvidenceUpload } = await import('@/m7/so2/m7-evidence-upload.cca-leaf');
+    expect(Object.keys(beginAuthorizedEvidenceUpload)).toEqual(['execute']);
+    expect(Object.isFrozen(beginAuthorizedEvidenceUpload)).toBe(true);
+    await expect(
+      (beginAuthorizedEvidenceUpload.execute as unknown as (...a: unknown[]) => Promise<unknown>)(
+        {},
+        {},
+        () => undefined,
+      ),
+    ).rejects.toThrowError(/CCA_SEALED_SURFACE_VIOLATION/);
   });
 });
