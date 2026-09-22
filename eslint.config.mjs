@@ -174,18 +174,24 @@ const FORBIDDEN_STUDY_ADMIN = [
       '@/services/study-assignment-admin',
       '@/services/study-participant-session',
       '@/services/study-admin',
+      // M7 V1.1 §8.2 / §18.3: the M7 participant-session module mints the 32-byte session secret,
+      // holds it in a module-private WeakMap and is the single reader of
+      // M7_SESSION_ISSUER_DATABASE_URL. Participant-facing and app-layer code must not be able to
+      // reach it at all — defence in depth over the M7 capability census, never a substitute for it.
+      '@/services/m7-participant-session',
       '**/services/study-protocol-admin',
       '**/services/study-experiment-admin',
       '**/services/study-recruitment',
       '**/services/study-assignment-admin',
       '**/services/study-participant-session',
       '**/services/study-admin',
+      '**/services/m7-participant-session',
     ],
     message:
-      'The trusted study-admin write capabilities (protocol/experiment/recruitment/assignment) and ' +
-      'the trusted participant-session adapter are off-limits to participant-facing/app code. Reach ' +
-      'them only via @/services/study-admin from a trusted entrypoint; participant-facing code uses ' +
-      'the @/services barrel (consent/read).',
+      'The trusted study-admin write capabilities (protocol/experiment/recruitment/assignment), the ' +
+      'trusted participant-session adapter and the M7 participant-session capability module are ' +
+      'off-limits to participant-facing/app code. Reach them only via @/services/study-admin from a ' +
+      'trusted entrypoint; participant-facing code uses the @/services barrel (consent/read).',
   },
   {
     // A1-CODE-01: the participant-context CREATION primitive submodule. Ordinary code must never
@@ -319,6 +325,20 @@ export default tseslint.config(
     },
   },
   {
+    // M7 V1.1 §8.2 / §18.3: the SANCTIONED M7 participant-session capability module. It is the
+    // issuer the specification names, so it necessarily (a) holds its own Prisma connection
+    // authenticated as `pagamenos_m7_session_issuer_rt` — the single reader of
+    // M7_SESSION_ISSUER_DATABASE_URL — and (b) consumes the UNCHANGED A1 trusted session adapter to
+    // obtain a genuine TrustedParticipantContext before issuing anything. Exactly the same
+    // exemption the accepted configuration already grants every other trusted service
+    // implementation; the narrow capability facts are proved mechanically by the M7 capability
+    // census (src/cca/capability.test.ts) and the module-capability AST test.
+    files: ['src/services/m7-participant-session.ts'],
+    rules: {
+      'no-restricted-imports': 'off',
+    },
+  },
+  {
     // Test + tooling files may use Node builtins, looser typing, and the internal modules
     // (infrastructure, not production application code).
     files: ['**/*.test.ts', 'vitest.config.ts', 'vitest.integration.config.ts'],
@@ -335,6 +355,9 @@ export default tseslint.config(
     files: [
       'src/cca/**/*.ts',
       'src/db/cca-engine.ts',
+      // The productive M7 specialization of the private CCA engine is the same runtime surface and
+      // gets the same defence in depth; its path does not match the globs above.
+      'src/db/m7-participant-cca-engine.ts',
       'src/**/*.cca-leaf.ts',
       'src/**/*.cca-executor.ts',
       'src/**/*.cca-adapter.ts',

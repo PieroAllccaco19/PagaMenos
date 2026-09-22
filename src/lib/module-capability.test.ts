@@ -146,6 +146,18 @@ const exemptFromRaw = (rel: string): boolean =>
   rel.startsWith('db/') ||
   rel.startsWith('persistence/') ||
   rel === 'services/decide-and-persist.ts' ||
+  // M7 V1.1 §8.2 / §18.3: the sanctioned M7 participant-session module is the issuer the
+  // specification names, so it necessarily holds its own Prisma connection authenticated as
+  // `pagamenos_m7_session_issuer_rt`. It is the SINGLE productive reader of
+  // M7_SESSION_ISSUER_DATABASE_URL, it exports no client / transaction / query capability, and the
+  // M7 credential-closure census (src/cca/capability.test.ts) proves both facts mechanically.
+  rel === 'services/m7-participant-session.ts' ||
+  // A TYPES-ONLY module whose only Prisma edge is `import type { Prisma }`, which carries no
+  // runtime capability. This predicate deliberately does not distinguish type-only edges, so the
+  // exemption is an exact path rather than a relaxation of the predicate — and the types-only
+  // property is PROVED, not asserted: `analyzeM7So1Topology` rule M7 fails if this file contains
+  // any runtime statement or exports any value.
+  rel === 'm7/so1/m7-participant-operation-context.ts' ||
   isTestOrFixture(rel);
 // The deep DI module may be imported only by the barrel, the module itself, and — for the INTERNAL
 // §18 finder capability (Sol Closure 3) — the sanctioned A2 decision/repair saga, which is the sole
@@ -416,7 +428,16 @@ const STUDY_ADMIN_OWNERS: Record<string, string[]> = {
   'services/study-experiment-admin': ['services/study-admin.ts'],
   'services/study-recruitment': ['services/study-admin.ts'],
   'services/study-assignment-admin': ['services/study-admin.ts'],
-  'services/study-participant-session': ['services/study-admin.ts'],
+  // M7 V1.1 §8.2 (AUTH §8): the M7 participant-session capability module is an ADDITIONAL sanctioned
+  // importer of the trusted A1 session adapter. It is the issuer the M7 specification names, and it
+  // obtains a genuine TrustedParticipantContext through the UNCHANGED
+  // `resolveTrustedParticipantContext` BEFORE issuing an M7 session. This entry is additive: every
+  // existing owner is unchanged, A1 semantics are unchanged, and participant-facing code still
+  // cannot mint a TrustedParticipantContext nor reach the raw M7 session issuer.
+  'services/study-participant-session': [
+    'services/study-admin.ts',
+    'services/m7-participant-session.ts',
+  ],
   'services/study-analysis': ['services/study-admin.ts', 'services/index.ts'],
   'services/study-admin': [],
 };
