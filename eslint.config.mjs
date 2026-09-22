@@ -358,6 +358,9 @@ export default tseslint.config(
       // The productive M7 specialization of the private CCA engine is the same runtime surface and
       // gets the same defence in depth; its path does not match the globs above.
       'src/db/m7-participant-cca-engine.ts',
+      // M7 V1.1 TO-8: the capability-signer DB foundation opens its own registered transaction; it
+      // gets the same defence in depth.
+      'src/db/m7-capability-signer.ts',
       'src/**/*.cca-leaf.ts',
       'src/**/*.cca-executor.ts',
       'src/**/*.cca-adapter.ts',

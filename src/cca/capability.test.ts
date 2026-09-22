@@ -15,6 +15,7 @@ import {
   analyzeM7So2Topology,
   analyzeM7EntryGuardOrder,
   analyzeM7So2EntryGuardOrder,
+  analyzeM7CapabilitySignerTopology,
   ambientViolations,
   extractImportEdges,
   fsSourceProvider,
@@ -885,7 +886,10 @@ describe('AUTH §25 — the productive SO-1 topology is exactly one sealed opera
     for (const rel of productiveModules()) {
       if (so2Family.includes(rel)) continue;
       expect(rel).not.toMatch(/evidence.*\.cca-(leaf|executor|adapter)/i);
-      // SO-3 / storage worker / capability signer remain absent in every naming.
+      // SO-3 / storage worker remain absent in every naming. The capability signer exists as
+      // EXACTLY the TO-8 DB foundation module and its pure contract — and in no other naming.
+      if (rel === 'db/m7-capability-signer.ts') continue;
+      if (rel === 'm7/runtime/capability-signer-contract.ts') continue;
       expect(rel).not.toMatch(
         /(saving-evidence|evidence-submission|storage-worker|capability-signer)/i,
       );
@@ -895,9 +899,15 @@ describe('AUTH §25 — the productive SO-1 topology is exactly one sealed opera
   it('no productive module constructs a second PrismaClient from an M7 credential', () => {
     for (const rel of productiveModules()) {
       if (!/new PrismaClient/.test(codeOnly(rel))) continue;
-      // Exactly three construction points: the shared app client, the hidden participant client
-      // and the session-issuer client. Each is module-private and never exported.
-      expect([M7_ENGINE, M7_SESSION_MODULE, 'db/client.ts']).toContain(rel);
+      // Exactly four construction points: the shared app client, the hidden participant client,
+      // the session-issuer client and the TO-8 capability-signer client. Each is module-private and
+      // never exported (the signer's is proved by analyzeM7CapabilitySignerTopology X1/X5).
+      expect([
+        M7_ENGINE,
+        M7_SESSION_MODULE,
+        'db/client.ts',
+        'db/m7-capability-signer.ts',
+      ]).toContain(rel);
     }
   });
 
@@ -1108,7 +1118,6 @@ describe('AUTH §21 — M7 credential capability enforcement (every mutation FAI
     'M7_PRIVACY_REQUEST_DATABASE_URL',
     'M7_STORAGE_WORKER_DATABASE_URL',
     'M7_DELETION_AUTHORITY_DATABASE_URL',
-    'M7_CAPABILITY_SIGNER_DATABASE_URL',
   ])('FAILS: the out-of-scope credential %s appears in productive source', (key) => {
     expect(m7Violations({ 'services/premature.ts': readsEnv(key) })).toContainEqual(
       expect.stringContaining(`M7_CREDENTIAL_NOT_IN_THIS_SLICE:${key}`),
@@ -1727,7 +1736,7 @@ describe('SO-2 AUTH §31 — negative mutations (every one FAILS CLOSED)', () =>
     );
   });
 
-  it.each(['M7_STORAGE_WORKER_DATABASE_URL', 'M7_CAPABILITY_SIGNER_DATABASE_URL'])(
+  it.each(['M7_STORAGE_WORKER_DATABASE_URL'])(
     'FAILS: the out-of-scope credential %s appears in the SO-2 family',
     (key) => {
       expect(
@@ -1840,12 +1849,23 @@ describe('SO-2 AUTH §31 — negative mutations (every one FAILS CLOSED)', () =>
 
   it.each([
     ['p_finalize_evidence_submission_v1', 'services/premature-so3.ts'],
-    ['x_mint_generation_capability_v1', 'services/premature-signer.ts'],
     ['w_claim_upload_intent_v1', 'services/premature-worker.ts'],
   ])('FAILS: the later-slice function %s is named in productive source', (fn, rel) => {
     expect(
       so2Violations({ [rel]: `export const sql = 'SELECT * FROM m7.${fn}($1)';` }),
     ).toContainEqual(expect.stringContaining(`M7_LATER_SLICE_FUNCTION:`));
+  });
+
+  it('FAILS: the capability function is named by a productive module other than the TO-8 signer', () => {
+    // x_mint is no longer a later-slice function: the TO-8 signer foundation owns it. Naming it
+    // anywhere else is still refused — by the ownership census, not by the later-slice list.
+    const rel = 'services/premature-signer.ts';
+    const overlay = {
+      [rel]: "export const sql = 'SELECT * FROM m7.x_mint_generation_capability_v1($1)';",
+    };
+    expect(analyzeM7CapabilitySignerTopology(providerFor(overlay)).violations).toContainEqual(
+      `X11_CAPABILITY_FUNCTION_OUTSIDE_SIGNER:${rel}`,
+    );
   });
 
   it('FAILS: a provider SDK is imported by productive source', () => {

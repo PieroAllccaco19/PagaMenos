@@ -23,6 +23,9 @@ export default defineConfig({
       '**/*.m7-so1.test.ts',
       // The M7 SO-2 real-PostgreSQL suite (vitest.m7-so2.config.ts, `pnpm m7:so2`), likewise.
       '**/*.m7-so2.test.ts',
+      // The M7 capability-signer / TO-8 real-PostgreSQL suite (vitest.m7-signer.config.ts,
+      // `pnpm m7:signer`), likewise.
+      '**/*.m7-signer.test.ts',
     ],
     // The boundary self-test spins up ESLint programmatically; give it room.
     testTimeout: 30_000,

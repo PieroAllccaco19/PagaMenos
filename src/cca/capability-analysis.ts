@@ -201,6 +201,13 @@ export const CCA_ENGINE_MODULE = 'db/cca-engine.ts';
 export const M7_PARTICIPANT_CCA_ENGINE_MODULE = 'db/m7-participant-cca-engine.ts';
 
 /**
+ * The M7 capability signer, TO-8 DB foundation (M7 V1.1 §11.7.3, §16.2.3, §18.3). NOT a CCA role
+ * module: it is a separate transaction owner with its own credential, its own owner kind and exactly
+ * one exported operation. Rules X1–X14 (`analyzeM7CapabilitySignerTopology`) pin it.
+ */
+export const M7_CAPABILITY_SIGNER_MODULE = 'db/m7-capability-signer.ts';
+
+/**
  * Every module carrying the ENGINE role. The accepted analyzer had exactly one; the productive M7
  * path adds its specialization. This is an EXTENSION, never a relaxation: an engine is still the
  * ONLY module a leaf may take a db/ or services/ edge to, still the only permitted importer of the
@@ -668,11 +675,21 @@ export const CAPABILITY_PRIMITIVE_OWNERS: Readonly<Record<string, readonly strin
   ],
   createLockSequencer: [CCA_ENGINE_MODULE, M7_PARTICIPANT_CCA_ENGINE_MODULE, 'cca/lock-order.ts'],
   sealOperation: [CCA_ENGINE_MODULE, M7_PARTICIPANT_CCA_ENGINE_MODULE, 'cca/sealed-operation.ts'],
+  // M7 V1.1 TO-8: the capability-signer owner kind. Its runner and its client sealing are reachable
+  // from exactly the signer module (and are defined in the execution-context module).
+  runM7CapabilitySignerTransaction: [M7_CAPABILITY_SIGNER_MODULE, 'cca/execution-context.ts'],
+  sealM7CapabilitySignerClient: [M7_CAPABILITY_SIGNER_MODULE, 'cca/execution-context.ts'],
 };
 
 /** Restricted modules → allowed importers (plus leaves where noted by role rules). */
 export const RESTRICTED_MODULE_IMPORTERS: Readonly<Record<string, readonly string[]>> = {
-  'cca/execution-context.ts': ['db/client.ts', CCA_ENGINE_MODULE, M7_PARTICIPANT_CCA_ENGINE_MODULE],
+  'cca/execution-context.ts': [
+    'db/client.ts',
+    CCA_ENGINE_MODULE,
+    M7_PARTICIPANT_CCA_ENGINE_MODULE,
+    // M7 V1.1 TO-8: the capability signer registers its own owner kind (additive importer).
+    M7_CAPABILITY_SIGNER_MODULE,
+  ],
   'cca/tracked-adapter.ts': [CCA_ENGINE_MODULE, M7_PARTICIPANT_CCA_ENGINE_MODULE],
 };
 
@@ -692,20 +709,21 @@ export const M7_SESSION_MODULE = 'services/m7-participant-session.ts';
 
 /**
  * V1.1 §18.3 credential scoping: each M7 database credential is read in EXACTLY ONE productive
- * module. This slice implements exactly two of the six M7 role credentials; the other four are not
- * implemented and MUST NOT appear in productive source at all.
+ * module. Three of the six M7 role credentials are implemented (participant, session issuer and — in
+ * the TO-8 signer foundation slice — the capability signer); the other three are not implemented and
+ * MUST NOT appear in productive source at all.
  */
 export const M7_CREDENTIAL_READERS: Readonly<Record<string, string>> = {
   M7_PARTICIPANT_DATABASE_URL: M7_PARTICIPANT_CCA_ENGINE_MODULE,
   M7_SESSION_ISSUER_DATABASE_URL: M7_SESSION_MODULE,
+  M7_CAPABILITY_SIGNER_DATABASE_URL: M7_CAPABILITY_SIGNER_MODULE,
 };
 
-/** M7 role credentials that are deliberately NOT implemented in this slice (AUTH §9, §29). */
+/** M7 role credentials that are deliberately NOT implemented (AUTH §9, §29; signer AUTH §11). */
 export const M7_CREDENTIALS_NOT_IN_THIS_SLICE: readonly string[] = [
   'M7_PRIVACY_REQUEST_DATABASE_URL',
   'M7_STORAGE_WORKER_DATABASE_URL',
   'M7_DELETION_AUTHORITY_DATABASE_URL',
-  'M7_CAPABILITY_SIGNER_DATABASE_URL',
 ];
 
 function identifierUses(code: string, names: ReadonlySet<string>): Set<string> {
@@ -1725,13 +1743,14 @@ export const M7_DB_FUNCTION_OWNERS: Readonly<Record<string, readonly string[]>> 
   p_begin_evidence_upload_v1: [M7_SO2_MODULES.adapter],
   s_issue_participant_session_v1: [M7_SESSION_MODULE],
   s_revoke_participant_session_v1: [M7_SESSION_MODULE],
+  // M7 V1.1 §19.11.7 / XF-13: the ONE capability function, named only by the TO-8 signer module.
+  x_mint_generation_capability_v1: [M7_CAPABILITY_SIGNER_MODULE],
 };
 
 /** Later-slice database functions that no productive runtime code may name (SO-2 AUTH §4, §32). */
 export const M7_LATER_SLICE_DB_FUNCTIONS: readonly RegExp[] = [
   /\bp_finalize_evidence_submission_v1\b/,
   /\bp_lookup_evidence_receipt_v1\b/,
-  /\bx_mint_generation_capability_v1\b/,
   /\bw_[a-z0-9_]+_v1\b/,
 ];
 
@@ -1756,6 +1775,7 @@ function m7RuntimeFiles(productive: readonly string[]): string[] {
     (f) =>
       f === M7_PARTICIPANT_CCA_ENGINE_MODULE ||
       f === M7_SESSION_MODULE ||
+      f === M7_CAPABILITY_SIGNER_MODULE ||
       f.startsWith('m7/so1/') ||
       f.startsWith('m7/so2/') ||
       f.startsWith('m7/runtime/'),
@@ -2339,6 +2359,706 @@ export function analyzeM7So2EntryGuardOrder(code: string): string[] {
     if (first === undefined || !ts.isIdentifier(first) || first.text !== 'policy') {
       v.push('M7_SO2_CONSENT_POLICY_ARGUMENT');
     }
+  }
+  return v;
+}
+
+// ---------------------------------------------------------------------------------------------------
+// M7 CAPABILITY SIGNER — TO-8 DB FOUNDATION (M7 V1.1 §11.7.3, §16.2.3, §18.3, §18.6; XC-6, XF-12,
+// XF-13, XF-16, XF-17; signer AUTH §21)
+//
+// ADDITIVE, like the SO-1 / SO-2 blocks: every accepted CCA rule and every SO-1 / SO-2 rule still runs
+// over the same tree. Rules X1–X14 pin the signer module; `analyzeTo8ExecutionContext` pins the TO-8
+// owner kind inside the one DatabaseExecutionContext. These are the STATIC (dependency-topology) half
+// of T-171b / IMP-05 / IMP-18 only; process separation (IMP-20) and provider-secret isolation are
+// deployment facts no source analysis can prove.
+// ---------------------------------------------------------------------------------------------------
+
+/** The pure signer contract (envelope type + typed refusal). */
+export const M7_CAPABILITY_SIGNER_CONTRACT_MODULE = 'm7/runtime/capability-signer-contract.ts';
+
+/** The ONE exported signer operation and its ONE parameter (XF-12, XC-6). */
+export const M7_CAPABILITY_SIGNER_OPERATION = 'mintCommittedGenerationEnvelope';
+export const M7_CAPABILITY_SIGNER_PARAMETER = 'generationGrantId';
+
+/** The EXACT local modules the signer may reach (type or value). Nothing else. */
+export const M7_CAPABILITY_SIGNER_LOCAL_IMPORTS: readonly string[] = [
+  'cca/execution-context.ts',
+  M7_CAPABILITY_SIGNER_CONTRACT_MODULE,
+  'm7/runtime/control-plane-digest.ts',
+  'm7/runtime/m7-errors.ts',
+];
+
+/** The EXACT external packages the signer may import. No provider SDK, no other package. */
+export const M7_CAPABILITY_SIGNER_EXTERNAL_IMPORTS: readonly string[] = ['@prisma/client'];
+
+/** Signer AUTH §5: names that may never be a signer parameter (and none may be an extra export). */
+export const M7_CAPABILITY_SIGNER_FORBIDDEN_PARAMETERS: readonly string[] = [
+  'canonicalObjectKey',
+  'objectKey',
+  'key',
+  'prefix',
+  'backendSha256',
+  'backend',
+  'validUntil',
+  'ttl',
+  'TTL',
+  'interval',
+  'expiry',
+  'grantExpiresAt',
+  'operation',
+  'capabilityOperation',
+  'capabilityMode',
+  'envelopeEnforcement',
+  'storageProfileId',
+  'signingProfileId',
+  'credentialProfileId',
+  'providerCredential',
+  'credential',
+  'transaction',
+  'tx',
+  'callback',
+  'sql',
+  'repository',
+  'workerId',
+  'options',
+  'manifestSha256',
+];
+
+/** The productive PrismaClient construction points — exactly these, each exactly once. */
+export const M7_PRISMA_CLIENT_CONSTRUCTION_POINTS: readonly string[] = [
+  'db/client.ts',
+  M7_PARTICIPANT_CCA_ENGINE_MODULE,
+  M7_SESSION_MODULE,
+  M7_CAPABILITY_SIGNER_MODULE,
+];
+
+/** The TO-8 owner kind literal and the accepted owner kinds, exactly. */
+export const TO8_OWNER_KIND = 'M7_CAPABILITY_SIGNER';
+export const TRANSACTION_AUTHORITIES: readonly string[] = [
+  'NONE',
+  'ACCEPTED_OWNER',
+  'CCA',
+  TO8_OWNER_KIND,
+];
+
+export interface M7CapabilitySignerTopologyReport {
+  readonly violations: readonly string[];
+  readonly signerExports: readonly string[];
+  readonly signerParameters: readonly string[];
+  readonly signerLocalImports: readonly string[];
+  readonly signerExternalImports: readonly string[];
+  readonly signerStatements: readonly string[];
+  readonly signerDbFunctions: readonly string[];
+  readonly signerImporters: readonly string[];
+  readonly contractImporters: readonly string[];
+  readonly prismaClientConstructionPoints: Readonly<Record<string, number>>;
+  readonly signerDatabaseUrlReaders: readonly string[];
+  readonly executionContext: readonly string[];
+}
+
+function newPrismaClientCount(code: string): number {
+  let n = 0;
+  const visit = (x: ts.Node): void => {
+    if (
+      ts.isNewExpression(x) &&
+      ts.isIdentifier(x.expression) &&
+      x.expression.text === 'PrismaClient'
+    )
+      n++;
+    ts.forEachChild(x, visit);
+  };
+  visit(parse(code));
+  return n;
+}
+
+function unwrap(e: ts.Expression): ts.Expression {
+  let x = e;
+  while (
+    ts.isParenthesizedExpression(x) ||
+    ts.isAsExpression(x) ||
+    ts.isNonNullExpression(x) ||
+    ts.isSatisfiesExpression(x) ||
+    ts.isTypeAssertionExpression(x)
+  ) {
+    x = x.expression;
+  }
+  return x;
+}
+
+function exportedFunction(sf: ts.SourceFile, name: string): ts.FunctionDeclaration | undefined {
+  for (const st of sf.statements) {
+    if (!ts.isFunctionDeclaration(st) || st.name?.text !== name) continue;
+    const mods = ts.getModifiers(st);
+    if (mods?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) === true) return st;
+  }
+  return undefined;
+}
+
+function callsNamed(root: ts.Node, name: string): ts.CallExpression[] {
+  const out: ts.CallExpression[] = [];
+  const visit = (n: ts.Node): void => {
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === name) {
+      out.push(n);
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(root);
+  return out;
+}
+
+/**
+ * Every M7 capability-signer rule (X1–X14) plus the TO-8 execution-context rules. `violations` is
+ * empty when the tree is compliant; the other fields are the observed censuses (audit evidence).
+ */
+export function analyzeM7CapabilitySignerTopology(
+  provider: SourceProvider,
+): M7CapabilitySignerTopologyReport {
+  const productive = provider.list().filter(isProductive);
+  const v: string[] = [];
+  const read = (rel: string): string => provider.read(rel) ?? '';
+  const edgesOf = (rel: string): { edge: ImportEdge; target: Resolved }[] =>
+    memoEdges(read(rel)).map((edge) => ({
+      edge,
+      target: resolveSpecifier(edge.specifier, rel, provider),
+    }));
+
+  const code = provider.read(M7_CAPABILITY_SIGNER_MODULE);
+  let signerExports: string[] = [];
+  let signerParameters: string[] = [];
+  const signerLocalImports = new Set<string>();
+  const signerExternalImports = new Set<string>();
+  const signerStatements: string[] = [];
+  let signerDbFunctions: string[] = [];
+
+  if (code === null) {
+    v.push(`X1_SIGNER_MISSING:${M7_CAPABILITY_SIGNER_MODULE}`);
+  } else {
+    const sf = parse(code);
+
+    // ── X1 — exactly ONE exported productive function, exactly ONE argument: generationGrantId ────
+    signerExports = exportedValueNames(code);
+    if (JSON.stringify(signerExports) !== JSON.stringify([M7_CAPABILITY_SIGNER_OPERATION])) {
+      v.push(`X1_SIGNER_EXPORT_SET:[${signerExports.join(',')}]`);
+    }
+    const op = exportedFunction(sf, M7_CAPABILITY_SIGNER_OPERATION);
+    if (op === undefined) {
+      v.push('X1_SIGNER_OPERATION_NOT_A_FUNCTION_DECLARATION');
+    } else {
+      signerParameters = op.parameters.map((p) => p.name.getText(sf));
+      if (op.parameters.length !== 1) v.push(`X1_SIGNER_ARITY:${op.parameters.length}`);
+      for (const p of op.parameters) {
+        const name = p.name.getText(sf);
+        if (!ts.isIdentifier(p.name)) v.push(`X1_SIGNER_PARAMETER_PATTERN:${name}`);
+        if (p.dotDotDotToken !== undefined) v.push(`X1_SIGNER_REST_PARAMETER:${name}`);
+        if (p.initializer !== undefined || p.questionToken !== undefined) {
+          v.push(`X1_SIGNER_OPTIONAL_PARAMETER:${name}`);
+        }
+        if (name !== M7_CAPABILITY_SIGNER_PARAMETER) v.push(`X1_SIGNER_PARAMETER_NAME:${name}`);
+        if (M7_CAPABILITY_SIGNER_FORBIDDEN_PARAMETERS.includes(name)) {
+          v.push(`X1_SIGNER_FORBIDDEN_PARAMETER:${name}`);
+        }
+        if (p.type === undefined || p.type.kind !== ts.SyntaxKind.StringKeyword) {
+          v.push(`X1_SIGNER_PARAMETER_TYPE:${p.type?.getText(sf) ?? '<none>'}`);
+        }
+      }
+    }
+    for (const name of signerExports) {
+      if (M7_CAPABILITY_SIGNER_FORBIDDEN_PARAMETERS.includes(name)) {
+        v.push(`X1_SIGNER_FORBIDDEN_EXPORT:${name}`);
+      }
+    }
+
+    // ── X3 — the signer's dependency edges are EXACTLY the allowed set ─────────────────────────────
+    for (const { edge, target } of edgesOf(M7_CAPABILITY_SIGNER_MODULE)) {
+      if (edge.kind === 'nonliteral' || edge.kind === 'dynamic' || edge.kind === 'require') {
+        v.push(`X3_SIGNER_DYNAMIC_EDGE:${edge.specifier}`);
+      }
+      if (edge.kind === 'reexport' || edge.exportStar)
+        v.push(`X3_SIGNER_REEXPORT:${edge.specifier}`);
+      if (target.type === 'local') {
+        signerLocalImports.add(target.rel);
+        if (CCA_ENGINE_MODULES.has(target.rel))
+          v.push(`X3_SIGNER_IMPORTS_CCA_ENGINE:${target.rel}`);
+        if (target.rel === 'db/client.ts') v.push('X3_SIGNER_IMPORTS_SHARED_CLIENT');
+        if (target.rel.startsWith('m7/so1/') || target.rel.startsWith('m7/so2/')) {
+          v.push(`X3_SIGNER_IMPORTS_PARTICIPANT_FAMILY:${target.rel}`);
+        }
+        if (target.rel === M7_SESSION_MODULE) v.push('X3_SIGNER_IMPORTS_SESSION_MODULE');
+        if (!M7_CAPABILITY_SIGNER_LOCAL_IMPORTS.includes(target.rel)) {
+          v.push(`X3_SIGNER_LOCAL_EDGE:${target.rel}`);
+        }
+      } else if (target.type === 'external') {
+        signerExternalImports.add(target.name);
+        if (PROVIDER_SDK_PACKAGE.test(target.name)) v.push(`X3_SIGNER_PROVIDER_SDK:${target.name}`);
+        if (!M7_CAPABILITY_SIGNER_EXTERNAL_IMPORTS.includes(target.name)) {
+          v.push(`X3_SIGNER_EXTERNAL_EDGE:${target.name}`);
+        }
+      } else {
+        v.push(`X3_SIGNER_UNRESOLVED_EDGE:${edge.specifier}`);
+      }
+    }
+
+    // ── X6 — the signer's DB surface: ONE tagged $queryRaw naming x_mint, nothing else ────────────
+    const ids = identifiersIn(code);
+    for (const forbidden of [
+      '$transaction',
+      '$executeRaw',
+      '$executeRawUnsafe',
+      '$queryRawUnsafe',
+      '$extends',
+      '$use',
+      '$on',
+      'prisma',
+    ]) {
+      if (ids.has(forbidden)) v.push(`X6_SIGNER_FORBIDDEN_IDENTIFIER:${forbidden}`);
+    }
+    let queryRawRefs = 0;
+    const tagged: ts.TaggedTemplateExpression[] = [];
+    const visitDb = (n: ts.Node): void => {
+      if (ts.isPropertyAccessExpression(n) && n.name.text === '$queryRaw') queryRawRefs++;
+      if (ts.isElementAccessExpression(n)) {
+        const key = literalText(n.argumentExpression);
+        if (key !== null && key.startsWith('$')) v.push(`X6_SIGNER_COMPUTED_CLIENT_MEMBER:${key}`);
+      }
+      if (ts.isTaggedTemplateExpression(n)) tagged.push(n);
+      ts.forEachChild(n, visitDb);
+    };
+    visitDb(sf);
+    if (queryRawRefs !== 1) v.push(`X6_SIGNER_QUERY_RAW_REFERENCES:${queryRawRefs}`);
+    if (tagged.length !== 1) v.push(`X6_SIGNER_STATEMENT_COUNT:${tagged.length}`);
+    for (const t of tagged) {
+      const tpl = t.template;
+      const sql = ts.isNoSubstitutionTemplateLiteral(tpl)
+        ? tpl.text
+        : [tpl.head.text, ...tpl.templateSpans.map((s) => s.literal.text)].join('?');
+      signerStatements.push(sql);
+      const tag = unwrap(t.tag);
+      if (!(ts.isPropertyAccessExpression(tag) && tag.name.text === '$queryRaw')) {
+        v.push(`X6_SIGNER_STATEMENT_TAG:${t.tag.getText(sf)}`);
+      } else {
+        const receiver = unwrap(tag.expression);
+        if (!(ts.isIdentifier(receiver) && receiver.text === 'tx')) {
+          v.push(`X6_SIGNER_STATEMENT_RECEIVER:${tag.expression.getText(sf)}`);
+        }
+      }
+      if (
+        !/^SELECT [^;]* FROM m7\.x_mint_generation_capability_v1\(\?::text, \?::uuid\) AS m$/.test(
+          sql,
+        )
+      ) {
+        v.push('X6_SIGNER_STATEMENT_NOT_EXACT_FUNCTION');
+      }
+      const spans = ts.isNoSubstitutionTemplateLiteral(tpl)
+        ? []
+        : tpl.templateSpans.map((s) => s.expression.getText(sf));
+      if (
+        JSON.stringify(spans) !== JSON.stringify(['manifestSha256', M7_CAPABILITY_SIGNER_PARAMETER])
+      ) {
+        v.push(`X6_SIGNER_STATEMENT_ARGUMENTS:[${spans.join(',')}]`);
+      }
+    }
+
+    // ── X7 — commit boundary: the envelope leaves ONLY as the runner's committed value ─────────────
+    const runs = callsNamed(sf, 'runM7CapabilitySignerTransaction');
+    if (runs.length !== 1) v.push(`X7_SIGNER_RUNNER_CALLS:${runs.length}`);
+    const run = runs[0];
+    if (run !== undefined) {
+      if (op === undefined || !(run.pos > op.pos && run.end <= op.end)) {
+        v.push('X7_SIGNER_RUNNER_OUTSIDE_OPERATION');
+      }
+      const [clientArg, optionsArg, bodyArg] = run.arguments;
+      if (
+        clientArg === undefined ||
+        !ts.isCallExpression(clientArg) ||
+        clientArg.expression.getText(sf) !== 'signer' ||
+        clientArg.arguments.length !== 0
+      ) {
+        v.push('X7_SIGNER_RUNNER_CLIENT_NOT_HIDDEN_SIGNER');
+      }
+      if (optionsArg === undefined || optionsArg.getText(sf) !== 'TO8_TRANSACTION_OPTIONS') {
+        v.push('X7_SIGNER_RUNNER_OPTIONS_NOT_FIXED');
+      }
+      if (run.arguments.length !== 3) v.push(`X7_SIGNER_RUNNER_ARITY:${run.arguments.length}`);
+      if (bodyArg === undefined || !ts.isArrowFunction(bodyArg)) {
+        v.push('X7_SIGNER_CALLBACK_NOT_ARROW');
+      } else {
+        if (bodyArg.parameters.length !== 1 || bodyArg.parameters[0]!.name.getText(sf) !== 'tx') {
+          v.push('X7_SIGNER_CALLBACK_PARAMETERS');
+        }
+        // The callback is ONE expression — the statement itself. No block, no assignment, no
+        // side channel through which a pre-commit value could escape.
+        if (ts.isBlock(bodyArg.body)) v.push('X7_SIGNER_CALLBACK_HAS_STATEMENTS');
+        else if (!ts.isTaggedTemplateExpression(unwrap(bodyArg.body))) {
+          v.push('X7_SIGNER_CALLBACK_NOT_THE_STATEMENT');
+        }
+        const inner = (n: ts.Node): void => {
+          if (
+            ts.isBinaryExpression(n) &&
+            n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+            n.operatorToken.kind <= ts.SyntaxKind.LastAssignment
+          ) {
+            v.push('X7_SIGNER_CALLBACK_ASSIGNS');
+          }
+          if (ts.isCallExpression(n))
+            v.push(`X7_SIGNER_CALLBACK_CALLS:${n.expression.getText(sf)}`);
+          ts.forEachChild(n, inner);
+        };
+        inner(bodyArg.body);
+        if (tagged.some((t) => !(t.pos >= bodyArg.pos && t.end <= bodyArg.end))) {
+          v.push('X6_SIGNER_STATEMENT_OUTSIDE_TO8_TRANSACTION');
+        }
+      }
+      // The runner's value is awaited into a `const` of the operation and then only copied.
+      let awaited: ts.Node = run;
+      while (
+        awaited.parent !== undefined &&
+        (ts.isPropertyAccessExpression(awaited.parent) ||
+          (ts.isCallExpression(awaited.parent) && awaited.parent.expression === awaited))
+      ) {
+        awaited = awaited.parent;
+      }
+      const aw = awaited.parent;
+      const decl = aw?.parent;
+      const list = decl?.parent;
+      if (
+        aw === undefined ||
+        !ts.isAwaitExpression(aw) ||
+        decl === undefined ||
+        !ts.isVariableDeclaration(decl) ||
+        list === undefined ||
+        !ts.isVariableDeclarationList(list) ||
+        (list.flags & ts.NodeFlags.Const) === 0
+      ) {
+        v.push('X7_SIGNER_RESULT_NOT_AWAITED_CONST');
+      }
+    }
+    // Module scope holds exactly one mutable binding: the lazily built hidden client.
+    const moduleLets: string[] = [];
+    for (const st of sf.statements) {
+      if (ts.isVariableStatement(st) && (st.declarationList.flags & ts.NodeFlags.Const) === 0) {
+        for (const d of st.declarationList.declarations) moduleLets.push(d.name.getText(sf));
+      }
+    }
+    if (JSON.stringify(moduleLets) !== JSON.stringify(['signerClient'])) {
+      v.push(`X7_SIGNER_MODULE_MUTABLE_BINDINGS:[${moduleLets.join(',')}]`);
+    }
+    // No `let`/`var` inside the operation: nothing can be captured out of the callback.
+    if (op !== undefined) {
+      const letIn = (n: ts.Node): void => {
+        if (ts.isVariableDeclarationList(n) && (n.flags & ts.NodeFlags.Const) === 0) {
+          v.push('X7_SIGNER_OPERATION_MUTABLE_BINDING');
+        }
+        ts.forEachChild(n, letIn);
+      };
+      letIn(op);
+    }
+
+    // ── X8 — the signer names EXACTLY the one capability function ─────────────────────────────────
+    signerDbFunctions = m7FunctionMentions(code);
+    if (JSON.stringify(signerDbFunctions) !== JSON.stringify(['x_mint_generation_capability_v1'])) {
+      v.push(`X8_SIGNER_DB_FUNCTIONS:[${signerDbFunctions.join(',')}]`);
+    }
+
+    // ── X9 — the signer reads EXACTLY one credential key, through one environment access ──────────
+    const envKeys = literalTexts(code).filter((t) => /DATABASE_URL/.test(t));
+    if (JSON.stringify(envKeys) !== JSON.stringify(['M7_CAPABILITY_SIGNER_DATABASE_URL'])) {
+      v.push(`X9_SIGNER_CREDENTIAL_KEYS:[${envKeys.join(',')}]`);
+    }
+    let envAccesses = 0;
+    const visitEnv = (n: ts.Node): void => {
+      if (
+        (ts.isPropertyAccessExpression(n) || ts.isElementAccessExpression(n)) &&
+        n.expression.getText(sf) === 'process.env'
+      ) {
+        envAccesses++;
+      }
+      ts.forEachChild(n, visitEnv);
+    };
+    visitEnv(sf);
+    if (envAccesses !== 1) v.push(`X9_SIGNER_ENV_ACCESSES:${envAccesses}`);
+
+    // ── X10 — the signer awaits nothing it may leave floating, and defines no sealed operation ────
+    if (identifierUses(code, new Set(SEALED_DEFINITION_FUNCTIONS)).size > 0) {
+      v.push('X10_SIGNER_DEFINES_SEALED_OPERATION');
+    }
+    if (
+      identifierUses(code, new Set(['runCcaTransaction', 'installTransactionGovernance'])).size > 0
+    ) {
+      v.push('X10_SIGNER_USES_CCA_TRANSACTION_PRIMITIVE');
+    }
+  }
+
+  // ── X2 — exactly one productive reader of the signer credential (the signer module) ─────────────
+  const SIGNER_ENV = 'M7_CAPABILITY_SIGNER_DATABASE_URL';
+  const signerDatabaseUrlReaders = productive.filter((f) =>
+    memoMentions(read(f), new Set([SIGNER_ENV])).has(SIGNER_ENV),
+  );
+  if (
+    signerDatabaseUrlReaders.length !== 1 ||
+    signerDatabaseUrlReaders[0] !== M7_CAPABILITY_SIGNER_MODULE
+  ) {
+    v.push(`X2_SIGNER_CREDENTIAL_READERS:[${signerDatabaseUrlReaders.join(',')}]`);
+  }
+
+  // ── X4 — nothing productive imports the signer; only the signer imports its contract ──────────
+  const importersOf = (rel: string): string[] =>
+    productive.filter((f) =>
+      edgesOf(f).some((e) => e.target.type === 'local' && e.target.rel === rel),
+    );
+  const signerImporters = importersOf(M7_CAPABILITY_SIGNER_MODULE);
+  for (const f of signerImporters) v.push(`X4_SIGNER_IMPORTED_BY_PRODUCTION:${f}`);
+  const contractImporters = importersOf(M7_CAPABILITY_SIGNER_CONTRACT_MODULE);
+  for (const f of contractImporters) {
+    if (f !== M7_CAPABILITY_SIGNER_MODULE) v.push(`X4_SIGNER_CONTRACT_IMPORTER:${f}`);
+  }
+  const contract = provider.read(M7_CAPABILITY_SIGNER_CONTRACT_MODULE);
+  if (contract === null)
+    v.push(`X4_SIGNER_CONTRACT_MISSING:${M7_CAPABILITY_SIGNER_CONTRACT_MODULE}`);
+  else {
+    if (memoEdges(contract).length !== 0) v.push('X4_SIGNER_CONTRACT_HAS_IMPORTS');
+    if (
+      JSON.stringify(exportedValueNames(contract)) !== JSON.stringify(['M7CapabilitySignerError'])
+    ) {
+      v.push(`X4_SIGNER_CONTRACT_EXPORTS:[${exportedValueNames(contract).join(',')}]`);
+    }
+    if (identifiersIn(contract).has('process')) v.push('X4_SIGNER_CONTRACT_READS_ENVIRONMENT');
+  }
+
+  // ── X5 — exactly the four PrismaClient construction points, each once ─────────────────────────
+  const prismaClientConstructionPoints: Record<string, number> = {};
+  for (const f of productive) {
+    const n = newPrismaClientCount(read(f));
+    if (n > 0) prismaClientConstructionPoints[f] = n;
+  }
+  for (const [f, n] of Object.entries(prismaClientConstructionPoints)) {
+    if (!M7_PRISMA_CLIENT_CONSTRUCTION_POINTS.includes(f))
+      v.push(`X5_PRISMA_CLIENT_CONSTRUCTED:${f}`);
+    else if (n !== 1) v.push(`X5_PRISMA_CLIENT_CONSTRUCTIONS:${f}:${n}`);
+  }
+  for (const f of M7_PRISMA_CLIENT_CONSTRUCTION_POINTS) {
+    if (prismaClientConstructionPoints[f] === undefined)
+      v.push(`X5_PRISMA_CLIENT_POINT_MISSING:${f}`);
+  }
+
+  // ── X11 — the capability function is named by NO other productive file ────────────────────────
+  for (const f of productive) {
+    if (f === M7_CAPABILITY_SIGNER_MODULE) continue;
+    if (M7_VERIFICATION_TOOLING_PREFIXES.some((p) => f.startsWith(p))) continue;
+    if (/\bx_mint_generation_capability_v1\b/.test(literalTexts(read(f)).join('\n'))) {
+      v.push(`X11_CAPABILITY_FUNCTION_OUTSIDE_SIGNER:${f}`);
+    }
+  }
+
+  // ── X12 — no provider SDK, no storage-worker runtime, no SO-3 in productive source ────────────
+  for (const f of productive) {
+    for (const { target } of edgesOf(f)) {
+      if (target.type === 'external' && PROVIDER_SDK_PACKAGE.test(target.name)) {
+        v.push(`X12_PROVIDER_SDK_IMPORT:${target.name}:${f}`);
+      }
+    }
+    if (/(^|\/)(storage-worker|m7-storage-worker|worker)(\/|\.|-)/i.test(f)) {
+      v.push(`X12_WORKER_RUNTIME_PRESENT:${f}`);
+    }
+    if (/(^|\/)(so3|saving-evidence|evidence-submission)(\/|\.|-)/i.test(f)) {
+      v.push(`X12_SO3_PRESENT:${f}`);
+    }
+  }
+
+  // ── X13 — no public route / barrel / participant family / session / engine reaches the signer ──
+  // (X4 already forbids EVERY productive importer; this names the §12 surfaces explicitly.)
+  for (const f of signerImporters) {
+    if (f.startsWith('app/') || f === 'services/index.ts' || f === 'db/index.ts') {
+      v.push(`X13_SIGNER_PUBLIC_EXPOSURE:${f}`);
+    }
+    if (f === M7_PARTICIPANT_CCA_ENGINE_MODULE) v.push('X13_PARTICIPANT_ENGINE_IMPORTS_SIGNER');
+    if (f === M7_SESSION_MODULE) v.push('X13_SESSION_MODULE_IMPORTS_SIGNER');
+  }
+
+  // ── X14 — TO-8 inside the ONE DatabaseExecutionContext ─────────────────────────────────────────
+  const execCode = provider.read('cca/execution-context.ts');
+  const executionContext =
+    execCode === null ? ['TO8_EXECUTION_CONTEXT_MISSING'] : analyzeTo8ExecutionContext(execCode);
+  for (const x of executionContext) v.push(x);
+  for (const f of productive) {
+    if (f === 'cca/execution-context.ts') continue;
+    if (identifiersIn(read(f)).has('AsyncLocalStorage'))
+      v.push(`TO8_SECOND_ASYNC_LOCAL_STORAGE:${f}`);
+  }
+
+  return {
+    violations: v,
+    signerExports,
+    signerParameters,
+    signerLocalImports: [...signerLocalImports].sort(),
+    signerExternalImports: [...signerExternalImports].sort(),
+    signerStatements,
+    signerDbFunctions,
+    signerImporters,
+    contractImporters,
+    prismaClientConstructionPoints,
+    signerDatabaseUrlReaders,
+    executionContext,
+  };
+}
+
+/**
+ * TO-8 rules over `cca/execution-context.ts`:
+ *   * the owner-kind union is EXACTLY NONE | ACCEPTED_OWNER | CCA | M7_CAPABILITY_SIGNER;
+ *   * exactly ONE AsyncLocalStorage is constructed;
+ *   * the TO-8 runner takes (client, options, body) — no owner-kind parameter — reads the state
+ *     FIRST and refuses on `state.transactionActive` BEFORE any other call; its frame authority is the
+ *     fixed literal; the frame is closed in `finally`; it calls the captured original only inside the
+ *     frame;
+ *   * no exported function takes an owner / authority / kind selector, and no generic
+ *     runTransaction / registerOwner / withTransaction exists;
+ *   * the accepted state computation and the accepted CCA refusals are still present verbatim, so a
+ *     TO-8 frame is observed as `transactionActive` and CCA rejects inside it.
+ */
+export function analyzeTo8ExecutionContext(code: string): string[] {
+  const v: string[] = [];
+  const sf = parse(code);
+
+  // owner-kind union
+  let union: string[] | null = null;
+  for (const st of sf.statements) {
+    if (ts.isTypeAliasDeclaration(st) && st.name.text === 'TransactionAuthority') {
+      const t = st.type;
+      union = ts.isUnionTypeNode(t)
+        ? t.types.map((m) =>
+            ts.isLiteralTypeNode(m) && ts.isStringLiteral(m.literal) ? m.literal.text : '?',
+          )
+        : ['?'];
+    }
+  }
+  if (union === null) v.push('TO8_AUTHORITY_UNION_MISSING');
+  else if (JSON.stringify(union) !== JSON.stringify(TRANSACTION_AUTHORITIES)) {
+    v.push(`TO8_AUTHORITY_UNION:[${union.join(',')}]`);
+  }
+
+  // one AsyncLocalStorage
+  let als = 0;
+  const visitAls = (n: ts.Node): void => {
+    if (ts.isNewExpression(n) && n.expression.getText(sf) === 'AsyncLocalStorage') als++;
+    ts.forEachChild(n, visitAls);
+  };
+  visitAls(sf);
+  if (als !== 1) v.push(`TO8_ASYNC_LOCAL_STORAGE_COUNT:${als}`);
+
+  // no generic owner selector
+  for (const st of sf.statements) {
+    if (!ts.isFunctionDeclaration(st)) continue;
+    const exported = ts.getModifiers(st)?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+    if (exported !== true) continue;
+    const name = st.name?.text ?? '';
+    if (/^(runTransaction|registerOwner|withTransaction|runOwnedTransaction)$/i.test(name)) {
+      v.push(`TO8_GENERIC_TRANSACTION_API:${name}`);
+    }
+    for (const p of st.parameters) {
+      if (/owner|authority|kind/i.test(p.name.getText(sf))) {
+        v.push(`TO8_OWNER_SELECTOR_PARAMETER:${name}:${p.name.getText(sf)}`);
+      }
+    }
+  }
+  const literalKinds = literalTexts(code).filter((t) => t === TO8_OWNER_KIND).length;
+  // one in the union, one in the Frame authority union, one in the runner's frame
+  if (literalKinds !== 3) v.push(`TO8_OWNER_KIND_LITERALS:${literalKinds}`);
+
+  // the TO-8 runner
+  const runner = sf.statements.find(
+    (st): st is ts.FunctionDeclaration =>
+      ts.isFunctionDeclaration(st) && st.name?.text === 'runM7CapabilitySignerTransaction',
+  );
+  if (runner === undefined || runner.body === undefined) {
+    v.push('TO8_RUNNER_MISSING');
+  } else {
+    const params = runner.parameters.map((p) => p.name.getText(sf));
+    if (JSON.stringify(params) !== JSON.stringify(['client', 'options', 'body'])) {
+      v.push(`TO8_RUNNER_PARAMETERS:[${params.join(',')}]`);
+    }
+    const [first, second] = runner.body.statements;
+    const firstOk =
+      first !== undefined &&
+      ts.isVariableStatement(first) &&
+      first.declarationList.declarations.length === 1 &&
+      first.declarationList.declarations[0]!.name.getText(sf) === 'state' &&
+      first.declarationList.declarations[0]!.initializer?.getText(sf) ===
+        'readDatabaseExecutionState()';
+    if (!firstOk) v.push('TO8_RUNNER_STATE_NOT_READ_FIRST');
+    const guardOk =
+      second !== undefined &&
+      ts.isIfStatement(second) &&
+      second.expression.getText(sf) === 'state.transactionActive' &&
+      ts.isBlock(second.thenStatement) &&
+      second.thenStatement.statements.some(ts.isThrowStatement);
+    if (!guardOk) v.push('TO8_RUNNER_GUARD_NOT_SECOND');
+    // Nothing but the state read and the counter/throw precede the guard's end.
+    if (second !== undefined) {
+      const early = (n: ts.Node): void => {
+        if (ts.isCallExpression(n) && n.getStart(sf) < second.getStart(sf)) {
+          const name = n.expression.getText(sf);
+          if (name !== 'readDatabaseExecutionState') v.push(`TO8_RUNNER_CALL_BEFORE_GUARD:${name}`);
+        }
+        ts.forEachChild(n, early);
+      };
+      early(runner.body);
+    }
+    const bodyText = runner.body.getText(sf);
+    if (!/authority:\s*'M7_CAPABILITY_SIGNER'/.test(bodyText))
+      v.push('TO8_RUNNER_FRAME_KIND_NOT_FIXED');
+    if (!/finally\s*\{\s*frame\.open = false;\s*\}/.test(bodyText)) {
+      v.push('TO8_RUNNER_FRAME_NOT_CLOSED_IN_FINALLY');
+    }
+    const originals = callsNamed(runner.body, 'original');
+    if (originals.length !== 1) v.push(`TO8_RUNNER_ORIGINAL_CALLS:${originals.length}`);
+    const storageRuns: ts.CallExpression[] = [];
+    const visitRun = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && n.expression.getText(sf) === 'storage.run') storageRuns.push(n);
+      ts.forEachChild(n, visitRun);
+    };
+    visitRun(runner.body);
+    const outer = storageRuns[0];
+    if (
+      outer === undefined ||
+      originals[0] === undefined ||
+      !(originals[0].pos > outer.pos && originals[0].end <= outer.end)
+    ) {
+      v.push('TO8_RUNNER_TRANSACTION_OUTSIDE_FRAME');
+    }
+    if (/\$transaction/.test(bodyText)) v.push('TO8_RUNNER_CALLS_CLIENT_TRANSACTION_DIRECTLY');
+  }
+
+  // the sealing replaces the signer client's own $transaction with a refusal
+  const seal = sf.statements.find(
+    (st): st is ts.FunctionDeclaration =>
+      ts.isFunctionDeclaration(st) && st.name?.text === 'sealM7CapabilitySignerClient',
+  );
+  if (seal === undefined || seal.body === undefined) v.push('TO8_SEAL_MISSING');
+  else if (!/TO8_DIRECT_TRANSACTION_FORBIDDEN/.test(seal.body.getText(sf))) {
+    v.push('TO8_SEAL_DOES_NOT_REFUSE_DIRECT_TRANSACTIONS');
+  }
+
+  // accepted semantics preserved verbatim where TO-8 depends on them
+  const fnText = (name: string): string => {
+    const f = sf.statements.find(
+      (st): st is ts.FunctionDeclaration => ts.isFunctionDeclaration(st) && st.name?.text === name,
+    );
+    return f?.body?.getText(sf) ?? '';
+  };
+  if (!/transactionActive: frames\.length > 0,/.test(fnText('readDatabaseExecutionState'))) {
+    v.push('TO8_STATE_TRANSACTION_ACTIVE_NOT_ALL_FRAMES');
+  }
+  if (/authority/.test(fnText('openFrames'))) v.push('TO8_OPEN_FRAMES_FILTERS_BY_AUTHORITY');
+  const cca = fnText('runCcaTransaction');
+  const reentry = cca.indexOf('if (state.ccaActive)');
+  const topLevel = cca.indexOf('if (state.transactionActive)');
+  if (
+    reentry < 0 ||
+    topLevel < 0 ||
+    reentry > topLevel ||
+    !/CCA_TOP_LEVEL_TRANSACTION_REQUIRED/.test(cca)
+  ) {
+    v.push('TO8_CCA_TOP_LEVEL_REFUSAL_CHANGED');
   }
   return v;
 }
