@@ -114,9 +114,22 @@ export const ACCEPTED_ASSIGNMENT_ACCESS: Readonly<Record<string, AssignmentOwner
   },
 };
 
-/** Files permitted to use a raw SQL helper: the db layer and private tracked-adapter impls. */
+/**
+ * Files permitted to use a raw SQL helper: the db layer, private tracked-adapter impls, and the
+ * sanctioned M7 participant-session module.
+ *
+ * The third owner is an EXACT path, never a prefix or suffix, so no future service can match it by
+ * naming. M7 V1.1 §8.2 requires that module to invoke `m7.s_issue_participant_session_v1` and
+ * `m7.s_revoke_participant_session_v1` over its own `pagamenos_m7_session_issuer_rt` connection;
+ * those are PostgreSQL functions of §19.11.3, not Prisma models, so there is no model-API spelling
+ * of them. Its raw surface is exactly those two statements, it touches no table, it opens no
+ * transaction (so it is not a transaction owner) and it never reaches `public.experiment_assignment`
+ * (so the accepted assignment-owner census is untouched).
+ */
 export const RAW_SQL_ALLOWED = (rel: string): boolean =>
-  rel.startsWith('db/') || /\.cca-adapter\.tsx?$/.test(rel);
+  rel.startsWith('db/') ||
+  /\.cca-adapter\.tsx?$/.test(rel) ||
+  rel === 'services/m7-participant-session.ts';
 
 export interface SourceFile {
   readonly rel: string;

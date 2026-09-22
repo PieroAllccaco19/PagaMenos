@@ -11,12 +11,19 @@ import {
   analyzeAdapterClosure,
   analyzeCcaTopology,
   analyzeExecutorClosure,
+  analyzeM7So1Topology,
+  analyzeM7EntryGuardOrder,
   ambientViolations,
   extractImportEdges,
   fsSourceProvider,
+  isTestOrFixture,
   overlayProvider,
   resolveSpecifier,
   roleOf,
+  M7_PARTICIPANT_CCA_ENGINE_MODULE,
+  M7_SESSION_MODULE,
+  M7_SO1_EXPECTED_INPUT_KEYS,
+  M7_SO1_MODULES,
   type SourceProvider,
 } from './capability-analysis';
 
@@ -748,6 +755,605 @@ export const evilAdapter = {
     );
     expect(analyzeAdapterClosure(EVIL_ADAPTER, runtime).violations.join('\n')).toMatch(
       /RUNTIME_PRISMA_CAPABILITY/,
+    );
+  });
+});
+
+// ===================================================================================================
+// M7 SO-1 PRODUCTIVE TOPOLOGY (AUTH §21, §25, §26; M7 V1.1 §8.2, §9.2–§9.5, §18.3)
+//
+// Everything above this line is the ACCEPTED CCA foundation enforcement and is unchanged. The suites
+// below extend it to the productive Outcome path. Every negative control is a virtual overlay over
+// the REAL tree, so a mutation is judged in the real topology, not in a toy one.
+// ===================================================================================================
+
+const M7_LEAF = M7_SO1_MODULES.leaf;
+const M7_EXECUTOR = M7_SO1_MODULES.executor;
+const M7_ADAPTER = M7_SO1_MODULES.adapter;
+const M7_ENGINE = M7_PARTICIPANT_CCA_ENGINE_MODULE;
+
+/** The real source of a module, for mutation probes that patch one line of the genuine article. */
+function realSource(rel: string): string {
+  const code = tree.read(rel);
+  if (code === null) throw new Error(`missing productive module ${rel}`);
+  return code;
+}
+
+/** Source with comments removed, so a prose mention is never mistaken for a code construct. */
+function codeOnly(rel: string): string {
+  return realSource(rel)
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
+/** Productive modules only: tests, fixtures, probes and this CI analyzer are not application code. */
+function productiveModules(): string[] {
+  return tree.list().filter((rel) => !isTestOrFixture(rel) && rel !== 'cca/capability-analysis.ts');
+}
+
+function providerFor(overlay: Record<string, string | null>): SourceProvider {
+  return Object.keys(overlay).length === 0 ? tree : overlayProvider(tree, overlay);
+}
+
+/** M7 SO-1 topology rules only. */
+function m7Violations(overlay: Record<string, string | null> = {}): string[] {
+  return [...analyzeM7So1Topology(providerFor(overlay)).violations];
+}
+
+/**
+ * The ACCEPTED CCA topology rules only, for the mutations whose expected diagnostic comes from the
+ * accepted analyzer (LEAF_DB_EDGE_OUTSIDE_ENGINE, LEAF_PRISMA_IMPORT). Kept separate because the
+ * accepted whole-topology pass is the expensive one and most M7 mutations do not need it.
+ */
+function ccaViolations(overlay: Record<string, string | null> = {}): string[] {
+  return [...analyzeCcaTopology(providerFor(overlay))];
+}
+
+describe('AUTH §25 — the productive SO-1 topology is exactly one sealed operation', () => {
+  it('the real tree has NO M7 SO-1 topology violation', () => {
+    expect(analyzeM7So1Topology(tree).violations).toEqual([]);
+  });
+
+  it('the accepted CCA topology stays green WITH the productive SO-1 modules present', () => {
+    expect(analyzeCcaTopology(tree)).toEqual([]);
+  });
+
+  it('there is exactly one Outcome leaf, executor, adapter interface and adapter implementation', () => {
+    const { roleCounts } = analyzeM7So1Topology(tree);
+    expect(roleCounts.LEAF).toBe(1);
+    expect(roleCounts.EXECUTOR).toBe(1);
+    expect(roleCounts.ADAPTER_INTERFACE).toBe(1);
+    expect(roleCounts.ADAPTER_IMPL).toBe(1);
+    // Two engines: the accepted CCA foundation engine and the productive M7 specialization.
+    expect(roleCounts.ENGINE).toBe(2);
+    expect(roleOf(M7_LEAF)).toBe('LEAF');
+    expect(roleOf(M7_EXECUTOR)).toBe('EXECUTOR');
+    expect(roleOf(M7_ADAPTER)).toBe('ADAPTER_IMPL');
+    expect(roleOf(M7_SO1_MODULES.adapterInterface)).toBe('ADAPTER_INTERFACE');
+    expect(roleOf(M7_ENGINE)).toBe('ENGINE');
+  });
+
+  it('the executor closure is EXACTLY {own adapter interface, type-only contracts}', () => {
+    const report = analyzeExecutorClosure(M7_EXECUTOR, tree);
+    expect(report.violations).toEqual([]);
+    const interfaces = report.entries.filter(
+      (e) => e.class === 'APPROVED_TRACKED_ADAPTER_INTERFACE',
+    );
+    expect(new Set(interfaces.map((e) => e.module))).toEqual(
+      new Set([M7_SO1_MODULES.adapterInterface]),
+    );
+    // Every other edge is PURE and type-only: no runtime DB capability reaches the executor.
+    for (const e of report.entries) {
+      if (e.class === 'APPROVED_TRACKED_ADAPTER_INTERFACE') continue;
+      expect(e.class).toBe('PURE');
+      expect(e.typeOnly).toBe(true);
+    }
+  });
+
+  it('the adapter holds the hidden transaction edge ONLY, with no second capability', () => {
+    const report = analyzeAdapterClosure(M7_ADAPTER, tree);
+    expect(report.violations).toEqual([]);
+    // Its only Prisma edge is type-only, arriving through the types-only context contract.
+    const prismaEdges = report.entries.filter((e) => /^@prisma\//.test(e.module));
+    expect(prismaEdges.length).toBeGreaterThan(0);
+    for (const e of prismaEdges) expect(e.typeOnly).toBe(true);
+  });
+
+  it('no Evidence / SO-2 / SO-3 productive module exists, and none is reachable', () => {
+    const report = analyzeM7So1Topology(tree);
+    expect(report.violations.filter((x) => x.startsWith('M7_SO2_SO3'))).toEqual([]);
+    expect(report.violations.filter((x) => x.startsWith('M7_SO1_EVIDENCE_EDGE'))).toEqual([]);
+    for (const rel of productiveModules()) {
+      expect(rel).not.toMatch(/evidence.*\.cca-(leaf|executor|adapter)/i);
+    }
+  });
+
+  it('no productive module constructs a second PrismaClient from an M7 credential', () => {
+    for (const rel of productiveModules()) {
+      if (!/new PrismaClient/.test(codeOnly(rel))) continue;
+      // Exactly three construction points: the shared app client, the hidden participant client
+      // and the session-issuer client. Each is module-private and never exported.
+      expect([M7_ENGINE, M7_SESSION_MODULE, 'db/client.ts']).toContain(rel);
+    }
+  });
+
+  it('there is no runtime executor registry, generic policy or caller-supplied callback', () => {
+    const leaf = codeOnly(M7_LEAF);
+    const engine = codeOnly(M7_ENGINE);
+    // The definition happens once, at module scope, with a literal policy.
+    expect(leaf).toContain("policy: 'GENERAL_COLLECTION'");
+    expect(/policy\s*:\s*(args|input|options|params|policy)\b/.test(leaf)).toBe(false);
+    // No registry, no lookup table, no dynamic selection of an executor or an adapter.
+    for (const pattern of [/registry/i, /\bregister\w*Operation/i, /Map<\s*string\s*,/]) {
+      expect(pattern.test(leaf)).toBe(false);
+      expect(pattern.test(engine)).toBe(false);
+    }
+    // The engine's definition surface admits NO replay key, so replay cannot be caller-selected.
+    expect(engine).not.toContain('preCcaReplayLookup');
+    expect(codeOnly(M7_LEAF)).not.toContain('preCcaReplayLookup');
+  });
+
+  it('records the §18.3 credential and secret censuses observed on the real tree', () => {
+    const report = analyzeM7So1Topology(tree);
+    expect(report.credentialReaders.M7_PARTICIPANT_DATABASE_URL).toEqual([M7_ENGINE]);
+    expect(report.credentialReaders.M7_SESSION_ISSUER_DATABASE_URL).toEqual([M7_SESSION_MODULE]);
+    expect(report.secretAccessorImporters).toEqual([M7_ENGINE]);
+    expect(report.controlPlaneDigestReaders).toEqual([M7_SO1_MODULES.controlPlaneDigest]);
+    expect(report.so1InputKeys).toEqual([...M7_SO1_EXPECTED_INPUT_KEYS]);
+  });
+
+  it('MUTATION CONTROL — the censuses are not vacuous: removing the engine FAILS', () => {
+    expect(m7Violations({ [M7_ENGINE]: null })).not.toEqual([]);
+  });
+});
+
+describe('AUTH §26 — pre-CCA replay negative controls (every one FAILS CLOSED)', () => {
+  const leafWith = (extraImport: string, extraBody = ''): Record<string, string> => ({
+    [M7_LEAF]: `${extraImport}\n${realSource(M7_LEAF)}\n${extraBody}`,
+  });
+
+  it('FAILS: the leaf imports the shared DB client', () => {
+    expect(ccaViolations(leafWith("import { prisma } from '@/db/client';"))).toContainEqual(
+      expect.stringContaining('LEAF_DB_EDGE_OUTSIDE_ENGINE:db/client.ts'),
+    );
+  });
+
+  it('FAILS: the leaf imports a replay repository', () => {
+    expect(
+      ccaViolations({
+        'db/m7-outcome-replay-repository.ts': 'export const lookup = async () => null;',
+        ...leafWith("import { lookup } from '@/db/m7-outcome-replay-repository';"),
+      }),
+    ).toContainEqual(
+      expect.stringContaining('LEAF_DB_EDGE_OUTSIDE_ENGINE:db/m7-outcome-replay-repository.ts'),
+    );
+  });
+
+  it('FAILS: the leaf imports @prisma/client', () => {
+    expect(
+      ccaViolations(leafWith("import { PrismaClient } from '@prisma/client';")),
+    ).toContainEqual(expect.stringContaining('LEAF_PRISMA_IMPORT'));
+  });
+
+  it('FAILS: the leaf reaches a generic query function through an innocent helper', () => {
+    expect(
+      ccaViolations({
+        'db/m7-query-helper.ts':
+          "import { prisma } from './client';\nexport const query = (sql: string) => prisma.$queryRawUnsafe(sql);",
+        ...leafWith("import { query } from '@/db/m7-query-helper';"),
+      }),
+    ).toContainEqual(expect.stringContaining('LEAF_DB_EDGE_OUTSIDE_ENGINE:db/m7-query-helper.ts'));
+  });
+
+  it('FAILS: the Outcome leaf selects an Evidence replay implementation', () => {
+    expect(
+      m7Violations({
+        'm7/so1/evidence-replay.ts': 'export const evidenceReplay = async () => null;',
+        ...leafWith("import { evidenceReplay } from '@/m7/so1/evidence-replay';"),
+      }),
+    ).toContainEqual(expect.stringContaining('M7_SO1_EVIDENCE_EDGE'));
+  });
+
+  it('FAILS: the leaf imports a second Evidence adapter/executor family', () => {
+    expect(
+      m7Violations({
+        'm7/so1/m7-evidence.cca-executor.ts': 'export const x = 1;',
+        ...leafWith("import { x } from '@/m7/so1/m7-evidence.cca-executor';"),
+      }),
+    ).not.toEqual([]);
+  });
+
+  it('FAILS: the engine exposes a generic raw query helper', () => {
+    const mutated = realSource(M7_ENGINE).replace(
+      'export function defineSealedOutcomeAssertionOperation',
+      'export async function query(sql: string) { return participant().$queryRawUnsafe(sql); }\nexport function defineSealedOutcomeAssertionOperation',
+    );
+    expect(m7Violations({ [M7_ENGINE]: mutated })).toContainEqual(
+      expect.stringContaining('M7_ENGINE_EXPORTS_DB_CAPABILITY:query'),
+    );
+  });
+
+  it('FAILS: the engine exports its hidden Prisma client', () => {
+    const mutated = realSource(M7_ENGINE).replace(
+      'let participantClient: PrismaClient | null = null;',
+      'export let participantClient: PrismaClient | null = null;',
+    );
+    expect(m7Violations({ [M7_ENGINE]: mutated })).not.toEqual([]);
+  });
+
+  it('FAILS: the engine re-exports anything at all', () => {
+    const mutated = `${realSource(M7_ENGINE)}\nexport * from './client';`;
+    expect(m7Violations({ [M7_ENGINE]: mutated })).toContainEqual(
+      expect.stringContaining('M7_ENGINE_REEXPORT_FORBIDDEN'),
+    );
+  });
+
+  it('FAILS: a replay helper module holds a transaction the engine could retain across CCA', () => {
+    const mutated = realSource(M7_ENGINE).replace(
+      'export function defineSealedOutcomeAssertionOperation',
+      'export function transaction() { return participant().$transaction; }\nexport function defineSealedOutcomeAssertionOperation',
+    );
+    expect(m7Violations({ [M7_ENGINE]: mutated })).toContainEqual(
+      expect.stringContaining('M7_ENGINE_EXPORTS_DB_CAPABILITY:transaction'),
+    );
+  });
+
+  it('FAILS: the session secret is added to the SO-1 caller input grammar', () => {
+    const mutated = realSource(M7_SO1_MODULES.inputGrammar).replace(
+      "  'purchaseIntentId',",
+      "  'sessionSecret',\n  'purchaseIntentId',",
+    );
+    const violations = m7Violations({ [M7_SO1_MODULES.inputGrammar]: mutated });
+    expect(violations).toContainEqual(
+      expect.stringContaining('M7_SO1_FORBIDDEN_INPUT_KEY:sessionSecret'),
+    );
+    expect(violations).toContainEqual(expect.stringContaining('M7_SO1_INPUT_KEY_SET'));
+  });
+
+  it.each(['assignmentId', 'participantId', 'capturedAt', 'manifestSha256', 'policy', 'callback'])(
+    'FAILS: the forbidden caller input %s is added to the grammar',
+    (key) => {
+      const mutated = realSource(M7_SO1_MODULES.inputGrammar).replace(
+        "  'purchaseIntentId',",
+        `  '${key}',\n  'purchaseIntentId',`,
+      );
+      expect(m7Violations({ [M7_SO1_MODULES.inputGrammar]: mutated })).toContainEqual(
+        expect.stringContaining(`M7_SO1_FORBIDDEN_INPUT_KEY:${key}`),
+      );
+    },
+  );
+});
+
+describe('AUTH §21 — M7 credential capability enforcement (every mutation FAILS CLOSED)', () => {
+  const PARTICIPANT_ENV = 'M7_PARTICIPANT_DATABASE_URL';
+  const ISSUER_ENV = 'M7_SESSION_ISSUER_DATABASE_URL';
+
+  const readsEnv = (key: string): string =>
+    `const stolen = process.env['${key}'];\nexport const leak = stolen;\n`;
+
+  it.each([
+    ['the leaf', M7_LEAF],
+    ['the executor', M7_EXECUTOR],
+    ['the adapter', M7_ADAPTER],
+  ])('FAILS: %s reads the participant credential', (_label, rel) => {
+    const mutated = `${readsEnv(PARTICIPANT_ENV)}${realSource(rel)}`;
+    expect(m7Violations({ [rel]: mutated })).toContainEqual(
+      expect.stringContaining(`M7_CREDENTIAL_READER_CENSUS:${PARTICIPANT_ENV}`),
+    );
+  });
+
+  it('FAILS: a random service reads the participant credential', () => {
+    expect(
+      m7Violations({ 'services/random-service.ts': readsEnv(PARTICIPANT_ENV) }),
+    ).toContainEqual(expect.stringContaining(`M7_CREDENTIAL_READER_CENSUS:${PARTICIPANT_ENV}`));
+  });
+
+  it('FAILS: the CCA engine reads the session-issuer credential', () => {
+    const mutated = `${readsEnv(ISSUER_ENV)}${realSource(M7_ENGINE)}`;
+    expect(m7Violations({ [M7_ENGINE]: mutated })).toContainEqual(
+      expect.stringContaining(`M7_CREDENTIAL_READER_CENSUS:${ISSUER_ENV}`),
+    );
+  });
+
+  it('FAILS: the session module reads the participant credential', () => {
+    const mutated = `${readsEnv(PARTICIPANT_ENV)}${realSource(M7_SESSION_MODULE)}`;
+    expect(m7Violations({ [M7_SESSION_MODULE]: mutated })).toContainEqual(
+      expect.stringContaining(`M7_CREDENTIAL_READER_CENSUS:${PARTICIPANT_ENV}`),
+    );
+  });
+
+  it('FAILS: a second PrismaClient is constructed from the participant URL elsewhere', () => {
+    expect(
+      m7Violations({
+        'services/shadow-client.ts':
+          "import { PrismaClient } from '@prisma/client';\n" +
+          `export const shadow = new PrismaClient({ datasourceUrl: process.env['${PARTICIPANT_ENV}'] });\n`,
+      }),
+    ).toContainEqual(expect.stringContaining(`M7_CREDENTIAL_READER_CENSUS:${PARTICIPANT_ENV}`));
+  });
+
+  it('FAILS: a credential is re-exported through a helper or a barrel', () => {
+    expect(
+      m7Violations({
+        'lib/m7-env.ts': `export const participantUrl = process.env['${PARTICIPANT_ENV}'];`,
+      }),
+    ).toContainEqual(expect.stringContaining(`M7_CREDENTIAL_READER_CENSUS:${PARTICIPANT_ENV}`));
+  });
+
+  it.each([
+    'M7_PRIVACY_REQUEST_DATABASE_URL',
+    'M7_STORAGE_WORKER_DATABASE_URL',
+    'M7_DELETION_AUTHORITY_DATABASE_URL',
+    'M7_CAPABILITY_SIGNER_DATABASE_URL',
+  ])('FAILS: the out-of-scope credential %s appears in productive source', (key) => {
+    expect(m7Violations({ 'services/premature.ts': readsEnv(key) })).toContainEqual(
+      expect.stringContaining(`M7_CREDENTIAL_NOT_IN_THIS_SLICE:${key}`),
+    );
+  });
+});
+
+describe('AUTH §20 — the raw session secret is reachable from exactly one module', () => {
+  it.each([
+    ['the leaf', M7_LEAF],
+    ['the executor', M7_EXECUTOR],
+    ['the adapter', M7_ADAPTER],
+  ])('FAILS: %s imports the secret accessor', (_label, rel) => {
+    const mutated =
+      "import { readM7ParticipantSessionSecret } from '@/services/m7-participant-session';\n" +
+      realSource(rel);
+    expect(m7Violations({ [rel]: mutated })).toContainEqual(
+      expect.stringContaining('M7_SESSION_SECRET_ACCESSOR_CENSUS'),
+    );
+  });
+
+  it('FAILS: a public barrel or a participant-facing module imports the session module', () => {
+    expect(
+      m7Violations({
+        'services/participant-facing.ts':
+          "import { issueM7ParticipantSession } from './m7-participant-session';\nexport const go = issueM7ParticipantSession;",
+      }),
+    ).toContainEqual(
+      expect.stringContaining('M7_SESSION_MODULE_IMPORT:services/participant-facing.ts'),
+    );
+  });
+
+  it('FAILS: the types-only operation-context contract gains runtime code', () => {
+    const rel = 'm7/so1/m7-participant-operation-context.ts';
+    const mutated = `${realSource(rel)}\nexport const leak = () => 1;`;
+    expect(m7Violations({ [rel]: mutated })).toContainEqual(
+      expect.stringContaining('M7_TYPES_ONLY_MODULE_HAS_RUNTIME_CODE'),
+    );
+  });
+});
+
+describe('AUTH §30 — SO-1 is NOT publicly wired in this pre-LC-1 slice', () => {
+  it('no app route, UI, client hook or public services barrel reaches the SO-1 path', () => {
+    const report = analyzeM7So1Topology(tree);
+    expect(report.violations.filter((x) => x.startsWith('M7_SO1_PUBLIC_EXPOSURE'))).toEqual([]);
+  });
+
+  it.each([
+    ['a Next.js route', 'app/api/m7/outcome/route.ts'],
+    ['the public services barrel', 'services/index.ts'],
+  ])('FAILS: %s exposes the sealed operation', (_label, rel) => {
+    const base = rel === 'services/index.ts' ? realSource(rel) : '';
+    expect(
+      m7Violations({
+        [rel]: `${base}\nimport { recordAuthorizedOutcomeAssertion } from '@/m7/so1/m7-outcome-assertion.cca-leaf';\nexport const POST = recordAuthorizedOutcomeAssertion;\n`,
+      }),
+    ).toContainEqual(expect.stringContaining('M7_SO1_PUBLIC_EXPOSURE'));
+  });
+});
+
+describe('AUTH §13 — the sealed definition surface admits no injected capability', () => {
+  it('rejects an unknown definition key, so no replay/callback/policy can be injected', async () => {
+    const { defineSealedOutcomeAssertionOperation } =
+      await import('@/db/m7-participant-cca-engine');
+    const { m7OutcomeAssertionLockOrder, m7OutcomeAssertionAdapter } =
+      await import('@/m7/so1/m7-outcome-assertion.cca-adapter');
+    const { m7OutcomeAssertionExecutor } =
+      await import('@/m7/so1/m7-outcome-assertion.cca-executor');
+    const { parseOutcomeAssertionInput } = await import('@/m7/so1/outcome-assertion-input');
+    const base = {
+      operationId: 'probe',
+      policy: 'GENERAL_COLLECTION' as const,
+      parseInput: parseOutcomeAssertionInput,
+      lockOrder: m7OutcomeAssertionLockOrder,
+      adapter: m7OutcomeAssertionAdapter,
+      executor: m7OutcomeAssertionExecutor,
+    };
+    // The accepted control: the genuine definition is accepted.
+    expect(() => defineSealedOutcomeAssertionOperation(base)).not.toThrow();
+    for (const injected of [
+      'preCcaReplayLookup',
+      'replay',
+      'query',
+      'callback',
+      'client',
+      'transaction',
+      'assignmentRef',
+    ]) {
+      expect(() =>
+        defineSealedOutcomeAssertionOperation({
+          ...base,
+          [injected]: () => undefined,
+        } as never),
+      ).toThrowError(/CCA_INVALID_DEFINITION/);
+    }
+  });
+
+  it('rejects any policy other than the sealed SO-1 policy', async () => {
+    const { defineSealedOutcomeAssertionOperation } =
+      await import('@/db/m7-participant-cca-engine');
+    const { m7OutcomeAssertionLockOrder, m7OutcomeAssertionAdapter } =
+      await import('@/m7/so1/m7-outcome-assertion.cca-adapter');
+    const { m7OutcomeAssertionExecutor } =
+      await import('@/m7/so1/m7-outcome-assertion.cca-executor');
+    const { parseOutcomeAssertionInput } = await import('@/m7/so1/outcome-assertion-input');
+    expect(() =>
+      defineSealedOutcomeAssertionOperation({
+        operationId: 'probe',
+        policy: 'OPTIONAL_EVIDENCE',
+        parseInput: parseOutcomeAssertionInput,
+        lockOrder: m7OutcomeAssertionLockOrder,
+        adapter: m7OutcomeAssertionAdapter,
+        executor: m7OutcomeAssertionExecutor,
+      } as never),
+    ).toThrowError(/CCA_INVALID_DEFINITION/);
+  });
+
+  it('the sealed surface exposes only `execute`, and rejects a third argument', async () => {
+    const { recordAuthorizedOutcomeAssertion } =
+      await import('@/m7/so1/m7-outcome-assertion.cca-leaf');
+    expect(Object.keys(recordAuthorizedOutcomeAssertion)).toEqual(['execute']);
+    expect(Object.isFrozen(recordAuthorizedOutcomeAssertion)).toBe(true);
+    await expect(
+      (
+        recordAuthorizedOutcomeAssertion.execute as unknown as (...a: unknown[]) => Promise<unknown>
+      )({}, {}, () => undefined),
+    ).rejects.toThrowError(/CCA_SEALED_SURFACE_VIOLATION/);
+  });
+});
+
+describe('AUD-M7-SO1-01 — the CCA entry guard precedes ALL database-reaching SO-1 work (rule M13)', () => {
+  const ENGINE_SRC = (): string => realSource(M7_ENGINE);
+  const GUARD_LINE = '    assertCcaEntryTopology();\n';
+  const RESOLVE_IN_TX =
+    '          const assignmentId = await resolveAssignmentReference(input.purchaseIntentId);\n' +
+    '          if (assignmentId === null) throw new NotAuthorizedRollback();\n';
+  const MATCH_ANCHOR = "    if (lookup.lookup_status === 'MATCH') {";
+  const DIGEST_ANCHOR = '    const expectedManifestSha256 = expectedControlPlaneManifestDigest();';
+
+  function mutate(from: string, to: string, base = ENGINE_SRC()): string {
+    expect(base.includes(from), `mutation anchor missing: ${from.slice(0, 60)}`).toBe(true);
+    return base.replace(from, to);
+  }
+  const order = (code: string): string[] => analyzeM7EntryGuardOrder(code);
+
+  it('the real engine satisfies the order rule exactly', () => {
+    expect(order(ENGINE_SRC())).toEqual([]);
+    expect(analyzeM7So1Topology(tree).violations.filter((x) => x.startsWith('M7_'))).toEqual([]);
+  });
+
+  it('FAILS: the preflight guard is removed (only runCcaTransaction would check)', () => {
+    expect(order(mutate(GUARD_LINE, ''))).toContain('M7_ENTRY_GUARD_MISSING');
+  });
+
+  it('FAILS: the guard is moved below assignment resolution', () => {
+    const v = order(
+      mutate(
+        GUARD_LINE,
+        '    const early = await resolveAssignmentReference(input.purchaseIntentId);\n' +
+          GUARD_LINE,
+      ),
+    );
+    expect(v).toContain('M7_DB_WORK_BEFORE_ENTRY_GUARD:resolveAssignmentReference');
+    expect(v).toContain('M7_ASSIGNMENT_RESOLVED_OUTSIDE_CCA_TRANSACTION');
+  });
+
+  it('FAILS: the guard is moved below the pre-CCA replay lookup', () => {
+    const v = order(mutate(MATCH_ANCHOR, GUARD_LINE + MATCH_ANCHOR, mutate(GUARD_LINE, '')));
+    expect(v).toContain('M7_DB_WORK_BEFORE_ENTRY_GUARD:lookupOutcomeReceipt');
+    expect(v).toContain('M7_DB_WORK_BEFORE_ENTRY_GUARD:expectedControlPlaneManifestDigest');
+    expect(v).toContain('M7_DB_WORK_BEFORE_ENTRY_GUARD:readM7ParticipantSessionSecret');
+  });
+
+  it('FAILS: a replay is performed before the guard', () => {
+    const v = order(
+      mutate(
+        GUARD_LINE,
+        '    await lookupOutcomeReceipt("x", Buffer.alloc(32), context.participantId, input);\n' +
+          GUARD_LINE,
+      ),
+    );
+    expect(v).toContain('M7_DB_WORK_BEFORE_ENTRY_GUARD:lookupOutcomeReceipt');
+    expect(v).toContain('M7_PRE_CCA_REPLAY_CALL_COUNT:2');
+  });
+
+  it('FAILS: a replay MATCH is returned before the guard', () => {
+    const v = order(
+      mutate(
+        GUARD_LINE,
+        '    const hit = await lookupOutcomeReceipt("x", Buffer.alloc(32), context.participantId, input);\n' +
+          "    if (hit.lookup_status === 'MATCH') return hit as never;\n" +
+          GUARD_LINE,
+      ),
+    );
+    expect(v).toContain('M7_RETURN_BEFORE_ENTRY_GUARD');
+    expect(v).toContain('M7_DB_WORK_BEFORE_ENTRY_GUARD:lookupOutcomeReceipt');
+  });
+
+  it('FAILS: assignment resolution happens before CCA (the rejected-candidate ordering)', () => {
+    const v = order(
+      mutate(
+        DIGEST_ANCHOR,
+        DIGEST_ANCHOR +
+          '\n    const assignmentId = await resolveAssignmentReference(input.purchaseIntentId);\n' +
+          '    if (assignmentId === null) return NOT_AUTHORIZED as NotAuthorized;',
+        mutate(RESOLVE_IN_TX, ''),
+      ),
+    );
+    expect(v).toContain('M7_ASSIGNMENT_RESOLVED_OUTSIDE_CCA_TRANSACTION');
+  });
+
+  it('FAILS: the rejected candidate 8dcf0a81 engine, reproduced in full order', () => {
+    // resolveAssignmentReference → lookupOutcomeReceipt → MATCH return → runCcaTransaction, no guard.
+    const rejectedShape = `
+      function defineSealedOutcomeAssertionOperation() {
+        return sealOperation(async (context, rawInput) => {
+          const input = parseInput(rawInput);
+          const expectedManifestSha256 = expectedControlPlaneManifestDigest();
+          const sessionSecret = readM7ParticipantSessionSecret(context);
+          const assignmentId = await resolveAssignmentReference(input.purchaseIntentId);
+          const lookup = await lookupOutcomeReceipt(expectedManifestSha256, sessionSecret, context.participantId, input);
+          if (lookup.lookup_status === 'MATCH') return lookup;
+          return await runCcaTransaction(participant(), {}, async () => 1);
+        });
+      }`;
+    const v = order(rejectedShape);
+    expect(v).toContain('M7_ENTRY_GUARD_MISSING');
+  });
+
+  it('FAILS: the guard is made conditional', () => {
+    expect(
+      order(
+        mutate(GUARD_LINE, '    if (input.purchaseIntentId === "") assertCcaEntryTopology();\n'),
+      ),
+    ).toContain('M7_ENTRY_GUARD_NOT_UNCONDITIONAL_TOP_LEVEL');
+  });
+
+  it('FAILS: the guard precedence is inverted (transaction checked before re-entry)', () => {
+    const src = ENGINE_SRC();
+    const swapped = src
+      .replace('if (state.ccaActive) {', 'if (state.__TMP__) {')
+      .replace('if (state.transactionActive) {', 'if (state.ccaActive) {')
+      .replace('if (state.__TMP__) {', 'if (state.transactionActive) {');
+    expect(swapped).not.toBe(src);
+    expect(order(swapped)).toContain('M7_ENTRY_GUARD_PRECEDENCE');
+  });
+
+  it('FAILS: the guard performs its own I/O or awaits', () => {
+    const v = order(
+      mutate(
+        '  const state = readDatabaseExecutionState();',
+        '  const state = readDatabaseExecutionState();\n  void participant();',
+      ),
+    );
+    expect(v.some((x) => x.startsWith('M7_ENTRY_GUARD_CALLS'))).toBe(true);
+  });
+
+  it('FAILS: the pre-CCA replay is moved inside the CCA transaction', () => {
+    const inTx = mutate(
+      RESOLVE_IN_TX,
+      RESOLVE_IN_TX +
+        '          await lookupOutcomeReceipt(expectedManifestSha256, sessionSecret, context.participantId, input);\n',
+    );
+    expect(order(inTx)).toContain('M7_PRE_CCA_REPLAY_INSIDE_CCA_TRANSACTION');
+  });
+
+  it('the whole-tree analysis reports an order mutation too (not only the unit function)', () => {
+    expect(m7Violations({ [M7_ENGINE]: mutate(GUARD_LINE, '') })).toContain(
+      'M7_ENTRY_GUARD_MISSING',
     );
   });
 });
