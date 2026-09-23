@@ -34,7 +34,8 @@
     "m7:pg": "tsx scripts/m7/pg-m7-harness.ts",
     "m7:s03": "tsx scripts/m7/pg-m7-s03.ts",
     "m7:so1": "tsx scripts/m7/pg-m7-so1.ts",
-    "m7:so2": "tsx scripts/m7/pg-m7-so2.ts"
+    "m7:so2": "tsx scripts/m7/pg-m7-so2.ts",
+    "m7:signer": "tsx scripts/m7/pg-m7-signer.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.2.0",

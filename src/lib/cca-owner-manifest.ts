@@ -61,9 +61,11 @@ export const ACCEPTED_TRANSACTION_OWNERS: Readonly<Record<string, TransactionOwn
     authority: 'base study StudyParticipant §5/§6/§9 (§34, §34.2)',
   },
   'cca/execution-context.ts': {
-    sites: 4,
+    sites: 7,
     class: 'CCA_GOVERNANCE_INFRA',
-    authority: 'CCA §29/§35/§40 transparent registration + §33 class-B CCA transaction',
+    authority:
+      'CCA §29/§35/§40 transparent registration + §33 class-B CCA transaction + M7 V1.1 §16.2.3/§18.6 ' +
+      'TO-8 capability-signer client sealing (3 sites: capture, refusing replacement, its structural cast)',
   },
 };
 

@@ -24,16 +24,24 @@
 // (transaction-free) async context by JavaScript semantics; such a continuation cannot share the
 // outer transaction's connection, so it cannot corrupt consent or ordering — at worst it waits on a
 // row lock until the outer transaction's timeout. This residual is recorded, not hidden.
+//
+// M7 V1.1 §16.2.3 / §18.6 TO-8 (ADDITIVE): the M7 capability signer registers as its OWN owner kind,
+// 'M7_CAPABILITY_SIGNER', in the SAME storage below — there is still exactly one AsyncLocalStorage.
+// A TO-8 frame is an ordinary open frame, so `readDatabaseExecutionState().transactionActive` is true
+// inside it and the unchanged `runCcaTransaction` rejects with CCA_TOP_LEVEL_TRANSACTION_REQUIRED
+// ("CCA rejects if a TO-8 transaction is active"). The TO-8 runner itself refuses before any database
+// access while ANY registered transaction is active. The owner kind is a fixed literal: there is no
+// generic owner selector, and nothing here clears or weakens a context.
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 import { CcaError } from './errors';
 
 /** Who owns the innermost open application transaction. */
-export type TransactionAuthority = 'NONE' | 'ACCEPTED_OWNER' | 'CCA';
+export type TransactionAuthority = 'NONE' | 'ACCEPTED_OWNER' | 'CCA' | 'M7_CAPABILITY_SIGNER';
 
 /** Module-private frame. `open` flips to false when the frame's transaction/execution ends (§30 T). */
 interface Frame {
-  readonly authority: 'ACCEPTED_OWNER' | 'CCA';
+  readonly authority: 'ACCEPTED_OWNER' | 'CCA' | 'M7_CAPABILITY_SIGNER';
   readonly parent: Frame | undefined;
   open: boolean;
   lockRankFloor: number;
@@ -79,6 +87,9 @@ const counters = {
   ccaTransactions: 0,
   ccaRejectedBeforeDatabase: 0,
   nestedTransactionRejections: 0,
+  // M7 V1.1 TO-8 (additive).
+  m7CapabilitySignerTransactions: 0,
+  m7CapabilitySignerRejectedBeforeDatabase: 0,
 };
 
 export function readDatabaseExecutionDiagnostics(): Readonly<typeof counters> {
@@ -205,6 +216,105 @@ export async function runCcaTransaction<T>(
         (tx: unknown) => storage.run(frame, () => body(tx, handle)),
         options,
       )) as T;
+    } finally {
+      frame.open = false;
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------------------------------
+// TO-8 — the M7 capability-signer transaction (M7 V1.1 §16.2.3, §18.6; XF-16).
+// Capability-restricted to src/db/m7-capability-signer.ts (capability analyzer, T7/T8 + TO-8 rules).
+// ---------------------------------------------------------------------------------------------------
+
+export type M7CapabilitySignerTransactionErrorCode =
+  | 'TO8_TRANSACTION_ALREADY_ACTIVE'
+  | 'TO8_UNSEALED_CLIENT'
+  | 'TO8_CLIENT_ALREADY_GOVERNED'
+  | 'TO8_DIRECT_TRANSACTION_FORBIDDEN';
+
+/** A TO-8 topology refusal. Carries no envelope component and no database material. */
+export class M7CapabilitySignerTransactionError extends Error {
+  constructor(
+    public readonly code: M7CapabilitySignerTransactionErrorCode,
+    message: string,
+  ) {
+    super(`${code}: ${message}`);
+    this.name = 'M7CapabilitySignerTransactionError';
+  }
+}
+
+/** signer client → its original `$transaction`, bound. Module-private; never exported. */
+const signerRawTransactions = new WeakMap<object, RawTransaction>();
+
+/**
+ * Seal the hidden signer client as the TO-8 client. Idempotent. The client's own `$transaction` is
+ * captured here and REPLACED by a rejecting stub, so the only way to open a transaction on it is
+ * `runM7CapabilitySignerTransaction`, which registers the TO-8 frame. A client already governed as
+ * the shared accepted-owner client can never become the signer client.
+ */
+export function sealM7CapabilitySignerClient<C extends TransactionCapableClient>(client: C): C {
+  if (signerRawTransactions.has(client)) return client;
+  if (rawTransactions.has(client)) {
+    throw new M7CapabilitySignerTransactionError(
+      'TO8_CLIENT_ALREADY_GOVERNED',
+      'the governed accepted-owner client cannot be the capability-signer client',
+    );
+  }
+  signerRawTransactions.set(
+    client,
+    (client.$transaction as unknown as RawTransaction).bind(client),
+  );
+  (client as unknown as { $transaction: RawTransaction }).$transaction =
+    function sealedSignerTransaction(): Promise<unknown> {
+      return Promise.reject(
+        new M7CapabilitySignerTransactionError(
+          'TO8_DIRECT_TRANSACTION_FORBIDDEN',
+          'the capability-signer client opens transactions only through the TO-8 runner',
+        ),
+      );
+    };
+  return client;
+}
+
+/**
+ * The TO-8 transaction. Rejects BEFORE any database access when ANY registered transaction —
+ * ACCEPTED_OWNER, CCA or another TO-8 — is active in the current async lineage; then enters the
+ * TO-8 frame, opens the transaction through the sealed client's ORIGINAL method, and closes the frame
+ * in `finally`. It resolves only with the value the transaction resolved with, i.e. only after
+ * PostgreSQL COMMIT succeeded; a rollback or a rejected commit rejects and returns nothing.
+ */
+export async function runM7CapabilitySignerTransaction<T>(
+  client: TransactionCapableClient,
+  options: Readonly<Record<string, unknown>>,
+  body: (tx: unknown) => Promise<T>,
+): Promise<T> {
+  const state = readDatabaseExecutionState();
+  if (state.transactionActive) {
+    counters.m7CapabilitySignerRejectedBeforeDatabase++;
+    throw new M7CapabilitySignerTransactionError(
+      'TO8_TRANSACTION_ALREADY_ACTIVE',
+      'the capability signer never opens a transaction while a registered transaction is active',
+    );
+  }
+  const original = signerRawTransactions.get(client);
+  if (original === undefined) {
+    counters.m7CapabilitySignerRejectedBeforeDatabase++;
+    throw new M7CapabilitySignerTransactionError(
+      'TO8_UNSEALED_CLIENT',
+      'the TO-8 runner requires the sealed capability-signer client',
+    );
+  }
+  const frame: Frame = {
+    authority: 'M7_CAPABILITY_SIGNER',
+    parent: storage.getStore(),
+    open: true,
+    lockRankFloor: -1,
+  };
+  return storage.run(frame, async () => {
+    try {
+      counters.m7CapabilitySignerTransactions++;
+      return (await original((tx: unknown) => storage.run(frame, () => body(tx)), options)) as T;
     } finally {
       frame.open = false;
     }

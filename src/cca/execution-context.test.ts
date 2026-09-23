@@ -182,6 +182,12 @@ describe('context integrity', () => {
         'readDatabaseExecutionDiagnostics',
         'readDatabaseExecutionState',
         'runCcaTransaction',
+        // M7 V1.1 TO-8 (additive): the capability-signer owner kind. Neither clears nor weakens a
+        // context — the runner only ADDS a frame and refuses while any frame is open; the sealing
+        // only REMOVES a direct-transaction route from the signer client.
+        'M7CapabilitySignerTransactionError',
+        'runM7CapabilitySignerTransaction',
+        'sealM7CapabilitySignerClient',
       ].sort(),
     );
   });
