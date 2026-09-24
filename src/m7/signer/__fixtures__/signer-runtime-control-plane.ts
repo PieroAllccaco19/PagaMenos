@@ -286,3 +286,176 @@ export async function retireSignerProfile(
     p_storage_profile_version: SIGNER_IDENTITIES[plane].storageProfileVersion,
   });
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// PPC-1 ADDITIVE PLANES S1 / S2 — same TEST-FIXTURE status as A1 / A2 / K (NOT A MANIFEST, NOT
+// AUTHORITY, NOT LC-3, NOT A SELECTOR, NOT LIFECYCLE EVIDENCE). A1 / A2 / K and everything above are
+// unchanged. S1 / S2 live on a SECOND fixture backend (B) so that plane K's "only live profile of
+// backend A" case is untouched. Both are the one kind PPC-1 implements:
+//
+//   S1 — EXACT_KEY_PRESIGNED_PUT / SIGNER_TOPOLOGY, credential generation 1 on backend B
+//   S2 — EXACT_KEY_PRESIGNED_PUT / SIGNER_TOPOLOGY, credential generation 2 on backend B
+//        (signer-routing rotation: same backend, same kind, new credential)
+//
+// providerClass is S3_COMPATIBLE because that is the PROTOCOL the signer speaks; the endpoint
+// identity is under `.invalid` and no object store exists behind it. Nothing here is provider
+// evidence.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+export type SignerProviderPlane = 'S1' | 'S2';
+
+export interface SignerProviderPlaneIdentity {
+  readonly manifestVersion: string;
+  readonly storageProfileVersion: string;
+  readonly credentialProfileId: string;
+  readonly credentialGeneration: number;
+  readonly uploadTransport: 'SERVER_MEDIATED';
+  readonly writeCapabilityMode: 'EXACT_KEY_PRESIGNED_PUT';
+  readonly envelopeEnforcement: 'SIGNER_TOPOLOGY';
+}
+
+export const SIGNER_PROVIDER_IDENTITIES: Readonly<
+  Record<SignerProviderPlane, SignerProviderPlaneIdentity>
+> = {
+  S1: {
+    manifestVersion: `pagamenos.m7.control-plane.${SIGNER_MARKER}.s1.v1`,
+    storageProfileVersion: `pagamenos.m7.storage-profile.${SIGNER_MARKER}.s1.v1`,
+    credentialProfileId: `${SIGNER_MARKER}.credential-profile-s1`,
+    credentialGeneration: 1,
+    uploadTransport: 'SERVER_MEDIATED',
+    writeCapabilityMode: 'EXACT_KEY_PRESIGNED_PUT',
+    envelopeEnforcement: 'SIGNER_TOPOLOGY',
+  },
+  S2: {
+    manifestVersion: `pagamenos.m7.control-plane.${SIGNER_MARKER}.s2.v1`,
+    storageProfileVersion: `pagamenos.m7.storage-profile.${SIGNER_MARKER}.s2.v1`,
+    credentialProfileId: `${SIGNER_MARKER}.credential-profile-s2`,
+    credentialGeneration: 2,
+    uploadTransport: 'SERVER_MEDIATED',
+    writeCapabilityMode: 'EXACT_KEY_PRESIGNED_PUT',
+    envelopeEnforcement: 'SIGNER_TOPOLOGY',
+  },
+};
+
+const BACKEND_B = {
+  p_provider_class: 'S3_COMPATIBLE',
+  p_container_id: `${SIGNER_MARKER}.provider-container`,
+  p_region_id: `${SIGNER_MARKER}.provider-region`,
+  p_endpoint_identity: `${SIGNER_MARKER}.provider-endpoint.invalid`,
+  p_staging_prefix: `${SIGNER_MARKER}/provider-staging/`,
+  p_evidence_prefix: `${SIGNER_MARKER}/provider-evidence/`,
+  p_write_completion_window: '5 seconds',
+} as const;
+
+function providerProfileValues(plane: SignerProviderPlane): Record<string, unknown> {
+  const id = SIGNER_PROVIDER_IDENTITIES[plane];
+  return {
+    p_storage_profile_version: id.storageProfileVersion,
+    p_credential_profile_id: id.credentialProfileId,
+    p_credential_generation: id.credentialGeneration,
+    p_upload_transport: id.uploadTransport,
+    p_decoder_generation: `${SIGNER_MARKER}.decoder.v1`,
+    p_encoder_generation: `${SIGNER_MARKER}.encoder.v1`,
+    p_storage_capability_version: `${SIGNER_MARKER}.capability-${plane.toLowerCase()}.v1`,
+    p_conditional_create_mode: 'IF_NONE_MATCH_STAR',
+    p_write_capability_mode: id.writeCapabilityMode,
+    p_envelope_enforcement: id.envelopeEnforcement,
+  };
+}
+
+/** Plane S1 / S2's own digest, in the accepted lexical form, under this fixture's domain tag. */
+export function signerProviderFixtureDigest(plane: SignerProviderPlane): string {
+  const body = canonicalize({
+    fixtureKind: SIGNER_FIXTURE_KIND,
+    plane,
+    identity: SIGNER_PROVIDER_IDENTITIES[plane],
+    backend: BACKEND_B,
+    policy: POLICY,
+    profile: providerProfileValues(plane),
+  });
+  return `sha256:${createHash('sha256').update(SIGNER_DOMAIN_TAG, 'utf8').update(body, 'utf8').digest('hex')}`;
+}
+
+async function registerProviderProfileAndManifest(
+  client: pg.Client,
+  catalog: DerivedCatalog,
+  plane: SignerProviderPlane,
+  backendSha256: string,
+): Promise<{ manifestSha256: string; installationId: string }> {
+  const id = SIGNER_PROVIDER_IDENTITIES[plane];
+  const manifestSha256 = signerProviderFixtureDigest(plane);
+  await callControlFn(client, catalog, 'c_register_storage_profile_v1', {
+    ...providerProfileValues(plane),
+    p_backend_sha256: backendSha256,
+  });
+  await callControlFn(client, catalog, 'c_register_manifest_v1', {
+    p_manifest_version: id.manifestVersion,
+    p_manifest_sha256: manifestSha256,
+    p_policy_version: SIGNER_POLICY_VERSION,
+    p_vocabulary_version: SIGNER_VOCABULARY_VERSION,
+    p_storage_profile_version: id.storageProfileVersion,
+  });
+  await callControlFn(client, catalog, 'c_load_catalog_expectations_v1', {
+    p_manifest_version: id.manifestVersion,
+    ...payloadOf(catalog, id.manifestVersion),
+  });
+  const activation = await callControlFn(client, catalog, 'c_activate_manifest_v1', {
+    p_manifest_version: id.manifestVersion,
+    p_manifest_sha256: manifestSha256,
+  });
+  return { manifestSha256, installationId: String(Object.values(activation[0]!)[0]) };
+}
+
+export interface SignerProviderPlaneInstall {
+  readonly plane: SignerProviderPlane;
+  readonly manifestSha256: string;
+  readonly backendSha256: string;
+  readonly installationId: string;
+}
+
+/**
+ * Registers fixture backend B, then profile + manifest S1 over it, and ACTIVATES S1 — as the migration
+ * (owner-class) role, after the accepted suite's planes. Reuses the accepted policy and vocabulary.
+ */
+export async function installSignerProviderPlaneS1(
+  client: pg.Client,
+  sources: S03Sources,
+): Promise<SignerProviderPlaneInstall> {
+  const catalog = deriveCatalog(sources);
+  const backendRows = await callControlFn(
+    client,
+    catalog,
+    'c_register_storage_backend_v1',
+    BACKEND_B,
+  );
+  const backendSha256 = String(Object.values(backendRows[0]!)[0]);
+  const s1 = await registerProviderProfileAndManifest(client, catalog, 'S1', backendSha256);
+  return { plane: 'S1', backendSha256, ...s1 };
+}
+
+/** The disposable TEST rotation S1 → S2 over the SAME backend B. */
+export async function rotateSignerProviderPlane(
+  client: pg.Client,
+  sources: S03Sources,
+  plane: 'S2',
+  backendSha256: string,
+): Promise<SignerProviderPlaneInstall> {
+  const r = await registerProviderProfileAndManifest(
+    client,
+    deriveCatalog(sources),
+    plane,
+    backendSha256,
+  );
+  return { plane, backendSha256, ...r };
+}
+
+/** Retires one S-plane profile through the accepted `c_retire_storage_profile_v1`. */
+export async function retireSignerProviderProfile(
+  client: pg.Client,
+  sources: S03Sources,
+  plane: SignerProviderPlane,
+): Promise<void> {
+  await callControlFn(client, deriveCatalog(sources), 'c_retire_storage_profile_v1', {
+    p_storage_profile_version: SIGNER_PROVIDER_IDENTITIES[plane].storageProfileVersion,
+  });
+}
