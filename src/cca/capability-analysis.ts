@@ -201,9 +201,11 @@ export const CCA_ENGINE_MODULE = 'db/cca-engine.ts';
 export const M7_PARTICIPANT_CCA_ENGINE_MODULE = 'db/m7-participant-cca-engine.ts';
 
 /**
- * The M7 capability signer, TO-8 DB foundation (M7 V1.1 §11.7.3, §16.2.3, §18.3). NOT a CCA role
- * module: it is a separate transaction owner with its own credential, its own owner kind and exactly
- * one exported operation. Rules X1–X14 (`analyzeM7CapabilitySignerTopology`) pin it.
+ * The M7 capability signer: TO-8 DB foundation + PPC-1 physical provider capability (M7 V1.1
+ * §11.7.3, §16.2.3, §18.3). NOT a CCA role module: it is a separate transaction owner with its own
+ * credentials, its own owner kind and exactly one exported operation, and the ONE productive importer
+ * of a provider-signing package. Rules X1–X19 (`analyzeM7CapabilitySignerTopology`,
+ * `analyzeProviderSigningPackageManifest`) pin it.
  */
 export const M7_CAPABILITY_SIGNER_MODULE = 'db/m7-capability-signer.ts';
 
@@ -717,6 +719,8 @@ export const M7_CREDENTIAL_READERS: Readonly<Record<string, string>> = {
   M7_PARTICIPANT_DATABASE_URL: M7_PARTICIPANT_CCA_ENGINE_MODULE,
   M7_SESSION_ISSUER_DATABASE_URL: M7_SESSION_MODULE,
   M7_CAPABILITY_SIGNER_DATABASE_URL: M7_CAPABILITY_SIGNER_MODULE,
+  // PPC-1 (§18.3 "the provider write-signing credentials"): read by the signer module alone.
+  M7_CAPABILITY_SIGNER_PROVIDER_CREDENTIALS: M7_CAPABILITY_SIGNER_MODULE,
 };
 
 /** M7 role credentials that are deliberately NOT implemented (AUTH §9, §29; signer AUTH §11). */
@@ -1100,6 +1104,10 @@ function isProductive(rel: string): boolean {
  */
 const m7EdgeMemo = new Map<string, ImportEdge[]>();
 const m7MentionMemo = new Map<string, Set<string>>();
+/** PPC-1 X15 per-file env facts (content-keyed, like the memos above). */
+const m7EnvFactsMemo = new Map<string, { v: string[]; holders: number }>();
+/** PPC-1 X18 per-file SigV4 marker presence (content-keyed). */
+const m7Sigv4MarkerMemo = new Map<string, boolean>();
 
 function memoEdges(code: string): ImportEdge[] {
   let hit = m7EdgeMemo.get(code);
@@ -1765,9 +1773,14 @@ export const M7_VERIFICATION_TOOLING_PREFIXES: readonly string[] = [
   'm7/testkit/',
 ];
 
-/** Object-store provider SDKs. None is authorized in this slice (SO-2 AUTH §17, §32). */
+/**
+ * Object-store provider SDKs and signing packages. PPC-1 WIDENS the accepted pattern (never narrows
+ * it): AWS crypto helpers, the `aws4` / `aws4fetch` signers and the `@aws/` scope are provider-signing
+ * capability too. Exactly ONE productive module may import any of them — the capability signer — and
+ * only the reviewed allowlist `M7_PROVIDER_SIGNING_PACKAGES` (X3, X12).
+ */
 export const PROVIDER_SDK_PACKAGE =
-  /^(@aws-sdk\/|aws-sdk$|@vercel\/blob|@google-cloud\/storage|@azure\/storage|@smithy\/|minio$|s3-)/;
+  /^(@aws-sdk\/|aws-sdk$|@aws\/|@aws-crypto\/|aws4$|aws4fetch$|@vercel\/blob|@google-cloud\/storage|@azure\/storage|@smithy\/|minio$|s3-)/;
 
 /** The M7 runtime files: the engine, the session module, and every productive so1/so2/runtime file. */
 function m7RuntimeFiles(productive: readonly string[]): string[] {
@@ -2139,6 +2152,14 @@ export function analyzeM7So2Topology(provider: SourceProvider): M7So2TopologyRep
     }
     for (const { target } of edgesOf(f)) {
       if (target.type === 'external' && PROVIDER_SDK_PACKAGE.test(target.name)) {
+        // PPC-1: the ONE sanctioned importer is the capability signer, and only for the reviewed
+        // allowlist; the signer rules X3 / X12 / X16 / X17 pin that module instead.
+        if (
+          f === M7_CAPABILITY_SIGNER_MODULE &&
+          M7_PROVIDER_SIGNING_PACKAGES.includes(target.name)
+        ) {
+          continue;
+        }
         v.push(`M7_PROVIDER_SDK_IMPORT:${target.name}:${f}`);
       }
     }
@@ -2149,6 +2170,8 @@ export function analyzeM7So2Topology(provider: SourceProvider): M7So2TopologyRep
         v.push(`M7_RUNTIME_IMPORTS_VERIFICATION_TOOLING:${f} -> ${t}`);
       }
     }
+    // PPC-1: the capability signer is the ONE module that presigns (X12 / X16 / X17 pin it).
+    if (f === M7_CAPABILITY_SIGNER_MODULE) continue;
     for (const id of identifiersIn(read(f))) {
       if (/presign|signedurl|signurl/i.test(id)) v.push(`M7_SIGNED_URL_IDENTIFIER:${id}:${f}`);
     }
@@ -2364,22 +2387,61 @@ export function analyzeM7So2EntryGuardOrder(code: string): string[] {
 }
 
 // ---------------------------------------------------------------------------------------------------
-// M7 CAPABILITY SIGNER — TO-8 DB FOUNDATION (M7 V1.1 §11.7.3, §16.2.3, §18.3, §18.6; XC-6, XF-12,
-// XF-13, XF-16, XF-17; signer AUTH §21)
+// M7 CAPABILITY SIGNER — TO-8 DB FOUNDATION + PPC-1 (M7 V1.1 §11.7.3, §16.2.3, §18.3, §18.6; XC-5,
+// XC-6, XC-7, XF-12, XF-13, XF-16, XF-17; signer AUTH §21; PPC-1 review amendments)
 //
 // ADDITIVE, like the SO-1 / SO-2 blocks: every accepted CCA rule and every SO-1 / SO-2 rule still runs
 // over the same tree. Rules X1–X14 pin the signer module; `analyzeTo8ExecutionContext` pins the TO-8
-// owner kind inside the one DatabaseExecutionContext. These are the STATIC (dependency-topology) half
-// of T-171b / IMP-05 / IMP-18 only; process separation (IMP-20) and provider-secret isolation are
-// deployment facts no source analysis can prove.
+// owner kind inside the one DatabaseExecutionContext. PPC-1 re-points X1 to the new single export,
+// widens X3 / X9 / X12 to the reviewed provider-signing allowlist (the SO-2 S8 rule exempts exactly the
+// signer module for exactly that allowlist), and ADDS X15 (one provider-credential reader; no computed
+// or enumerated process.env bypass), X16 (no network / logger / dynamic code in the signer), X17
+// (commit-before-sign shape; the library is reachable only from the private signing step), X18 (no
+// alternate hand-rolled signer), X19 (package manifest) and — PPC-1 R2 — X20 (the SIGNED conditional
+// create `If-None-Match: *`, AUD-M7-PPC1-01). These are the STATIC (dependency-topology)
+// half of T-171b / IMP-05 / IMP-18 only; process separation (IMP-20), the deployed dependency graph
+// and provider-secret isolation are deployment facts no source analysis can prove.
 // ---------------------------------------------------------------------------------------------------
 
 /** The pure signer contract (envelope type + typed refusal). */
 export const M7_CAPABILITY_SIGNER_CONTRACT_MODULE = 'm7/runtime/capability-signer-contract.ts';
 
-/** The ONE exported signer operation and its ONE parameter (XF-12, XC-6). */
-export const M7_CAPABILITY_SIGNER_OPERATION = 'mintCommittedGenerationEnvelope';
+/** The ONE exported signer operation and its ONE parameter (XF-12, XC-6). PPC-1: the exported
+ *  operation returns the physical capability; the accepted TO-8 mint is its module-private step. */
+export const M7_CAPABILITY_SIGNER_OPERATION = 'issueGenerationWriteCapability';
 export const M7_CAPABILITY_SIGNER_PARAMETER = 'generationGrantId';
+/** The accepted TO-8 step (module-private since PPC-1) and the PPC-1 signing step (module-private). */
+export const M7_CAPABILITY_SIGNER_MINT_STEP = 'mintCommittedGenerationEnvelope';
+export const M7_CAPABILITY_SIGNER_SIGN_STEP = 'signCommittedEnvelope';
+/** The registry parser: the ONLY reader of the provider-credential environment key. */
+export const M7_CAPABILITY_SIGNER_CREDENTIAL_LOADER = 'providerCredentials';
+
+/** PPC-1 (D-3): the ONE provider-credential environment source (§18.3; XC-7). */
+export const M7_PROVIDER_CREDENTIALS_ENV = 'M7_CAPABILITY_SIGNER_PROVIDER_CREDENTIALS';
+
+/**
+ * PPC-1 (D-1): the EXACT reviewed provider-signing package allowlist. Only the capability signer may
+ * import these, and it may import no other provider package. Both are exact-pinned in package.json.
+ */
+export const M7_PROVIDER_SIGNING_PACKAGES: readonly string[] = [
+  '@aws-sdk/s3-request-presigner',
+  '@smithy/hash-node',
+];
+
+/**
+ * The accepted productive modules that hold the WHOLE `process.env` object as a value (a default
+ * parameter, a spread) — re-enumerated mechanically on this baseline. Any other holder, or another
+ * occurrence in these, is an env-census bypass (X15). None mentions a provider-credential key.
+ */
+export const M7_PROCESS_ENV_OBJECT_HOLDERS: Readonly<Record<string, number>> = {
+  'lib/env.ts': 2,
+  'm7/s03/environment.ts': 1,
+  'm7/testkit/context.ts': 1,
+  'persistence/build-meta.ts': 1,
+};
+
+/** Marker literals of an AWS Signature V4 implementation (X18: no alternate hand-rolled signer). */
+export const SIGV4_MARKERS = /AWS4-HMAC-SHA256|aws4_request|X-Amz-Signature|X-Amz-Credential/;
 
 /** The EXACT local modules the signer may reach (type or value). Nothing else. */
 export const M7_CAPABILITY_SIGNER_LOCAL_IMPORTS: readonly string[] = [
@@ -2389,8 +2451,11 @@ export const M7_CAPABILITY_SIGNER_LOCAL_IMPORTS: readonly string[] = [
   'm7/runtime/m7-errors.ts',
 ];
 
-/** The EXACT external packages the signer may import. No provider SDK, no other package. */
-export const M7_CAPABILITY_SIGNER_EXTERNAL_IMPORTS: readonly string[] = ['@prisma/client'];
+/** The EXACT external packages the signer may import: Prisma and the reviewed signing allowlist. */
+export const M7_CAPABILITY_SIGNER_EXTERNAL_IMPORTS: readonly string[] = [
+  '@prisma/client',
+  ...M7_PROVIDER_SIGNING_PACKAGES,
+];
 
 /** Signer AUTH §5: names that may never be a signer parameter (and none may be an extra export). */
 export const M7_CAPABILITY_SIGNER_FORBIDDEN_PARAMETERS: readonly string[] = [
@@ -2455,6 +2520,11 @@ export interface M7CapabilitySignerTopologyReport {
   readonly prismaClientConstructionPoints: Readonly<Record<string, number>>;
   readonly signerDatabaseUrlReaders: readonly string[];
   readonly executionContext: readonly string[];
+  /** PPC-1 censuses. */
+  readonly providerSigningImporters: Readonly<Record<string, readonly string[]>>;
+  readonly providerCredentialReaders: readonly string[];
+  readonly processEnvObjectHolders: Readonly<Record<string, number>>;
+  readonly signerSdkBindings: readonly string[];
 }
 
 function newPrismaClientCount(code: string): number {
@@ -2495,6 +2565,38 @@ function exportedFunction(sf: ts.SourceFile, name: string): ts.FunctionDeclarati
   return undefined;
 }
 
+function privateFunction(sf: ts.SourceFile, name: string): ts.FunctionDeclaration | undefined {
+  for (const st of sf.statements) {
+    if (!ts.isFunctionDeclaration(st) || st.name?.text !== name) continue;
+    const mods = ts.getModifiers(st);
+    if (mods?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) !== true) return st;
+  }
+  return undefined;
+}
+
+/** Identifier nodes named `name` that are REFERENCES (not property names / declarations' keys). */
+function referencesTo(root: ts.Node, sf: ts.SourceFile, name: string): ts.Identifier[] {
+  const out: ts.Identifier[] = [];
+  const visit = (n: ts.Node): void => {
+    if (ts.isIdentifier(n) && n.text === name) {
+      const p = n.parent;
+      const isName =
+        (p !== undefined && ts.isPropertyAccessExpression(p) && p.name === n) ||
+        (p !== undefined && ts.isPropertyAssignment(p) && p.name === n) ||
+        (p !== undefined && ts.isImportSpecifier(p)) ||
+        (p !== undefined && ts.isFunctionDeclaration(p) && p.name === n);
+      if (!isName) out.push(n);
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(root);
+  void sf;
+  return out;
+}
+
+const inside = (n: ts.Node, container: ts.Node | undefined): boolean =>
+  container !== undefined && n.pos >= container.pos && n.end <= container.end;
+
 function callsNamed(root: ts.Node, name: string): ts.CallExpression[] {
   const out: ts.CallExpression[] = [];
   const visit = (n: ts.Node): void => {
@@ -2508,7 +2610,7 @@ function callsNamed(root: ts.Node, name: string): ts.CallExpression[] {
 }
 
 /**
- * Every M7 capability-signer rule (X1–X14) plus the TO-8 execution-context rules. `violations` is
+ * Every M7 capability-signer rule (X1–X18, X20) plus the TO-8 execution-context rules. `violations` is
  * empty when the tree is compliant; the other fields are the observed censuses (audit evidence).
  */
 export function analyzeM7CapabilitySignerTopology(
@@ -2530,6 +2632,7 @@ export function analyzeM7CapabilitySignerTopology(
   const signerExternalImports = new Set<string>();
   const signerStatements: string[] = [];
   let signerDbFunctions: string[] = [];
+  const signerSdkBindings: string[] = [];
 
   if (code === null) {
     v.push(`X1_SIGNER_MISSING:${M7_CAPABILITY_SIGNER_MODULE}`);
@@ -2568,6 +2671,29 @@ export function analyzeM7CapabilitySignerTopology(
         v.push(`X1_SIGNER_FORBIDDEN_EXPORT:${name}`);
       }
     }
+    // PPC-1 (D-2): the accepted TO-8 mint is MODULE-PRIVATE, keeps its exact one-parameter signature,
+    // and the signing step is module-private with exactly (envelope, credentials).
+    const mintDecl = privateFunction(sf, M7_CAPABILITY_SIGNER_MINT_STEP);
+    if (mintDecl === undefined) v.push('X1_MINT_STEP_NOT_A_PRIVATE_FUNCTION');
+    else {
+      const ps = mintDecl.parameters.map((p) => p.name.getText(sf));
+      if (
+        JSON.stringify(ps) !== JSON.stringify([M7_CAPABILITY_SIGNER_PARAMETER]) ||
+        mintDecl.parameters[0]?.type?.kind !== ts.SyntaxKind.StringKeyword ||
+        mintDecl.parameters[0]?.initializer !== undefined ||
+        mintDecl.parameters[0]?.questionToken !== undefined
+      ) {
+        v.push(`X1_MINT_STEP_SIGNATURE:[${ps.join(',')}]`);
+      }
+    }
+    const signDecl = privateFunction(sf, M7_CAPABILITY_SIGNER_SIGN_STEP);
+    if (signDecl === undefined) v.push('X1_SIGN_STEP_NOT_A_PRIVATE_FUNCTION');
+    else {
+      const ps = signDecl.parameters.map((p) => p.name.getText(sf));
+      if (JSON.stringify(ps) !== JSON.stringify(['envelope', 'credentials'])) {
+        v.push(`X1_SIGN_STEP_SIGNATURE:[${ps.join(',')}]`);
+      }
+    }
 
     // ── X3 — the signer's dependency edges are EXACTLY the allowed set ─────────────────────────────
     for (const { edge, target } of edgesOf(M7_CAPABILITY_SIGNER_MODULE)) {
@@ -2590,7 +2716,12 @@ export function analyzeM7CapabilitySignerTopology(
         }
       } else if (target.type === 'external') {
         signerExternalImports.add(target.name);
-        if (PROVIDER_SDK_PACKAGE.test(target.name)) v.push(`X3_SIGNER_PROVIDER_SDK:${target.name}`);
+        if (
+          PROVIDER_SDK_PACKAGE.test(target.name) &&
+          !M7_PROVIDER_SIGNING_PACKAGES.includes(target.name)
+        ) {
+          v.push(`X3_SIGNER_PROVIDER_SDK:${target.name}`);
+        }
         if (!M7_CAPABILITY_SIGNER_EXTERNAL_IMPORTS.includes(target.name)) {
           v.push(`X3_SIGNER_EXTERNAL_EDGE:${target.name}`);
         }
@@ -2664,7 +2795,8 @@ export function analyzeM7CapabilitySignerTopology(
     if (runs.length !== 1) v.push(`X7_SIGNER_RUNNER_CALLS:${runs.length}`);
     const run = runs[0];
     if (run !== undefined) {
-      if (op === undefined || !(run.pos > op.pos && run.end <= op.end)) {
+      const mint = privateFunction(sf, M7_CAPABILITY_SIGNER_MINT_STEP);
+      if (mint === undefined || !(run.pos > mint.pos && run.end <= mint.end)) {
         v.push('X7_SIGNER_RUNNER_OUTSIDE_OPERATION');
       }
       const [clientArg, optionsArg, bodyArg] = run.arguments;
@@ -2743,15 +2875,21 @@ export function analyzeM7CapabilitySignerTopology(
     if (JSON.stringify(moduleLets) !== JSON.stringify(['signerClient'])) {
       v.push(`X7_SIGNER_MODULE_MUTABLE_BINDINGS:[${moduleLets.join(',')}]`);
     }
-    // No `let`/`var` inside the operation: nothing can be captured out of the callback.
-    if (op !== undefined) {
+    // No `let`/`var` inside the operation or either step: nothing can be captured out of the
+    // callback, and no pre-commit value can be stashed for the signing step.
+    for (const fnNode of [
+      op,
+      privateFunction(sf, M7_CAPABILITY_SIGNER_MINT_STEP),
+      privateFunction(sf, M7_CAPABILITY_SIGNER_SIGN_STEP),
+    ]) {
+      if (fnNode === undefined) continue;
       const letIn = (n: ts.Node): void => {
         if (ts.isVariableDeclarationList(n) && (n.flags & ts.NodeFlags.Const) === 0) {
-          v.push('X7_SIGNER_OPERATION_MUTABLE_BINDING');
+          v.push(`X7_SIGNER_OPERATION_MUTABLE_BINDING:${fnNode.name?.text ?? '?'}`);
         }
         ts.forEachChild(n, letIn);
       };
-      letIn(op);
+      letIn(fnNode);
     }
 
     // ── X8 — the signer names EXACTLY the one capability function ─────────────────────────────────
@@ -2776,7 +2914,38 @@ export function analyzeM7CapabilitySignerTopology(
       ts.forEachChild(n, visitEnv);
     };
     visitEnv(sf);
-    if (envAccesses !== 1) v.push(`X9_SIGNER_ENV_ACCESSES:${envAccesses}`);
+    // PPC-1: exactly TWO environment reads — the signer DB URL and the provider-credential registry
+    // (was one in the TO-8 foundation) — each through its own module constant.
+    if (envAccesses !== 2) v.push(`X9_SIGNER_ENV_ACCESSES:${envAccesses}`);
+    const providerKeys = literalTexts(code).filter((t) =>
+      /^M7_[A-Z0-9_]*_(CREDENTIALS?|SECRETS?|KEYS?|TOKENS?)$/.test(t),
+    );
+    if (JSON.stringify(providerKeys) !== JSON.stringify([M7_PROVIDER_CREDENTIALS_ENV])) {
+      v.push(`X9_SIGNER_PROVIDER_CREDENTIAL_KEYS:[${providerKeys.join(',')}]`);
+    }
+    const envArgs: string[] = [];
+    const visitEnvArgs = (n: ts.Node): void => {
+      if (ts.isElementAccessExpression(n) && n.expression.getText(sf) === 'process.env') {
+        envArgs.push(n.argumentExpression.getText(sf));
+      }
+      if (ts.isPropertyAccessExpression(n) && n.expression.getText(sf) === 'process.env') {
+        envArgs.push(`.${n.name.text}`);
+      }
+      ts.forEachChild(n, visitEnvArgs);
+    };
+    visitEnvArgs(sf);
+    if (
+      JSON.stringify([...envArgs].sort()) !==
+      JSON.stringify(['PROVIDER_CREDENTIALS_ENV', 'SIGNER_DATABASE_URL_ENV'])
+    ) {
+      v.push(`X9_SIGNER_ENV_ARGUMENTS:[${envArgs.join(',')}]`);
+    }
+    // …and the registry key is read ONLY inside the credential loader.
+    const loader = privateFunction(sf, M7_CAPABILITY_SIGNER_CREDENTIAL_LOADER);
+    for (const r of referencesTo(sf, sf, 'PROVIDER_CREDENTIALS_ENV')) {
+      if (ts.isVariableDeclaration(r.parent) && r.parent.name === r) continue;
+      if (!inside(r, loader)) v.push('X9_PROVIDER_CREDENTIALS_READ_OUTSIDE_LOADER');
+    }
 
     // ── X10 — the signer awaits nothing it may leave floating, and defines no sealed operation ────
     if (identifierUses(code, new Set(SEALED_DEFINITION_FUNCTIONS)).size > 0) {
@@ -2786,6 +2955,254 @@ export function analyzeM7CapabilitySignerTopology(
       identifierUses(code, new Set(['runCcaTransaction', 'installTransactionGovernance'])).size > 0
     ) {
       v.push('X10_SIGNER_USES_CCA_TRANSACTION_PRIMITIVE');
+    }
+
+    // ── X16 — the signer holds no network client, no logger, no dynamic code, no module loader ──
+    const signerIds = identifiersIn(code);
+    for (const forbidden of [
+      'fetch',
+      'console',
+      'XMLHttpRequest',
+      'WebSocket',
+      'EventSource',
+      'globalThis',
+      'require',
+      'createRequire',
+      'eval',
+      'Function',
+      'logger',
+      'createHmac',
+      'createSign',
+      'subtle',
+    ]) {
+      if (signerIds.has(forbidden)) v.push(`X16_SIGNER_FORBIDDEN_CAPABILITY:${forbidden}`);
+    }
+
+    // ── X17 — commit-before-sign, structurally: op = validate → load registry → AWAIT the private
+    //    TO-8 mint into a const → sign exactly that const. The signing library is reachable ONLY from
+    //    the private signing step; the mint step cannot reach it. (The runtime proof is the
+    //    real-PostgreSQL suite; this pins the shape so a refactor cannot silently reorder it.)
+    const mintStep = privateFunction(sf, M7_CAPABILITY_SIGNER_MINT_STEP);
+    const signStep = privateFunction(sf, M7_CAPABILITY_SIGNER_SIGN_STEP);
+    const mintCalls = callsNamed(sf, M7_CAPABILITY_SIGNER_MINT_STEP);
+    const signCalls = callsNamed(sf, M7_CAPABILITY_SIGNER_SIGN_STEP);
+    const loaderCalls = callsNamed(sf, M7_CAPABILITY_SIGNER_CREDENTIAL_LOADER);
+    if (mintCalls.length !== 1 || !inside(mintCalls[0]!, op)) {
+      v.push(`X17_MINT_STEP_CALLS:${mintCalls.length}`);
+    }
+    if (signCalls.length !== 1 || !inside(signCalls[0]!, op)) {
+      v.push(`X17_SIGN_STEP_CALLS:${signCalls.length}`);
+    }
+    if (loaderCalls.length !== 1 || !inside(loaderCalls[0]!, op)) {
+      v.push(`X17_CREDENTIAL_LOADER_CALLS:${loaderCalls.length}`);
+    }
+    const mintCall = mintCalls[0];
+    const signCall = signCalls[0];
+    if (mintCall !== undefined && signCall !== undefined) {
+      const aw = mintCall.parent;
+      const decl = aw?.parent;
+      const list = decl?.parent;
+      const envelopeName =
+        decl !== undefined && ts.isVariableDeclaration(decl) ? decl.name.getText(sf) : null;
+      if (
+        aw === undefined ||
+        !ts.isAwaitExpression(aw) ||
+        decl === undefined ||
+        !ts.isVariableDeclaration(decl) ||
+        list === undefined ||
+        !ts.isVariableDeclarationList(list) ||
+        (list.flags & ts.NodeFlags.Const) === 0 ||
+        JSON.stringify(mintCall.arguments.map((a) => a.getText(sf))) !==
+          JSON.stringify([M7_CAPABILITY_SIGNER_PARAMETER])
+      ) {
+        v.push('X17_MINT_NOT_AWAITED_INTO_CONST');
+      }
+      const firstArg = signCall.arguments[0];
+      if (
+        firstArg === undefined ||
+        !ts.isIdentifier(firstArg) ||
+        firstArg.text !== envelopeName ||
+        signCall.arguments.length !== 2
+      ) {
+        v.push('X17_SIGN_STEP_NOT_GIVEN_THE_COMMITTED_ENVELOPE');
+      }
+      if (signCall.getStart(sf) < mintCall.end) v.push('X17_SIGN_BEFORE_COMMITTED_MINT');
+      // The awaited mint must be a statement of the op body itself (not inside a callback / branch
+      // that could let signing run while the TO-8 promise is pending).
+      const stmt = list?.parent;
+      if (
+        op?.body === undefined ||
+        stmt === undefined ||
+        !ts.isVariableStatement(stmt) ||
+        stmt.parent !== op.body
+      ) {
+        v.push('X17_MINT_AWAIT_NOT_TOP_LEVEL_IN_OPERATION');
+      }
+      if (op?.body !== undefined && stmt !== undefined) {
+        const idx = op.body.statements.indexOf(stmt as ts.Statement);
+        const after = op.body.statements.slice(idx + 1);
+        const ret = after[0];
+        if (
+          after.length !== 1 ||
+          ret === undefined ||
+          !ts.isReturnStatement(ret) ||
+          ret.expression === undefined ||
+          unwrap(ret.expression) !== signCall
+        ) {
+          v.push('X17_OPERATION_TAIL_NOT_RETURN_SIGN');
+        }
+      }
+    }
+    // SDK bindings (every local name imported from an allowlisted signing package) are referenced
+    // ONLY inside the signing step.
+    const sdkBindings: string[] = [];
+    for (const st of sf.statements) {
+      if (
+        ts.isImportDeclaration(st) &&
+        ts.isStringLiteral(st.moduleSpecifier) &&
+        PROVIDER_SDK_PACKAGE.test(st.moduleSpecifier.text)
+      ) {
+        const c = st.importClause;
+        if (c?.name !== undefined) sdkBindings.push(c.name.text);
+        const nb = c?.namedBindings;
+        if (nb !== undefined && ts.isNamedImports(nb)) {
+          for (const e of nb.elements) sdkBindings.push(e.name.text);
+        }
+        if (nb !== undefined && ts.isNamespaceImport(nb)) sdkBindings.push(nb.name.text);
+      }
+    }
+    for (const b of sdkBindings) {
+      for (const r of referencesTo(sf, sf, b)) {
+        if (ts.isImportClause(r.parent) || ts.isNamespaceImport(r.parent)) continue;
+        if (!inside(r, signStep)) v.push(`X17_SDK_BINDING_OUTSIDE_SIGN_STEP:${b}`);
+      }
+    }
+    signerSdkBindings.push(...sdkBindings);
+
+    // ── X20 — CANONICAL_CREATE is a SIGNED conditional create (PPC-1 R2, AUD-M7-PPC1-01; SP-4,
+    //    §11.3, Corollary 4, T-169). The ONE presign request carries exactly `{ host, 'if-none-match':
+    //    '*' }` (no spread, no other header); the presign options are exactly `{ signingDate,
+    //    expiresIn }` (nothing can un-sign or hoist the header); the self-check demands the signed-header
+    //    set `host;if-none-match` and the exact value; the capability exposes the frozen required
+    //    headers. A valid signature therefore never exists for a plain (overwriting) PUT.
+    const presignCalls: ts.CallExpression[] = [];
+    const visitPresign = (n: ts.Node): void => {
+      if (
+        ts.isCallExpression(n) &&
+        ts.isPropertyAccessExpression(n.expression) &&
+        n.expression.name.text === 'presign'
+      ) {
+        presignCalls.push(n);
+      }
+      ts.forEachChild(n, visitPresign);
+    };
+    visitPresign(sf);
+    if (presignCalls.length !== 1 || !inside(presignCalls[0]!, signStep)) {
+      v.push(`X20_PRESIGN_CALLS:${presignCalls.length}`);
+    }
+    const presignCall = presignCalls[0];
+    if (presignCall !== undefined) {
+      const [reqArg, optArg] = presignCall.arguments;
+      const reqObj = reqArg === undefined ? undefined : unwrap(reqArg);
+      if (reqObj === undefined || !ts.isObjectLiteralExpression(reqObj)) {
+        v.push('X20_REQUEST_NOT_OBJECT_LITERAL');
+      } else {
+        const headersProp = reqObj.properties.find(
+          (pr) => ts.isPropertyAssignment(pr) && pr.name.getText(sf) === 'headers',
+        );
+        const headersObj =
+          headersProp !== undefined && ts.isPropertyAssignment(headersProp)
+            ? unwrap(headersProp.initializer)
+            : undefined;
+        if (headersObj === undefined || !ts.isObjectLiteralExpression(headersObj)) {
+          v.push('X20_REQUEST_HEADERS_NOT_OBJECT_LITERAL');
+        } else {
+          const shape = headersObj.properties.map((pr) =>
+            ts.isShorthandPropertyAssignment(pr)
+              ? `shorthand:${pr.name.text}`
+              : ts.isPropertyAssignment(pr)
+                ? `prop:${literalText(pr.name as ts.Expression) ?? pr.name.getText(sf)}`
+                : `other:${pr.getText(sf)}`,
+          );
+          if (JSON.stringify(shape) !== JSON.stringify(['shorthand:host', 'prop:if-none-match'])) {
+            v.push(`X20_REQUEST_HEADERS_SHAPE:[${shape.join(',')}]`);
+          }
+          const inm = headersObj.properties.find(
+            (pr) =>
+              ts.isPropertyAssignment(pr) &&
+              literalText(pr.name as ts.Expression) === 'if-none-match',
+          );
+          if (inm === undefined || !ts.isPropertyAssignment(inm)) {
+            v.push('X20_IF_NONE_MATCH_MISSING');
+          } else if (literalText(inm.initializer) !== '*') {
+            v.push(`X20_IF_NONE_MATCH_VALUE:${inm.initializer.getText(sf)}`);
+          }
+        }
+      }
+      const optObj = optArg === undefined ? undefined : unwrap(optArg);
+      const optKeys =
+        optObj !== undefined && ts.isObjectLiteralExpression(optObj)
+          ? optObj.properties.map((pr) => pr.name?.getText(sf) ?? `other:${pr.getText(sf)}`)
+          : ['<not an object literal>'];
+      if (JSON.stringify(optKeys) !== JSON.stringify(['signingDate', 'expiresIn'])) {
+        v.push(`X20_PRESIGN_OPTIONS:[${optKeys.join(',')}]`);
+      }
+    }
+    const signText = signStep?.getText(sf) ?? '';
+    if (!/'X-Amz-SignedHeaders': 'host;if-none-match',/.test(signText)) {
+      v.push('X20_SELF_CHECK_SIGNED_HEADERS');
+    }
+    if (
+      !signText.includes("signed.headers['if-none-match'] !== REQUIRED_HEADERS['if-none-match']")
+    ) {
+      v.push('X20_SELF_CHECK_HEADER_VALUE');
+    }
+    if (!/JSON\.stringify\(\['host', 'if-none-match'\]\)/.test(signText)) {
+      v.push('X20_SELF_CHECK_HEADER_SET');
+    }
+    const requiredDecl = sf.statements
+      .filter(ts.isVariableStatement)
+      .flatMap((st) => [...st.declarationList.declarations])
+      .find((d) => d.name.getText(sf) === 'REQUIRED_HEADERS');
+    const requiredInit = requiredDecl?.initializer;
+    if (
+      requiredInit === undefined ||
+      !ts.isCallExpression(requiredInit) ||
+      requiredInit.expression.getText(sf) !== 'Object.freeze' ||
+      !/^\{\s*'if-none-match': '\*',?\s*\}\s*as const$/.test(
+        requiredInit.arguments[0]?.getText(sf) ?? '',
+      )
+    ) {
+      v.push('X20_REQUIRED_HEADERS_NOT_FROZEN_LITERAL');
+    }
+    if (!/readonly requiredHeaders = REQUIRED_HEADERS;/.test(code)) {
+      v.push('X20_CAPABILITY_REQUIRED_HEADERS');
+    }
+    // The mint step reaches neither the signing step, the registry nor the library; the signing step
+    // reaches neither the TO-8 runner, the hidden client, the mint step nor a statement.
+    if (mintStep !== undefined) {
+      for (const name of [
+        M7_CAPABILITY_SIGNER_SIGN_STEP,
+        M7_CAPABILITY_SIGNER_CREDENTIAL_LOADER,
+        ...sdkBindings,
+      ]) {
+        if (referencesTo(mintStep, sf, name).length > 0) v.push(`X17_MINT_STEP_REACHES:${name}`);
+      }
+    }
+    if (signStep !== undefined) {
+      for (const name of [
+        'runM7CapabilitySignerTransaction',
+        'signer',
+        'signerClient',
+        M7_CAPABILITY_SIGNER_MINT_STEP,
+        M7_CAPABILITY_SIGNER_CREDENTIAL_LOADER,
+        'process',
+      ]) {
+        if (referencesTo(signStep, sf, name).length > 0) v.push(`X17_SIGN_STEP_REACHES:${name}`);
+      }
+      if (/\$queryRaw|\$executeRaw/.test(signStep.getText(sf))) {
+        v.push('X17_SIGN_STEP_REACHES:database');
+      }
     }
   }
 
@@ -2850,12 +3267,31 @@ export function analyzeM7CapabilitySignerTopology(
     }
   }
 
-  // ── X12 — no provider SDK, no storage-worker runtime, no SO-3 in productive source ────────────
+  // ── X12 — provider-signing packages: EXACTLY one productive importer (the signer), only the
+  //    reviewed allowlist, never re-exported, never reached through a non-literal / required /
+  //    createRequire'd specifier; no storage-worker runtime, no SO-3 in productive source ────────
+  const providerSigningImporters: Record<string, string[]> = {};
   for (const f of productive) {
-    for (const { target } of edgesOf(f)) {
-      if (target.type === 'external' && PROVIDER_SDK_PACKAGE.test(target.name)) {
-        v.push(`X12_PROVIDER_SDK_IMPORT:${target.name}:${f}`);
+    for (const { edge, target } of edgesOf(f)) {
+      if (edge.kind === 'nonliteral') v.push(`X12_NONLITERAL_MODULE_EDGE:${f}:${edge.specifier}`);
+      if (target.type !== 'external') continue;
+      const name = target.name;
+      const isProviderPackage =
+        PROVIDER_SDK_PACKAGE.test(name) || M7_PROVIDER_SIGNING_PACKAGES.includes(name);
+      if (!isProviderPackage) continue;
+      (providerSigningImporters[name] ??= []).push(f);
+      if (f !== M7_CAPABILITY_SIGNER_MODULE) v.push(`X12_PROVIDER_SDK_IMPORT:${name}:${f}`);
+      else if (!M7_PROVIDER_SIGNING_PACKAGES.includes(name)) {
+        v.push(`X12_PROVIDER_SDK_NOT_ALLOWLISTED:${name}`);
       }
+      if (edge.kind === 'reexport' || edge.exportStar) {
+        v.push(`X12_PROVIDER_SDK_REEXPORT:${name}:${f}`);
+      }
+      if (edge.kind !== 'import')
+        v.push(`X12_PROVIDER_SDK_NON_STATIC_EDGE:${edge.kind}:${name}:${f}`);
+    }
+    if (/createRequire/.test(read(f)) && identifiersIn(read(f)).has('createRequire')) {
+      v.push(`X12_CREATE_REQUIRE:${f}`);
     }
     if (/(^|\/)(storage-worker|m7-storage-worker|worker)(\/|\.|-)/i.test(f)) {
       v.push(`X12_WORKER_RUNTIME_PRESENT:${f}`);
@@ -2863,6 +3299,9 @@ export function analyzeM7CapabilitySignerTopology(
     if (/(^|\/)(so3|saving-evidence|evidence-submission)(\/|\.|-)/i.test(f)) {
       v.push(`X12_SO3_PRESENT:${f}`);
     }
+  }
+  for (const pkg of M7_PROVIDER_SIGNING_PACKAGES) {
+    if (!PROVIDER_SDK_PACKAGE.test(pkg)) v.push(`X12_ALLOWLIST_OUTSIDE_PATTERN:${pkg}`);
   }
 
   // ── X13 — no public route / barrel / participant family / session / engine reaches the signer ──
@@ -2873,6 +3312,119 @@ export function analyzeM7CapabilitySignerTopology(
     }
     if (f === M7_PARTICIPANT_CCA_ENGINE_MODULE) v.push('X13_PARTICIPANT_ENGINE_IMPORTS_SIGNER');
     if (f === M7_SESSION_MODULE) v.push('X13_SESSION_MODULE_IMPORTS_SIGNER');
+  }
+
+  // ── X15 — the provider-credential env source has exactly ONE productive reader, and no
+  //    computed / enumerated `process.env` path can bypass that census ──────────────────────────
+  const providerCredentialReaders = productive.filter((f) =>
+    memoMentions(read(f), new Set([M7_PROVIDER_CREDENTIALS_ENV])).has(M7_PROVIDER_CREDENTIALS_ENV),
+  );
+  if (
+    providerCredentialReaders.length !== 1 ||
+    providerCredentialReaders[0] !== M7_CAPABILITY_SIGNER_MODULE
+  ) {
+    v.push(`X15_PROVIDER_CREDENTIAL_READERS:[${providerCredentialReaders.join(',')}]`);
+  }
+  const processEnvObjectHolders: Record<string, number> = {};
+  for (const f of productive) {
+    const text = read(f);
+    if (!/\bprocess\b|\beval\b|\bFunction\b/.test(text)) continue;
+    const memoKey = `${f}\u0000${text}`;
+    let facts = m7EnvFactsMemo.get(memoKey);
+    if (facts === undefined) {
+      const fv: string[] = [];
+      const sf = parse(text);
+      // module-level `const X = '<literal>'` names — the only admissible computed env keys
+      const constLiterals = new Set<string>();
+      for (const st of sf.statements) {
+        if (!ts.isVariableStatement(st) || (st.declarationList.flags & ts.NodeFlags.Const) === 0) {
+          continue;
+        }
+        for (const d of st.declarationList.declarations) {
+          if (
+            ts.isIdentifier(d.name) &&
+            d.initializer !== undefined &&
+            literalText(d.initializer) !== null
+          ) {
+            constLiterals.add(d.name.text);
+          }
+        }
+      }
+      let holders = 0;
+      const visit = (n: ts.Node): void => {
+        if (ts.isIdentifier(n) && n.text === 'process') {
+          const p = n.parent;
+          const isObjectOfMemberAccess =
+            p !== undefined && ts.isPropertyAccessExpression(p) && p.expression === n;
+          const isTypeName =
+            p !== undefined && (ts.isTypeReferenceNode(p) || ts.isQualifiedName(p));
+          if (p !== undefined && ts.isElementAccessExpression(p) && p.expression === n) {
+            fv.push(`X15_PROCESS_ELEMENT_ACCESS:${f}`);
+          } else if (
+            !isObjectOfMemberAccess &&
+            !isTypeName &&
+            !(p !== undefined && ts.isTypeOfExpression(p))
+          ) {
+            fv.push(`X15_PROCESS_OBJECT_ESCAPE:${f}`);
+          }
+        }
+        if (ts.isPropertyAccessExpression(n) && n.getText(sf) === 'process.env') {
+          const p = n.parent;
+          if (p !== undefined && ts.isElementAccessExpression(p) && p.expression === n) {
+            const a = p.argumentExpression;
+            const ok = literalText(a) !== null || (ts.isIdentifier(a) && constLiterals.has(a.text));
+            if (!ok) fv.push(`X15_COMPUTED_ENV_ACCESS:${f}:${a.getText(sf)}`);
+          } else if (!(p !== undefined && ts.isPropertyAccessExpression(p) && p.expression === n)) {
+            holders++;
+          }
+        }
+        if (
+          ts.isCallExpression(n) &&
+          ts.isIdentifier(n.expression) &&
+          n.expression.text === 'eval'
+        ) {
+          fv.push(`X15_DYNAMIC_CODE:eval:${f}`);
+        }
+        if (
+          (ts.isNewExpression(n) || ts.isCallExpression(n)) &&
+          ts.isIdentifier(n.expression) &&
+          n.expression.text === 'Function'
+        ) {
+          fv.push(`X15_DYNAMIC_CODE:Function:${f}`);
+        }
+        ts.forEachChild(n, visit);
+      };
+      visit(sf);
+      facts = { v: fv, holders };
+      m7EnvFactsMemo.set(memoKey, facts);
+    }
+    v.push(...facts.v);
+    const holders = facts.holders;
+    if (holders > 0) processEnvObjectHolders[f] = holders;
+  }
+  if (
+    JSON.stringify(Object.entries(processEnvObjectHolders).sort()) !==
+    JSON.stringify(Object.entries(M7_PROCESS_ENV_OBJECT_HOLDERS).sort())
+  ) {
+    v.push(`X15_ENV_OBJECT_HOLDERS:${JSON.stringify(processEnvObjectHolders)}`);
+  }
+
+  // ── X18 — no alternate hand-rolled signer anywhere in productive source ─────────────────────────
+  for (const f of productive) {
+    const text = read(f);
+    if (/createHmac|createSign|subtle/.test(text)) {
+      const ids = identifiersIn(text);
+      for (const x of ['createHmac', 'createSign', 'subtle']) {
+        if (ids.has(x)) v.push(`X18_HAND_ROLLED_SIGNING_PRIMITIVE:${x}:${f}`);
+      }
+    }
+    if (f === M7_CAPABILITY_SIGNER_MODULE || !SIGV4_MARKERS.test(text)) continue;
+    let marked = m7Sigv4MarkerMemo.get(text);
+    if (marked === undefined) {
+      marked = literalTexts(text).some((t) => SIGV4_MARKERS.test(t));
+      m7Sigv4MarkerMemo.set(text, marked);
+    }
+    if (marked) v.push(`X18_SIGV4_MARKER_OUTSIDE_SIGNER:${f}`);
   }
 
   // ── X14 — TO-8 inside the ONE DatabaseExecutionContext ─────────────────────────────────────────
@@ -2899,7 +3451,41 @@ export function analyzeM7CapabilitySignerTopology(
     prismaClientConstructionPoints,
     signerDatabaseUrlReaders,
     executionContext,
+    providerSigningImporters,
+    providerCredentialReaders,
+    processEnvObjectHolders,
+    signerSdkBindings,
   };
+}
+
+/**
+ * PPC-1 package-manifest rule (X19): every dependency matching the provider pattern is EXACTLY the
+ * reviewed allowlist, each exact-pinned (no range), and none is a devDependency.
+ */
+export function analyzeProviderSigningPackageManifest(packageJson: string): string[] {
+  const v: string[] = [];
+  const pkg = JSON.parse(packageJson) as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+    optionalDependencies?: Record<string, string>;
+    peerDependencies?: Record<string, string>;
+  };
+  const deps = pkg.dependencies ?? {};
+  const provider = Object.keys(deps)
+    .filter((n) => PROVIDER_SDK_PACKAGE.test(n))
+    .sort();
+  if (JSON.stringify(provider) !== JSON.stringify([...M7_PROVIDER_SIGNING_PACKAGES].sort())) {
+    v.push(`X19_PROVIDER_DEPENDENCY_SET:[${provider.join(',')}]`);
+  }
+  for (const n of provider) {
+    if (!/^\d+\.\d+\.\d+$/.test(deps[n] ?? '')) v.push(`X19_PROVIDER_DEPENDENCY_NOT_EXACT:${n}`);
+  }
+  for (const section of ['devDependencies', 'optionalDependencies', 'peerDependencies'] as const) {
+    for (const n of Object.keys(pkg[section] ?? {})) {
+      if (PROVIDER_SDK_PACKAGE.test(n)) v.push(`X19_PROVIDER_PACKAGE_IN_${section}:${n}`);
+    }
+  }
+  return v;
 }
 
 /**

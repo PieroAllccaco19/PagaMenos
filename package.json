@@ -38,7 +38,9 @@
     "m7:signer": "tsx scripts/m7/pg-m7-signer.ts"
   },
   "dependencies": {
+    "@aws-sdk/s3-request-presigner": "3.1139.0",
     "@prisma/client": "^6.2.0",
+    "@smithy/hash-node": "4.5.2",
     "next": "^15.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

@@ -13,6 +13,17 @@
 // the shared client), a deferred TEST fault trigger (to make COMMIT itself fail on the productive
 // path), a TEST child process, and the TEST / NON-PROVIDER signing stub. None is productive code.
 //
+// PPC-1 (accepted-foundation regression, NOT weakened): the accepted TO-8 mint is module-private since
+// PPC-1 (D-2), so every case below drives the ONE productive entry point, `issueGenerationWriteCapability`.
+// Planes A1 / A2 / K are PROVIDER_IAM / EXACT_KEY_SCOPED_TOKEN — kinds PPC-1 deliberately does NOT sign —
+// so a successful A-plane call is: the TO-8 mint COMMITS, then the signer refuses
+// `UNSUPPORTED_CAPABILITY_KIND` with ZERO signing-library calls (counted through a TEST wrapper of the
+// real presigner). The committed envelope each accepted assertion compares is read back from PostgreSQL
+// (`committedEnvelope`), and every refusal the accepted cases expected (M7013, 55000, UNAVAILABLE, the
+// TO-8 nesting refusals) is still the error the entry point throws. Successful physical signing, the
+// commit-before-sign observation, routing, no-fallback and caller-attributed concurrent mint sequences
+// are in `signer-provider.m7-signer.test.ts` on the additive S1 / S2 planes.
+//
 // Without the orchestrator's context this suite FAILS TO LOAD (NOT EXECUTED); it never passes by
 // default. The control-plane ROTATIONS at the end (A1 → A2 → K) are disposable TEST-FIXTURE rotations
 // inside a throwaway database — NOT production manifest authority, NOT LC-3, NOT a selector rotation,
@@ -24,7 +35,7 @@ import { resolve } from 'node:path';
 
 import { PrismaClient, type Prisma } from '@prisma/client';
 import pg from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { isCcaError } from '@/cca/errors';
 import {
@@ -37,7 +48,7 @@ import {
   type DatabaseExecutionState,
 } from '@/cca/execution-context';
 import { prisma } from '@/db/client';
-import { mintCommittedGenerationEnvelope } from '@/db/m7-capability-signer';
+import { issueGenerationWriteCapability } from '@/db/m7-capability-signer';
 import {
   M7CapabilitySignerError,
   type M7CommittedGenerationEnvelope,
@@ -54,10 +65,22 @@ import {
   retireSignerProfile,
   rotateSignerPlane,
 } from './__fixtures__/signer-runtime-control-plane';
-import {
-  TEST_NON_PROVIDER_STUB_KIND,
-  testNonProviderSignAfterCommit,
-} from './__fixtures__/test-non-provider-signing-stub';
+import { randomTestCredential } from './__fixtures__/test-signing-credentials';
+
+// TEST wrapper of the REAL presigner: counts signing-library calls; changes nothing else.
+const signing = vi.hoisted(() => ({ presignCalls: 0 }));
+vi.mock('@aws-sdk/s3-request-presigner', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@aws-sdk/s3-request-presigner')>();
+  class CountingPresigner extends real.S3RequestPresigner {
+    override async presign(
+      ...args: Parameters<InstanceType<typeof real.S3RequestPresigner>['presign']>
+    ): ReturnType<InstanceType<typeof real.S3RequestPresigner>['presign']> {
+      signing.presignCalls++;
+      return super.presign(...args);
+    }
+  }
+  return { ...real, S3RequestPresigner: CountingPresigner };
+});
 
 const RAW_CONTEXT = process.env.M7_SIGNER_CONTEXT;
 if (RAW_CONTEXT === undefined || RAW_CONTEXT === '') {
@@ -93,9 +116,10 @@ const WORKER_ID = 'signer-suite-worker';
 const EVIDENCE: Record<string, unknown> = {
   fixtureKind: CTX.fixtureKind,
   serverVersion: CTX.serverVersion,
-  providerSigning: 'NOT_IMPLEMENTED',
-  unknownCommitOutcome:
-    'DEFERRED — not reproducible deterministically with the existing driver; not simulated',
+  providerSigning:
+    'PPC-1: A-plane (PROVIDER_IAM / EXACT_KEY_SCOPED_TOKEN) grants → committed mint, then ' +
+    'UNSUPPORTED_CAPABILITY_KIND with zero signing; successful signing is in signer-provider.m7-signer.test.ts',
+  unknownCommitOutcome: 'see signer-provider.m7-signer.test.ts (PPC-1 commit-before-sign cases)',
 };
 
 let admin: pg.Client;
@@ -255,6 +279,52 @@ function envelopeFieldsWithoutSeq(e: M7CommittedGenerationEnvelope): Record<stri
   return rest;
 }
 
+/**
+ * The COMMITTED envelope of mint `(grantId, mintSeq)` — or of the grant's latest mint — read back from
+ * PostgreSQL, field for field the `RETURNS TABLE` of `m7.x_mint_generation_capability_v1`.
+ */
+async function committedEnvelope(
+  grantId: string,
+  mintSeq?: number,
+): Promise<M7CommittedGenerationEnvelope> {
+  const { rows } = await admin.query<Record<string, unknown>>(
+    `SELECT mm."capabilityOperation"::text AS "capabilityOperation", mm."canonicalObjectKey",
+            mm."backendSha256", m7.i_ts(mm."grantExpiresAt") AS "validUntil",
+            mm."capabilityMode"::text AS "capabilityMode",
+            mm."envelopeEnforcement"::text AS "envelopeEnforcement", mm."envelopeSha256",
+            mm."mintSeq" AS "mintSeq", sp."storageProfileVersion" AS "signingProfileVersion",
+            sp."credentialProfileId" AS "signingCredentialProfileId"
+       FROM m7.m7_generation_capability_mint mm
+       JOIN m7.m7_storage_profile sp ON sp."id" = mm."signingProfileId"
+      WHERE mm."grantId" = $1::uuid AND ($2::integer IS NULL OR mm."mintSeq" = $2::integer)
+      ORDER BY mm."mintSeq" DESC LIMIT 1`,
+    [grantId, mintSeq ?? null],
+  );
+  expect(rows).toHaveLength(1);
+  return rows[0] as unknown as M7CommittedGenerationEnvelope;
+}
+
+/**
+ * Drives the ONE productive entry point for an A-plane grant. PPC-1 signs only
+ * EXACT_KEY_PRESIGNED_PUT × SIGNER_TOPOLOGY, so on success the TO-8 mint COMMITS and the signer then
+ * refuses UNSUPPORTED_CAPABILITY_KIND with ZERO signing-library calls; the committed envelope is returned
+ * from PostgreSQL. Every OTHER refusal (M7013, 55000, UNAVAILABLE, TO-8 nesting) is re-thrown unchanged.
+ */
+async function mintCommitted(grantId: string): Promise<M7CommittedGenerationEnvelope> {
+  const presignBefore = signing.presignCalls;
+  const before = (await mintRows(grantId)).length;
+  try {
+    await issueGenerationWriteCapability(grantId);
+  } catch (e) {
+    expect(signing.presignCalls, 'no signing on any A-plane path').toBe(presignBefore);
+    if (!isRefusal(e, 'UNSUPPORTED_CAPABILITY_KIND')) throw e;
+    const after = await mintRows(grantId);
+    expect(after.length, 'the refused call committed exactly one mint').toBe(before + 1);
+    return committedEnvelope(grantId);
+  }
+  throw new Error('an A-plane (PROVIDER_IAM) grant must never yield a physical capability');
+}
+
 // ─── lifecycle ─────────────────────────────────────────────────────────────────────────────────
 beforeAll(async () => {
   admin = await connect(CTX.urls.application);
@@ -263,6 +333,12 @@ beforeAll(async () => {
   testSigner = sealM7CapabilitySignerClient(
     new PrismaClient({ datasourceUrl: CTX.urls.roles[SIGNER_ROLE]! }),
   );
+  // A well-formed TEST registry that even holds A1's and A2's credential ids: a PROVIDER_IAM /
+  // SCOPED_TOKEN envelope must STILL be refused (no signing because "a credential exists").
+  process.env.M7_CAPABILITY_SIGNER_PROVIDER_CREDENTIALS = JSON.stringify({
+    [SIGNER_IDENTITIES.A1.credentialProfileId]: randomTestCredential(CTX.backendSha256),
+    [SIGNER_IDENTITIES.A2.credentialProfileId]: randomTestCredential(CTX.backendSha256),
+  });
   const handle = await issueM7ParticipantSession({
     authenticatedParticipantId: CTX.participants.S.participantId,
   });
@@ -308,9 +384,8 @@ describe('the fixture control plane is a TEST FIXTURE, not a manifest', () => {
 describe('valid grant → committed envelope copied verbatim from PostgreSQL (AUTH §6, §14)', () => {
   it('mints; every field equals the DB grant / mint row; repeat mints keep the envelope, mintSeq 1,2,3', async () => {
     const c = await claim();
-    const e1 = await mintCommittedGenerationEnvelope(c.grantId);
+    const e1 = await mintCommitted(c.grantId);
     const g = await grantRow(c.grantId);
-    expect(Object.isFrozen(e1)).toBe(true);
     expect(Object.keys(e1).sort()).toEqual(
       [
         'backendSha256',
@@ -339,8 +414,8 @@ describe('valid grant → committed envelope copied verbatim from PostgreSQL (AU
     expect(e1.signingProfileVersion).toBe(SIGNER_IDENTITIES.A1.storageProfileVersion);
     expect(e1.signingCredentialProfileId).toBe(SIGNER_IDENTITIES.A1.credentialProfileId);
 
-    const e2 = await mintCommittedGenerationEnvelope(c.grantId);
-    const e3 = await mintCommittedGenerationEnvelope(c.grantId);
+    const e2 = await mintCommitted(c.grantId);
+    const e3 = await mintCommitted(c.grantId);
     expect([e1.mintSeq, e2.mintSeq, e3.mintSeq]).toEqual([1, 2, 3]);
     expect(envelopeFieldsWithoutSeq(e2)).toEqual(envelopeFieldsWithoutSeq(e1));
     expect(envelopeFieldsWithoutSeq(e3)).toEqual(envelopeFieldsWithoutSeq(e1));
@@ -374,13 +449,13 @@ describe('input and control-plane refusals (AUTH §5, §23)', () => {
     for (const bad of ['', 'not-a-uuid', '00000000-0000-0000-0000-00000000000g']) {
       expect(
         isRefusal(
-          await refusalOf(mintCommittedGenerationEnvelope(bad)),
+          await refusalOf(issueGenerationWriteCapability(bad)),
           'INVALID_GENERATION_GRANT_ID',
         ),
       ).toBe(true);
     }
     const extra = await refusalOf(
-      (mintCommittedGenerationEnvelope as (...a: unknown[]) => Promise<unknown>)(randomUUID(), {
+      (issueGenerationWriteCapability as (...a: unknown[]) => Promise<unknown>)(randomUUID(), {
         canonicalObjectKey: 'wider/key',
         validUntil: '2999-01-01T00:00:00Z',
       }),
@@ -394,7 +469,7 @@ describe('input and control-plane refusals (AUTH §5, §23)', () => {
 
   it('an unknown grant → M7013 (indistinguishable refusal), zero mint rows', async () => {
     const unknown = randomUUID();
-    const e = await refusalOf(mintCommittedGenerationEnvelope(unknown));
+    const e = await refusalOf(mintCommitted(unknown));
     expect(isRefusal(e, 'CAPABILITY_REFUSED', 'M7013')).toBe(true);
     expect(
       await sqlStateOf(
@@ -412,7 +487,7 @@ describe('input and control-plane refusals (AUTH §5, §23)', () => {
     const good = digestNow();
     process.env.M7_CONTROL_PLANE_MANIFEST_SHA256 = CTX.driftedManifestSha256;
     try {
-      const e = await refusalOf(mintCommittedGenerationEnvelope(c.grantId));
+      const e = await refusalOf(mintCommitted(c.grantId));
       expect(isRefusal(e, 'CONTROL_PLANE_MISMATCH', '55000')).toBe(true);
     } finally {
       process.env.M7_CONTROL_PLANE_MANIFEST_SHA256 = good;
@@ -426,7 +501,7 @@ describe('input and control-plane refusals (AUTH §5, §23)', () => {
     ).toBe('55000');
     expect(await mintRows(c.grantId)).toHaveLength(0);
     // …and with the right digest the same grant mints (the refusal was the digest, nothing else).
-    expect((await mintCommittedGenerationEnvelope(c.grantId)).mintSeq).toBe(1);
+    expect((await mintCommitted(c.grantId)).mintSeq).toBe(1);
     EVIDENCE.manifestMismatch = { sqlState: '55000', rowsWhileMismatched: 0 };
   });
 });
@@ -566,8 +641,15 @@ describe('role / EXECUTE topology — the DB half of T-171b (AUTH §17)', () => 
 describe('concurrent mints serialize on P1 (XF-15)', () => {
   it('six concurrent mints → consecutive sequences 1..6, one identical envelope', async () => {
     const c = await claim();
+    const presignBefore = signing.presignCalls;
+    const outcomes = await Promise.all(
+      Array.from({ length: 6 }, () => refusalOf(issueGenerationWriteCapability(c.grantId))),
+    );
+    // Every concurrent call committed its mint and was then refused for the kind, unsigned.
+    for (const o of outcomes) expect(isRefusal(o, 'UNSUPPORTED_CAPABILITY_KIND')).toBe(true);
+    expect(signing.presignCalls).toBe(presignBefore);
     const results = await Promise.all(
-      Array.from({ length: 6 }, () => mintCommittedGenerationEnvelope(c.grantId)),
+      [1, 2, 3, 4, 5, 6].map((seq) => committedEnvelope(c.grantId, seq)),
     );
     const seqs = results.map((r) => r.mintSeq).sort((a, b) => a - b);
     expect(seqs).toEqual([1, 2, 3, 4, 5, 6]);
@@ -634,15 +716,15 @@ describe('TO-8 DatabaseExecutionContext — real PostgreSQL (AUTH §8–§10)', 
 
     let inAccepted: unknown;
     await prisma.$transaction(async () => {
-      inAccepted = await refusalOf(mintCommittedGenerationEnvelope(c.grantId));
+      inAccepted = await refusalOf(mintCommitted(c.grantId));
     });
     let inCca: unknown;
     await runCcaTransaction(prisma, {}, async () => {
-      inCca = await refusalOf(mintCommittedGenerationEnvelope(c.grantId));
+      inCca = await refusalOf(mintCommitted(c.grantId));
     });
     let inTo8: unknown;
     await runM7CapabilitySignerTransaction(testSigner, {}, async () => {
-      inTo8 = await refusalOf(mintCommittedGenerationEnvelope(c.grantId));
+      inTo8 = await refusalOf(mintCommitted(c.grantId));
     });
     for (const [k, e] of Object.entries({ inAccepted, inCca, inTo8 })) {
       expect(e, k).toBeInstanceOf(M7CapabilitySignerTransactionError);
@@ -657,7 +739,7 @@ describe('TO-8 DatabaseExecutionContext — real PostgreSQL (AUTH §8–§10)', 
     expect(d1.m7CapabilitySignerTransactions).toBe(d0.m7CapabilitySignerTransactions + 1);
     expect(await mintRows(c.grantId)).toHaveLength(0);
     // Outside any transaction the same grant mints normally.
-    expect((await mintCommittedGenerationEnvelope(c.grantId)).mintSeq).toBe(1);
+    expect((await mintCommitted(c.grantId)).mintSeq).toBe(1);
     EVIDENCE.nestedRefusals = {
       outcomes,
       rejectedBeforeDatabaseDelta: 3,
@@ -701,7 +783,7 @@ describe('XF-16 (DB half) — no envelope escapes before COMMIT (AUTH §13)', ()
     expect(returned).toBe('unset');
     expect(await mintRows(c.grantId)).toHaveLength(0);
     // The rolled-back sequence was never committed: the next productive mint is mintSeq 1.
-    const next = await mintCommittedGenerationEnvelope(c.grantId);
+    const next = await mintCommitted(c.grantId);
     expect(next.mintSeq).toBe(1);
     EVIDENCE.rollbackAfterFunctionReturned = {
       functionReturnedRows: insideRows.length,
@@ -729,8 +811,9 @@ describe('XF-16 (DB half) — no envelope escapes before COMMIT (AUTH §13)', ()
     );
     let e: unknown;
     let rowsDuringFault: number;
+    const presignBefore = signing.presignCalls;
     try {
-      e = await refusalOf(mintCommittedGenerationEnvelope(c.grantId));
+      e = await refusalOf(mintCommitted(c.grantId));
       rowsDuringFault = (await mintRows(c.grantId)).length;
     } finally {
       await admin.query(
@@ -739,16 +822,18 @@ describe('XF-16 (DB half) — no envelope escapes before COMMIT (AUTH §13)', ()
       await admin.query('DROP SCHEMA signer_test_fault CASCADE');
     }
     expect(isRefusal(e, 'UNAVAILABLE')).toBe(true);
+    expect(signing.presignCalls).toBe(presignBefore);
     expect(rowsDuringFault).toBe(0);
     const { rows: leftovers } = await admin.query<{ n: string }>(
       `SELECT pg_catalog.count(*)::text AS n FROM pg_catalog.pg_trigger
         WHERE tgname = 'signer_test_commit_fault'`,
     );
     expect(leftovers[0]!.n).toBe('0');
-    const next = await mintCommittedGenerationEnvelope(c.grantId);
+    const next = await mintCommitted(c.grantId);
     expect(next.mintSeq).toBe(1);
     EVIDENCE.commitFailure = {
-      path: 'PRODUCTIVE mintCommittedGenerationEnvelope (deferred TEST fault at COMMIT)',
+      path: 'PRODUCTIVE issueGenerationWriteCapability → private TO-8 mint (deferred TEST fault at COMMIT)',
+      signingLibraryCalls: 0,
       callerReceived: (e as M7CapabilitySignerError).reason,
       envelopeReturned: false,
       committedRowsDuringFault: rowsDuringFault,
@@ -757,30 +842,10 @@ describe('XF-16 (DB half) — no envelope escapes before COMMIT (AUTH §13)', ()
     };
   });
 
-  it('TEST / NON-PROVIDER stub: a downstream step sees the envelope only once it is committed', async () => {
-    const c = await claim();
-    const observer = await connect(CTX.urls.application);
-    try {
-      const out = await testNonProviderSignAfterCommit(c.grantId, async (env) => {
-        const { rows } = await observer.query<{ n: string }>(
-          `SELECT pg_catalog.count(*)::text AS n FROM m7.m7_generation_capability_mint
-            WHERE "grantId" = $1::uuid AND "mintSeq" = $2 AND "envelopeSha256" = $3`,
-          [c.grantId, env.mintSeq, env.envelopeSha256],
-        );
-        return rows[0]!.n === '1';
-      });
-      expect(out.kind).toBe(TEST_NON_PROVIDER_STUB_KIND);
-      expect(out.committedObservedBeforeStub).toBe(true);
-      EVIDENCE.testNonProviderStub = {
-        kind: out.kind,
-        committedObservedFromAnotherConnection: true,
-        mintSeq: out.envelope.mintSeq,
-        note: 'HMAC under a discarded random key; NOT a provider capability',
-      };
-    } finally {
-      await observer.end();
-    }
-  });
+  // The accepted TEST / NON-PROVIDER signing stub case is SUPERSEDED (PPC-1): the stub imported the
+  // now module-private mint. Its property — a downstream signing step acts only on an envelope already
+  // observable as COMMITTED from another connection — is now asserted on the REAL signing path in
+  // signer-provider.m7-signer.test.ts ("commit-before-sign, observed"), with the real presigner.
 });
 
 // ─── expiry (XF-14, T-170, T-170b) ──────────────────────────────────────────────────────────────
@@ -788,7 +853,7 @@ describe('expiry on a post-lock clock (XF-14; AUTH §16)', () => {
   it('a call at/after grantExpiresAt → M7013, zero mint rows', async () => {
     const c = await claim();
     const at = await waitForDbClock(c.grantId, '50 milliseconds');
-    const e = await refusalOf(mintCommittedGenerationEnvelope(c.grantId));
+    const e = await refusalOf(mintCommitted(c.grantId));
     expect(isRefusal(e, 'CAPABILITY_REFUSED', 'M7013')).toBe(true);
     expect(await mintRows(c.grantId)).toHaveLength(0);
     EVIDENCE.postExpiry = {
@@ -823,7 +888,7 @@ describe('expiry on a post-lock clock (XF-14; AUTH §16)', () => {
           [c.backendSha256],
         );
       }
-      const pending = refusalOf(mintCommittedGenerationEnvelope(c.grantId));
+      const pending = refusalOf(mintCommitted(c.grantId));
       // Observe the signer's backend WAITING on the holder, before expiry, on PostgreSQL's clock.
       let blocked:
         | {
@@ -887,7 +952,7 @@ describe('expiry on a post-lock clock (XF-14; AUTH §16)', () => {
 
 // ─── process status (AUTH §20) ─────────────────────────────────────────────────────────────────
 describe('TEST-ONLY child process: the module runs independently with a signer-only environment', () => {
-  it('a separate Node process with only the signer credential + digest mints a committed envelope', async () => {
+  it('a separate Node process with only the signer credentials + digest commits a mint (A-plane: refused for kind, unsigned)', async () => {
     const baseEnv: Record<string, string> = {};
     for (const k of [
       'PATH',
@@ -914,6 +979,8 @@ describe('TEST-ONLY child process: the module runs independently with a signer-o
       env: {
         ...baseEnv,
         M7_CAPABILITY_SIGNER_DATABASE_URL: CTX.urls.roles[SIGNER_ROLE]!,
+        M7_CAPABILITY_SIGNER_PROVIDER_CREDENTIALS:
+          process.env.M7_CAPABILITY_SIGNER_PROVIDER_CREDENTIALS!,
         M7_CONTROL_PLANE_MANIFEST_SHA256: digestNow(),
       } as unknown as NodeJS.ProcessEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -933,8 +1000,8 @@ describe('TEST-ONLY child process: the module runs independently with a signer-o
     child.stdin.write(`${c.grantId}\n`);
     const code = await exited;
     const line = out.split('\n').find((l) => l.startsWith('{'));
-    expect(code, `${out}\n${err}`).toBe(0);
-    const result = JSON.parse(line!) as { pid: number; envelope: M7CommittedGenerationEnvelope };
+    expect(code, `${out}\n${err}`).toBe(1);
+    const result = JSON.parse(line!) as { pid: number; error: { reason?: string } };
     expect(childPid).not.toBe(process.pid);
     expect(result.pid).toBe(childPid);
     expect(census).toEqual({
@@ -945,18 +1012,25 @@ describe('TEST-ONLY child process: the module runs independently with a signer-o
       M7_STORAGE_WORKER_DATABASE_URL: false,
       M7_DELETION_AUTHORITY_DATABASE_URL: false,
       M7_CAPABILITY_SIGNER_DATABASE_URL: true,
+      M7_CAPABILITY_SIGNER_PROVIDER_CREDENTIALS: true,
       M7_CONTROL_PLANE_MANIFEST_SHA256: true,
+      AWS_ACCESS_KEY_ID: false,
+      AWS_SECRET_ACCESS_KEY: false,
+      AWS_PROFILE: false,
     });
+    expect(result.error.reason).toBe('UNSUPPORTED_CAPABILITY_KIND');
     const rows = await mintRows(c.grantId);
     expect(rows).toHaveLength(1);
-    expect(result.envelope.mintSeq).toBe(1);
-    expect(result.envelope.envelopeSha256).toBe(rows[0]!.envelopeSha256);
-    expect(result.envelope.canonicalObjectKey).toBe(c.canonicalObjectKey);
+    const envelope = await committedEnvelope(c.grantId);
+    expect(envelope.mintSeq).toBe(1);
+    expect(envelope.envelopeSha256).toBe(rows[0]!.envelopeSha256);
+    expect(envelope.canonicalObjectKey).toBe(c.canonicalObjectKey);
     EVIDENCE.childProcess = {
       parentPid: process.pid,
       childPid,
       childEnvironmentCensus: census,
-      envelope: result.envelope,
+      childOutcome: result.error.reason,
+      committedEnvelope: envelope,
       status:
         'TEST-ONLY harness. Signer own production process = PARTIAL / DEFERRED; IMP-20 = OPEN.',
     };
@@ -969,7 +1043,7 @@ describe('signing-profile routing — DB half (AUTH §15, §18)', () => {
     const sources = loadS03Sources(ROOT);
     const c = await claim();
     expect(c.storageProfileVersion).toBe(SIGNER_IDENTITIES.A1.storageProfileVersion);
-    const eA1 = await mintCommittedGenerationEnvelope(c.grantId);
+    const eA1 = await mintCommitted(c.grantId);
     expect(eA1.signingProfileVersion).toBe(SIGNER_IDENTITIES.A1.storageProfileVersion);
     expect(eA1.signingCredentialProfileId).toBe(SIGNER_IDENTITIES.A1.credentialProfileId);
 
@@ -978,7 +1052,7 @@ describe('signing-profile routing — DB half (AUTH §15, §18)', () => {
     expect(a2.manifestSha256).toBe(CTX.rotationManifestSha256.A2);
     process.env.M7_CONTROL_PLANE_MANIFEST_SHA256 = a2.manifestSha256;
     await retireSignerProfile(admin, sources, 'A1');
-    const eA2 = await mintCommittedGenerationEnvelope(c.grantId);
+    const eA2 = await mintCommitted(c.grantId);
     const elapsedMs = Date.now() - started;
 
     expect(eA2.signingProfileVersion).toBe(SIGNER_IDENTITIES.A2.storageProfileVersion);
@@ -1037,7 +1111,7 @@ describe('signing-profile routing — DB half (AUTH §15, §18)', () => {
     expect(live).toEqual([
       { v: SIGNER_IDENTITIES.K.storageProfileVersion, mode: 'EXACT_KEY_PRESIGNED_PUT' },
     ]);
-    const e = await refusalOf(mintCommittedGenerationEnvelope(c.grantId));
+    const e = await refusalOf(mintCommitted(c.grantId));
     expect(isRefusal(e, 'CAPABILITY_REFUSED', 'M7013')).toBe(true);
     expect(await mintRows(c.grantId)).toHaveLength(0);
     EVIDENCE.differentKindRefusal = {
